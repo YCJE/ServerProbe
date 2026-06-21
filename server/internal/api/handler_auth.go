@@ -181,6 +181,6 @@ func (h *AuthHandler) HandleCheckSetup(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"need_setup": count == 0,
+		"needs_setup": count == 0,
 	})
 }
