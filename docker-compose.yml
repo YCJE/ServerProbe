@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  probe-server:
+    build: .
+    container_name: probe-server
+    restart: unless-stopped
+    ports:
+      - "443:443"
+    volumes:
+      - ./data:/app/data
+      - ./certs:/app/certs
+    environment:
+      - TZ=Asia/Shanghai
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    networks:
+      - probe-net
+
+networks:
+  probe-net:
+    driver: bridge

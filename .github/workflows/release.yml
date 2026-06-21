@@ -1,0 +1,185 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '版本号 (如 v1.0.0)'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  # ============ 前端构建 ============
+  build-frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: server/frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: server/frontend
+        run: npm ci
+
+      - name: Build frontend
+        working-directory: server/frontend
+        run: npm run build
+
+      - name: Upload frontend artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: server/web/
+          retention-days: 1
+
+  # ============ 后端构建 (交叉编译) ============
+  build-binaries:
+    needs: build-frontend
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          # Server
+          - component: server
+            goos: linux
+            goarch: amd64
+          - component: server
+            goos: linux
+            goarch: arm64
+          - component: server
+            goos: linux
+            goarch: arm
+            goarm: "7"
+          # Agent
+          - component: agent
+            goos: linux
+            goarch: amd64
+          - component: agent
+            goos: linux
+            goarch: arm64
+          - component: agent
+            goos: linux
+            goarch: arm
+            goarm: "7"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download frontend artifacts
+        if: matrix.component == 'server'
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: server/web/
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+          cache: true
+          cache-dependency-path: |
+            server/go.sum
+            agent/go.sum
+
+      - name: Build ${{ matrix.component }}
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          GOARM: ${{ matrix.goarm }}
+          CGO_ENABLED: 0
+        working-directory: ${{ matrix.component }}
+        run: |
+          VERSION=${GITHUB_REF_NAME:-${{ github.event.inputs.version }}}
+          LDFLAGS="-s -w -X main.Version=${VERSION} -X main.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          mkdir -p ../dist
+          BINARY_NAME="probe-${{ matrix.component }}-${{ matrix.goos }}-${{ matrix.goarch }}"
+          if [ -n "${{ matrix.goarm }}" ]; then
+            BINARY_NAME="${BINARY_NAME}v${{ matrix.goarm }}"
+          fi
+          go build -ldflags "$LDFLAGS" -o "../dist/${BINARY_NAME}" ./cmd/${{ matrix.component }}
+
+      - name: Generate SHA256
+        working-directory: dist
+        run: |
+          for f in probe-*; do
+            sha256sum "$f" > "${f}.sha256"
+          done
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: binary-${{ matrix.component }}-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.goarm && format('v{0}', matrix.goarm) || '' }}
+          path: dist/
+          retention-days: 1
+
+  # ============ 发布 Release ============
+  release:
+    needs: build-binaries
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist/
+
+      - name: Merge artifacts
+        run: |
+          mkdir -p release
+          find dist/ -type f \( -name "probe-*" ! -name "*.sha256" \) -exec cp {} release/ \;
+          find dist/ -type f -name "*.sha256" -exec cp {} release/ \;
+          ls -la release/
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name || github.event.inputs.version }}
+          name: Release ${{ github.ref_name || github.event.inputs.version }}
+          generate_release_notes: true
+          files: release/*
+          body: |
+            ## Server Probe ${{ github.ref_name || github.event.inputs.version }}
+
+            ### 下载
+
+            | 文件 | 说明 |
+            |------|------|
+            | `probe-server-linux-amd64` | Server (x86_64) |
+            | `probe-server-linux-arm64` | Server (ARM64) |
+            | `probe-server-linux-armv7` | Server (ARMv7) |
+            | `probe-agent-linux-amd64` | Agent (x86_64) |
+            | `probe-agent-linux-arm64` | Agent (ARM64) |
+            | `probe-agent-linux-armv7` | Agent (ARMv7) |
+
+            ### 快速安装 Server
+
+            ```bash
+            curl -fsSL https://raw.githubusercontent.com/server-probe/server-probe/main/scripts/install-server.sh | bash -s -- --port 8443
+            ```
+
+            ### 快速安装 Agent
+
+            ```bash
+            curl -fsSL https://raw.githubusercontent.com/server-probe/server-probe/main/scripts/install-agent.sh | bash -s -- --server https://your-server.com:8443 --code YOUR_CODE
+            ```
+
+            ### 校验
+
+            ```bash
+            sha256sum -c probe-agent-linux-amd64.sha256
+            ```
+
+            ### 安全
+
+            请查阅 [SECURITY.md](SECURITY.md) 了解安全设计原则。

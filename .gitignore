@@ -1,0 +1,38 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+bin/
+
+# Go test
+*.test
+*.out
+coverage.html
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build output
+server/web/
+server/frontend/node_modules/
+server/frontend/dist/
+
+# Runtime data
+*.db
+*.db-journal
+*.log
+data/
+certs/
+
+# Environment
+.env
+.env.local
