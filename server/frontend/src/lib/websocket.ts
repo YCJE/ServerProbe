@@ -9,6 +9,7 @@ const MAX_RECONNECT_INDEX = RECONNECT_DELAYS.length - 1
 export class DashboardWebSocket {
   private ws: WebSocket | null = null
   private url: string
+  private requireToken: boolean
   private reconnectIndex = 0
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null
   private shouldReconnect = true
@@ -16,10 +17,15 @@ export class DashboardWebSocket {
   private statusListeners: Set<(connected: boolean) => void> = new Set()
   private connected = false
 
-  constructor() {
+  /**
+   * @param path WebSocket 路径，例如 '/ws/dashboard' 或 '/ws/public/dashboard'
+   * @param requireToken 是否需要携带 JWT token
+   */
+  constructor(path: string = '/ws/dashboard', requireToken: boolean = true) {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
     const host = window.location.host
-    this.url = `${protocol}//${host}/ws/dashboard`
+    this.url = `${protocol}//${host}${path}`
+    this.requireToken = requireToken
   }
 
   /** 建立 WebSocket 连接 */
@@ -29,15 +35,18 @@ export class DashboardWebSocket {
     }
 
     this.shouldReconnect = true
-    const token = getToken()
 
-    if (!token) {
-      console.warn('[WS] 无 Token，跳过连接')
-      return
+    let wsUrl = this.url
+
+    // 需要认证的连接通过 URL 查询参数传递 Token
+    if (this.requireToken) {
+      const token = getToken()
+      if (!token) {
+        console.warn('[WS] 无 Token，跳过连接')
+        return
+      }
+      wsUrl = `${this.url}?token=${encodeURIComponent(token)}`
     }
-
-    // 通过 URL 查询参数传递 Token（兼容性最好）
-    const wsUrl = `${this.url}?token=${encodeURIComponent(token)}`
 
     try {
       this.ws = new WebSocket(wsUrl)
@@ -48,7 +57,7 @@ export class DashboardWebSocket {
     }
 
     this.ws.onopen = () => {
-      console.log('[WS] 连接已建立')
+      console.log('[WS] 连接已建立:', this.url)
       this.reconnectIndex = 0
       this.setConnected(true)
     }
@@ -67,7 +76,7 @@ export class DashboardWebSocket {
     }
 
     this.ws.onclose = (event) => {
-      console.log(`[WS] 连接关闭 (code: ${event.code})`)
+      console.log(`[WS] 连接关闭 (code: ${event.code}):`, this.url)
       this.setConnected(false)
       this.ws = null
       if (this.shouldReconnect) {
@@ -120,7 +129,7 @@ export class DashboardWebSocket {
 
     const delay = RECONNECT_DELAYS[Math.min(this.reconnectIndex, MAX_RECONNECT_INDEX)]
     this.reconnectIndex++
-    console.log(`[WS] 将在 ${delay}ms 后重连 (第 ${this.reconnectIndex} 次)`)
+    console.log(`[WS] 将在 ${delay}ms 后重连 (第 ${this.reconnectIndex} 次):`, this.url)
 
     this.reconnectTimer = setTimeout(() => {
       this.connect()
@@ -136,13 +145,23 @@ export class DashboardWebSocket {
   }
 }
 
-/** 全局 WebSocket 实例 */
-let dashboardWs: DashboardWebSocket | null = null
+/** 全局 WebSocket 实例缓存（按路径区分） */
+const wsInstances = new Map<string, DashboardWebSocket>()
 
-/** 获取全局 WebSocket 实例（单例） */
+/** 获取管理后台仪表盘 WebSocket 实例（单例，需要 token） */
 export function getDashboardWebSocket(): DashboardWebSocket {
-  if (!dashboardWs) {
-    dashboardWs = new DashboardWebSocket()
+  const path = '/ws/dashboard'
+  if (!wsInstances.has(path)) {
+    wsInstances.set(path, new DashboardWebSocket(path, true))
   }
-  return dashboardWs
+  return wsInstances.get(path)!
+}
+
+/** 获取公开仪表盘 WebSocket 实例（单例，无需 token） */
+export function getPublicDashboardWebSocket(): DashboardWebSocket {
+  const path = '/ws/public/dashboard'
+  if (!wsInstances.has(path)) {
+    wsInstances.set(path, new DashboardWebSocket(path, false))
+  }
+  return wsInstances.get(path)!
 }

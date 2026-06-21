@@ -1,29 +1,15 @@
 import { useEffect } from 'react'
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { useServerStore } from '@/store/useServerStore'
+import PublicLayout from '@/components/PublicLayout'
 import Layout from '@/components/Layout'
 import Login from '@/pages/Login'
 import Setup from '@/pages/Setup'
+import PublicDashboard from '@/pages/PublicDashboard'
+import PublicServerDetail from '@/pages/PublicServerDetail'
 import Dashboard from '@/pages/Dashboard'
 import ServerDetail from '@/pages/ServerDetail'
 import AgentManagement from '@/pages/AgentManagement'
-
-/** 受保护路由：未登录时跳转到登录页 */
-function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const isAuthenticated = useServerStore((s) => s.isAuthenticated)
-  const needsSetup = useServerStore((s) => s.needsSetup)
-  const location = useLocation()
-
-  if (needsSetup) {
-    return <Navigate to="/setup" replace />
-  }
-
-  if (!isAuthenticated) {
-    return <Navigate to="/login" replace state={{ from: location }} />
-  }
-
-  return <>{children}</>
-}
 
 function App() {
   const initTheme = useServerStore((s) => s.initTheme)
@@ -32,6 +18,8 @@ function App() {
   const disconnectWebSocket = useServerStore((s) => s.disconnectWebSocket)
   const isAuthenticated = useServerStore((s) => s.isAuthenticated)
   const needsSetup = useServerStore((s) => s.needsSetup)
+  const authLoading = useServerStore((s) => s.authLoading)
+  const location = useLocation()
 
   // 初始化主题
   useEffect(() => {
@@ -43,32 +31,57 @@ function App() {
     checkSetupStatus()
   }, [checkSetupStatus])
 
-  // 认证状态变化时连接/断开 WebSocket
+  // 仅在访问管理后台相关页面时连接需要认证的 WebSocket
   useEffect(() => {
-    if (isAuthenticated && !needsSetup) {
+    const isAdminRoute = location.pathname.startsWith('/admin')
+    if (isAuthenticated && !needsSetup && isAdminRoute) {
       connectWebSocket()
       return () => {
         disconnectWebSocket()
       }
     }
-  }, [isAuthenticated, needsSetup, connectWebSocket, disconnectWebSocket])
+  }, [isAuthenticated, needsSetup, location.pathname, connectWebSocket, disconnectWebSocket])
+
+  // 初始化设置中显示加载状态
+  if (authLoading && needsSetup) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-background">
+        <div className="flex flex-col items-center gap-3">
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+          <p className="text-sm text-muted-foreground">加载中...</p>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <Routes>
-      <Route path="/login" element={<Login />} />
-      <Route path="/setup" element={<Setup />} />
+      {/* 初始化设置（未初始化时所有路由都指向 Setup） */}
+      {needsSetup && <Route path="*" element={<Setup />} />}
+
+      {/* 公开页面 (无需登录) */}
+      <Route element={<PublicLayout />}>
+        <Route path="/" element={<PublicDashboard />} />
+        <Route path="/server/:id" element={<PublicServerDetail />} />
+      </Route>
+
+      {/* 登录页 */}
       <Route
-        path="/"
-        element={
-          <ProtectedRoute>
-            <Layout />
-          </ProtectedRoute>
-        }
+        path="/login"
+        element={isAuthenticated ? <Navigate to="/admin" replace /> : <Login />}
+      />
+
+      {/* 管理后台 (需要登录) */}
+      <Route
+        path="/admin"
+        element={isAuthenticated ? <Layout /> : <Navigate to="/login" replace />}
       >
         <Route index element={<Dashboard />} />
-        <Route path="server/:id" element={<ServerDetail />} />
         <Route path="agents" element={<AgentManagement />} />
+        <Route path="server/:id" element={<ServerDetail />} />
       </Route>
+
+      {/* 兜底 */}
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   )

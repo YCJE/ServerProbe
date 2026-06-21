@@ -14,7 +14,7 @@ import {
   getToken,
   clearToken,
 } from '@/lib/api'
-import { getDashboardWebSocket } from '@/lib/websocket'
+import { getDashboardWebSocket, getPublicDashboardWebSocket } from '@/lib/websocket'
 
 /** 实时数据历史点（用于详情页实时图表） */
 export interface RealtimePoint {
@@ -40,6 +40,8 @@ interface ServerStoreState {
 
   // WebSocket 连接状态
   wsConnected: boolean
+  // 公开 WebSocket 连接状态
+  publicWsConnected: boolean
 
   // 主题
   theme: Theme
@@ -59,6 +61,8 @@ interface ServerStoreState {
   fetchServerDetail: (id: number) => Promise<void>
   connectWebSocket: () => void
   disconnectWebSocket: () => void
+  connectPublicDashboardWS: () => void
+  disconnectPublicDashboardWS: () => void
   handleDashboardMessage: (data: DashboardItem[]) => void
   setTheme: (theme: Theme) => void
   initTheme: () => void
@@ -95,6 +99,7 @@ export const useServerStore = create<ServerStoreState>((set, get) => ({
   dashboardData: new Map(),
   serversLoading: false,
   wsConnected: false,
+  publicWsConnected: false,
   theme: loadTheme(),
   currentServer: null,
   realtimeHistory: [],
@@ -209,6 +214,30 @@ export const useServerStore = create<ServerStoreState>((set, get) => ({
     const ws = getDashboardWebSocket()
     ws.disconnect()
     set({ wsConnected: false })
+  },
+
+  // 连接公开仪表盘 WebSocket（无需登录）
+  connectPublicDashboardWS: () => {
+    const ws = getPublicDashboardWebSocket()
+
+    ws.onStatusChange((connected) => {
+      set({ publicWsConnected: connected })
+    })
+
+    ws.onMessage((message) => {
+      if (message.servers && message.servers.length > 0) {
+        get().handleDashboardMessage(message.servers)
+      }
+    })
+
+    ws.connect()
+  },
+
+  // 断开公开仪表盘 WebSocket
+  disconnectPublicDashboardWS: () => {
+    const ws = getPublicDashboardWebSocket()
+    ws.disconnect()
+    set({ publicWsConnected: false })
   },
 
   // 处理仪表盘实时数据

@@ -26,6 +26,12 @@ func NewAuthHandler(adminRepo *repository.AdminRepository, jwtManager *pkg.JWTMa
 	}
 }
 
+// SetupRequest 首次设置请求
+type SetupRequest struct {
+	Username string `json:"username" binding:"required"`
+	Password string `json:"password" binding:"required"`
+}
+
 // LoginRequest 登录请求
 type LoginRequest struct {
 	Username string `json:"username" binding:"required"`
@@ -125,12 +131,20 @@ func (h *AuthHandler) HandleSetup(c *gin.Context) {
 		return
 	}
 
-	var req struct {
-		Username string `json:"username" binding:"required"`
-		Password string `json:"password" binding:"required"`
-	}
+	var req SetupRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "请求参数无效"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "参数错误"})
+		return
+	}
+
+	// 再次检查（防止 TOCTOU 竞争条件）
+	count, err = h.adminRepo.Count()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "检查管理员失败"})
+		return
+	}
+	if count > 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "管理员账户已存在"})
 		return
 	}
 
@@ -184,7 +198,7 @@ func (h *AuthHandler) HandleCheckSetup(c *gin.Context) {
 	count, err := h.adminRepo.Count()
 	if err != nil {
 		log.Printf("[SetupCheck] 查询管理员数量失败: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "检查失败", "detail": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "检查失败"})
 		return
 	}
 

@@ -78,7 +78,7 @@ func (m *Middleware) LoginRateLimit() gin.HandlerFunc {
 		// 每 5 分钟清理一次不活跃 IP 的记录，防止内存泄漏
 		if now.Sub(rateLimiter.lastClean) > 5*time.Minute {
 			for ip, attempts := range rateLimiter.attempts {
-				valid := attempts[:0]
+				valid := make([]time.Time, 0, len(attempts))
 				for _, t := range attempts {
 					if t.After(cutoff) {
 						valid = append(valid, t)
@@ -95,7 +95,7 @@ func (m *Middleware) LoginRateLimit() gin.HandlerFunc {
 
 		// 清理当前 IP 的过期记录
 		attempts := rateLimiter.attempts[ip]
-		valid := attempts[:0]
+		valid := make([]time.Time, 0, len(attempts))
 		for _, t := range attempts {
 			if t.After(cutoff) {
 				valid = append(valid, t)

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -35,10 +36,29 @@ func NewAgentHandler(
 		validator:  validator,
 		upgrader: websocket.Upgrader{
 			CheckOrigin: func(r *http.Request) bool {
-				return true // 允许所有来源（生产环境应限制）
+				// Agent 连接不需要 Origin 检查（非浏览器客户端）
+				return true
 			},
 		},
 	}
+}
+
+// agentWSConn 封装 Agent WebSocket 连接，添加写锁
+type agentWSConn struct {
+	conn *websocket.Conn
+	mu   sync.Mutex
+}
+
+func (w *agentWSConn) writeMessage(messageType int, data []byte) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.conn.WriteMessage(messageType, data)
+}
+
+func (w *agentWSConn) writeJSON(v interface{}) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.conn.WriteJSON(v)
 }
 
 // HandleWebSocket Agent WebSocket 接入端点
@@ -49,6 +69,8 @@ func (h *AgentHandler) HandleWebSocket(c *gin.Context) {
 		log.Printf("WebSocket 升级失败: %v", err)
 		return
 	}
+
+	ws := &agentWSConn{conn: conn}
 
 	var agentID int64
 	var registered bool
@@ -73,7 +95,7 @@ func (h *AgentHandler) HandleWebSocket(c *gin.Context) {
 	// 启动 ping 协程
 	go func() {
 		for range pingTicker.C {
-			if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+			if err := ws.writeMessage(websocket.PingMessage, nil); err != nil {
 				return
 			}
 		}
@@ -97,16 +119,16 @@ func (h *AgentHandler) HandleWebSocket(c *gin.Context) {
 		// 根据消息类型处理
 		switch msg.Type {
 		case sharedmodel.MsgTypeRegister:
-			h.handleRegister(conn, &msg, &agentID, &registered)
+			h.handleRegister(ws, &msg, &agentID, &registered)
 
 		case sharedmodel.MsgTypeReport:
-			h.handleReport(conn, &msg, agentID, registered)
+			h.handleReport(ws, &msg, agentID, registered)
 
 		case sharedmodel.MsgTypePingResult:
-			h.handlePingResult(conn, &msg, agentID, registered)
+			h.handlePingResult(ws, &msg, agentID, registered)
 
 		case sharedmodel.MsgTypeHeartbeat:
-			h.handleHeartbeat(conn, &msg, agentID, registered)
+			h.handleHeartbeat(ws, &msg, agentID, registered)
 
 		default:
 			log.Printf("未知消息类型: %s", msg.Type)
@@ -115,7 +137,7 @@ func (h *AgentHandler) HandleWebSocket(c *gin.Context) {
 }
 
 // handleRegister 处理注册消息
-func (h *AgentHandler) handleRegister(conn *websocket.Conn, msg *sharedmodel.WSMessage, agentID *int64, registered *bool) {
+func (h *AgentHandler) handleRegister(ws *agentWSConn, msg *sharedmodel.WSMessage, agentID *int64, registered *bool) {
 	req := service.RegisterAgentRequest{
 		Code:            msg.Code,
 		Hostname:        msg.Hostname,
@@ -132,7 +154,7 @@ func (h *AgentHandler) handleRegister(conn *websocket.Conn, msg *sharedmodel.WSM
 			Type:   sharedmodel.MsgTypeRegisterFail,
 			Reason: err.Error(),
 		}
-		_ = conn.WriteJSON(response)
+		_ = ws.writeJSON(response)
 		return
 	}
 
@@ -140,21 +162,21 @@ func (h *AgentHandler) handleRegister(conn *websocket.Conn, msg *sharedmodel.WSM
 	*registered = true
 
 	// 注册连接
-	h.monitor.RegisterConnection(result.AgentID, conn)
+	h.monitor.RegisterConnection(result.AgentID, ws.conn)
 
 	// 发送注册成功响应
 	response := sharedmodel.WSMessage{
 		Type:  sharedmodel.MsgTypeRegisterOK,
 		Token: result.Token,
 	}
-	_ = conn.WriteJSON(response)
+	_ = ws.writeJSON(response)
 
 	// 发送初始配置
-	h.sendConfigUpdate(conn, result.AgentID)
+	h.sendConfigUpdate(ws, result.AgentID)
 }
 
 // handleReport 处理数据上报
-func (h *AgentHandler) handleReport(conn *websocket.Conn, msg *sharedmodel.WSMessage, agentID int64, registered bool) {
+func (h *AgentHandler) handleReport(ws *agentWSConn, msg *sharedmodel.WSMessage, agentID int64, registered bool) {
 	if !registered || agentID == 0 {
 		return
 	}
@@ -194,7 +216,7 @@ func (h *AgentHandler) handleReport(conn *websocket.Conn, msg *sharedmodel.WSMes
 }
 
 // handlePingResult 处理 Ping 结果
-func (h *AgentHandler) handlePingResult(conn *websocket.Conn, msg *sharedmodel.WSMessage, agentID int64, registered bool) {
+func (h *AgentHandler) handlePingResult(ws *agentWSConn, msg *sharedmodel.WSMessage, agentID int64, registered bool) {
 	if !registered || agentID == 0 {
 		return
 	}
@@ -221,7 +243,7 @@ func (h *AgentHandler) handlePingResult(conn *websocket.Conn, msg *sharedmodel.W
 }
 
 // handleHeartbeat 处理心跳
-func (h *AgentHandler) handleHeartbeat(conn *websocket.Conn, msg *sharedmodel.WSMessage, agentID int64, registered bool) {
+func (h *AgentHandler) handleHeartbeat(ws *agentWSConn, msg *sharedmodel.WSMessage, agentID int64, registered bool) {
 	if !registered || agentID == 0 {
 		return
 	}
@@ -232,11 +254,11 @@ func (h *AgentHandler) handleHeartbeat(conn *websocket.Conn, msg *sharedmodel.WS
 	response := sharedmodel.WSMessage{
 		Type: sharedmodel.MsgTypeHeartbeatAck,
 	}
-	_ = conn.WriteJSON(response)
+	_ = ws.writeJSON(response)
 }
 
 // sendConfigUpdate 发送配置更新
-func (h *AgentHandler) sendConfigUpdate(conn *websocket.Conn, agentID int64) {
+func (h *AgentHandler) sendConfigUpdate(ws *agentWSConn, agentID int64) {
 	config, err := h.configSync.GetAgentConfig()
 	if err != nil {
 		log.Printf("获取 Agent %d 配置失败: %v", agentID, err)
@@ -248,7 +270,7 @@ func (h *AgentHandler) sendConfigUpdate(conn *websocket.Conn, agentID int64) {
 		PingTargets:  config.PingTargets,
 		PingInterval: config.PingInterval,
 	}
-	_ = conn.WriteJSON(response)
+	_ = ws.writeJSON(response)
 }
 
 // HandleGetAgentConfig 处理 Agent 配置拉取

@@ -1,8 +1,8 @@
-import { useEffect, useState, useMemo, useCallback } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useServerStore } from '@/store/useServerStore'
-import { getServerHistory } from '@/lib/api'
-import type { TimeRange, HistoryData, PingResult } from '@/types'
+import { getPublicServers } from '@/lib/api'
+import type { ServerData, PingResult } from '@/types'
 import CpuChart from '@/components/CpuChart'
 import MemoryChart from '@/components/MemoryChart'
 import PingChart from '@/components/PingChart'
@@ -17,39 +17,33 @@ import {
   getLossColor,
 } from '@/lib/utils'
 
-/** 时间范围选项 */
-const TIME_RANGES: { value: TimeRange; label: string }[] = [
-  { value: '1h', label: '1小时' },
-  { value: '6h', label: '6小时' },
-  { value: '12h', label: '12小时' },
-  { value: '1d', label: '1天' },
-  { value: '2d', label: '2天' },
-]
-
-/** 判断是否为实时范围（使用 WebSocket 数据） */
-function isRealtimeRange(range: TimeRange): boolean {
-  return range === '1h' || range === '6h'
+/** 实时历史数据点（公开详情页本地维护） */
+interface LocalRealtimePoint {
+  timestamp: number
+  cpu: number
+  mem: number
+  ping_data: PingResult[]
 }
 
-/** 服务器详情页 */
-export default function ServerDetail() {
+/** 实时历史数据最大保留点数 */
+const MAX_POINTS = 1200
+
+/** 公开服务器详情页（无需登录，仅显示基本监控信息） */
+export default function PublicServerDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const serverId = parseInt(id || '0', 10)
 
-  // Store
-  const currentServer = useServerStore((s) => s.currentServer)
-  const currentServerLoading = useServerStore((s) => s.currentServerLoading)
-  const fetchServerDetail = useServerStore((s) => s.fetchServerDetail)
-  const realtimeHistory = useServerStore((s) => s.realtimeHistory)
-  const clearRealtimeHistory = useServerStore((s) => s.clearRealtimeHistory)
-  const theme = useServerStore((s) => s.theme)
   const dashboardData = useServerStore((s) => s.dashboardData)
+  const servers = useServerStore((s) => s.servers)
+  const connectPublicDashboardWS = useServerStore((s) => s.connectPublicDashboardWS)
+  const disconnectPublicDashboardWS = useServerStore((s) => s.disconnectPublicDashboardWS)
+  const theme = useServerStore((s) => s.theme)
+  const publicWsConnected = useServerStore((s) => s.publicWsConnected)
 
-  // 本地状态
-  const [timeRange, setTimeRange] = useState<TimeRange>('1h')
-  const [historyData, setHistoryData] = useState<HistoryData | null>(null)
-  const [historyLoading, setHistoryLoading] = useState(false)
+  // 本地维护的实时历史数据
+  const [history, setHistory] = useState<LocalRealtimePoint[]>([])
+  const [loading, setLoading] = useState(true)
 
   const isDark = useMemo(() => {
     if (theme === 'dark') return true
@@ -57,61 +51,45 @@ export default function ServerDetail() {
     return window.matchMedia('(prefers-color-scheme: dark)').matches
   }, [theme])
 
-  // 加载服务器详情
+  // 连接公开 WebSocket
   useEffect(() => {
-    if (serverId > 0) {
-      fetchServerDetail(serverId).catch(() => {})
-      clearRealtimeHistory()
-    }
-    return () => {
-      clearRealtimeHistory()
-    }
-  }, [serverId, fetchServerDetail, clearRealtimeHistory])
+    connectPublicDashboardWS()
+    return () => disconnectPublicDashboardWS()
+  }, [connectPublicDashboardWS, disconnectPublicDashboardWS])
 
-  // 加载历史数据（非实时范围时）
-  const loadHistory = useCallback(async (range: TimeRange) => {
-    if (isRealtimeRange(range)) {
-      setHistoryData(null)
-      return
-    }
-
-    setHistoryLoading(true)
-    try {
-      const data = await getServerHistory(serverId, range)
-      setHistoryData(data)
-    } catch (err) {
-      console.error('加载历史数据失败:', err)
-      setHistoryData(null)
-    } finally {
-      setHistoryLoading(false)
-    }
-  }, [serverId])
-
-  // 时间范围变化时加载历史数据
+  // 首次加载时通过公开 API 获取服务器列表（用于在没有 WS 数据时也能展示）
   useEffect(() => {
-    loadHistory(timeRange)
-  }, [timeRange, loadHistory])
+    if (servers.length === 0) {
+      getPublicServers()
+        .then((res) => {
+          // 仅触发 store 更新，数据通过 handleDashboardMessage 流入 servers
+          // 这里不直接操作 store，等待 WS 推送
+          if (res.servers.length === 0) {
+            setLoading(false)
+          }
+        })
+        .catch(() => {
+          setLoading(false)
+        })
+    } else {
+      setLoading(false)
+    }
+  }, [servers.length])
 
-  // 定时刷新历史数据（非实时范围时，每 5 分钟刷新）
-  useEffect(() => {
-    if (isRealtimeRange(timeRange)) return
+  // 从 store 中的 servers 列表查找当前服务器基本信息
+  const baseServer = useMemo(() => {
+    return servers.find((s) => s.id === serverId) || null
+  }, [servers, serverId])
 
-    const interval = setInterval(() => {
-      loadHistory(timeRange)
-    }, 5 * 60 * 1000)
-
-    return () => clearInterval(interval)
-  }, [timeRange, loadHistory])
-
-  // 实时数据来自 WebSocket 的 dashboardData
+  // 实时数据
   const liveData = dashboardData.get(serverId)
 
-  // 合并当前服务器信息和实时数据
-  const displayServer = useMemo(() => {
-    if (!currentServer) return null
-    if (liveData) {
+  // 合并基本信息和实时数据
+  const displayServer = useMemo<ServerData | null>(() => {
+    if (!baseServer && !liveData) return null
+    if (baseServer && liveData) {
       return {
-        ...currentServer,
+        ...baseServer,
         online: liveData.online,
         cpu: liveData.cpu,
         mem: liveData.mem,
@@ -121,49 +99,71 @@ export default function ServerDetail() {
         net_tx: liveData.net_tx,
         uptime: liveData.uptime,
         load_1: liveData.load_1,
-        disk_usage: liveData.disk_usage,
+        disk_usage: liveData.disk_usage ?? baseServer.disk_usage ?? 0,
         ping_data: liveData.ping_data,
       }
     }
-    return currentServer
-  }, [currentServer, liveData])
-
-  // 图表数据
-  const chartData = useMemo(() => {
-    if (isRealtimeRange(timeRange)) {
-      // 使用实时历史数据
-      const points = realtimeHistory
-      const cutoffTime = timeRange === '1h'
-        ? Date.now() / 1000 - 3600
-        : Date.now() / 1000 - 6 * 3600
-
-      const filtered = points.filter((p) => p.timestamp >= cutoffTime)
-
+    if (liveData) {
       return {
-        timestamps: filtered.map((p) => p.timestamp),
-        cpuData: filtered.map((p) => p.cpu),
-        memData: filtered.map((p) => p.mem),
-        pingData: filtered.map((p) => p.ping_data || []),
+        id: liveData.agent_id,
+        hostname: liveData.hostname || `Agent-${liveData.agent_id}`,
+        display_name: liveData.display_name || '',
+        os: baseServer?.os || '',
+        arch: baseServer?.arch || '',
+        agent_version: baseServer?.agent_version || '',
+        online: liveData.online,
+        last_seen: liveData.timestamp,
+        cpu: liveData.cpu,
+        mem: liveData.mem,
+        mem_total: liveData.mem_total,
+        mem_used: liveData.mem_used,
+        net_rx: liveData.net_rx,
+        net_tx: liveData.net_tx,
+        uptime: liveData.uptime,
+        load_1: liveData.load_1,
+        disk_usage: liveData.disk_usage ?? 0,
+        ping_data: liveData.ping_data || [],
       }
     }
+    return baseServer
+  }, [baseServer, liveData])
 
-    // 使用历史 API 数据
-    if (!historyData || !historyData.points) {
-      return { timestamps: [], cpuData: [], memData: [], pingData: [] }
+  // 收集实时数据点到本地历史
+  useEffect(() => {
+    if (liveData) {
+      setLoading(false)
+      const point: LocalRealtimePoint = {
+        timestamp: liveData.timestamp || Date.now() / 1000,
+        cpu: liveData.cpu,
+        mem: liveData.mem,
+        ping_data: liveData.ping_data || [],
+      }
+      setHistory((prev) => {
+        const next = [...prev, point]
+        if (next.length > MAX_POINTS) {
+          next.splice(0, next.length - MAX_POINTS)
+        }
+        return next
+      })
     }
+  }, [liveData])
 
+  // 图表数据（最近 1 小时）
+  const chartData = useMemo(() => {
+    const cutoffTime = Date.now() / 1000 - 3600
+    const filtered = history.filter((p) => p.timestamp >= cutoffTime)
     return {
-      timestamps: historyData.points.map((p) => p.timestamp),
-      cpuData: historyData.points.map((p) => p.cpu_usage),
-      memData: historyData.points.map((p) => p.mem_usage),
-      pingData: historyData.points.map((p) => p.ping_data || []),
+      timestamps: filtered.map((p) => p.timestamp),
+      cpuData: filtered.map((p) => p.cpu),
+      memData: filtered.map((p) => p.mem),
+      pingData: filtered.map((p) => p.ping_data || []),
     }
-  }, [timeRange, realtimeHistory, historyData])
+  }, [history])
 
   // 加载中
-  if (currentServerLoading && !currentServer) {
+  if (loading && !displayServer) {
     return (
-      <div className="flex h-full items-center justify-center">
+      <div className="flex h-full items-center justify-center py-20">
         <div className="flex flex-col items-center gap-3">
           <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
           <p className="text-sm text-muted-foreground">加载中...</p>
@@ -175,12 +175,12 @@ export default function ServerDetail() {
   if (!displayServer) {
     return (
       <div className="flex flex-col items-center justify-center py-16">
-        <p className="text-sm text-muted-foreground">服务器不存在</p>
+        <p className="text-sm text-muted-foreground">服务器不存在或未上线</p>
         <button
-          onClick={() => navigate('/admin')}
+          onClick={() => navigate('/')}
           className="mt-3 rounded-lg bg-primary px-4 py-2 text-sm text-primary-foreground hover:bg-primary/90"
         >
-          返回仪表盘
+          返回首页
         </button>
       </div>
     )
@@ -196,7 +196,7 @@ export default function ServerDetail() {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <button
-            onClick={() => navigate('/admin')}
+            onClick={() => navigate('/')}
             className="flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-card text-foreground transition-colors hover:bg-accent"
           >
             <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -205,7 +205,9 @@ export default function ServerDetail() {
           </button>
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-xl font-bold text-foreground">{displayServer.hostname}</h1>
+              <h1 className="text-xl font-bold text-foreground">
+                {displayServer.display_name || displayServer.hostname}
+              </h1>
               <span
                 className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${
                   displayServer.online
@@ -222,26 +224,20 @@ export default function ServerDetail() {
               </span>
             </div>
             <p className="mt-0.5 text-sm text-muted-foreground">
-              {displayServer.os} · {displayServer.arch} · Agent v{displayServer.agent_version}
+              {displayServer.hostname}
+              {displayServer.os ? ` · ${displayServer.os}` : ''}
             </p>
           </div>
         </div>
 
-        {/* 时间范围切换 */}
-        <div className="flex items-center gap-1 rounded-lg border border-border bg-card p-1">
-          {TIME_RANGES.map((range) => (
-            <button
-              key={range.value}
-              onClick={() => setTimeRange(range.value)}
-              className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-                timeRange === range.value
-                  ? 'bg-primary text-primary-foreground'
-                  : 'text-muted-foreground hover:bg-accent hover:text-foreground'
-              }`}
-            >
-              {range.label}
-            </button>
-          ))}
+        {/* 实时连接状态 */}
+        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <span
+            className={`inline-block h-2 w-2 rounded-full ${
+              publicWsConnected ? 'bg-success animate-pulse' : 'bg-destructive'
+            }`}
+          />
+          <span>{publicWsConnected ? '实时数据' : '已断开'}</span>
         </div>
       </div>
 
@@ -287,9 +283,7 @@ export default function ServerDetail() {
       <div className="rounded-xl border border-border bg-card p-4">
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-sm font-semibold text-foreground">CPU 使用率</h2>
-          <span className="text-xs text-muted-foreground">
-            {isRealtimeRange(timeRange) ? '实时数据' : '历史数据'}
-          </span>
+          <span className="text-xs text-muted-foreground">最近 1 小时</span>
         </div>
         {chartData.timestamps.length > 0 ? (
           <CpuChart
@@ -299,7 +293,7 @@ export default function ServerDetail() {
             height={260}
           />
         ) : (
-          <EmptyChart loading={historyLoading} />
+          <EmptyChart />
         )}
       </div>
 
@@ -307,9 +301,7 @@ export default function ServerDetail() {
       <div className="rounded-xl border border-border bg-card p-4">
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-sm font-semibold text-foreground">内存使用率</h2>
-          <span className="text-xs text-muted-foreground">
-            {isRealtimeRange(timeRange) ? '实时数据' : '历史数据'}
-          </span>
+          <span className="text-xs text-muted-foreground">最近 1 小时</span>
         </div>
         {chartData.timestamps.length > 0 ? (
           <MemoryChart
@@ -319,7 +311,7 @@ export default function ServerDetail() {
             height={260}
           />
         ) : (
-          <EmptyChart loading={historyLoading} />
+          <EmptyChart />
         )}
       </div>
 
@@ -327,9 +319,7 @@ export default function ServerDetail() {
       <div className="rounded-xl border border-border bg-card p-4">
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-sm font-semibold text-foreground">三网延迟与丢包率</h2>
-          <span className="text-xs text-muted-foreground">
-            {isRealtimeRange(timeRange) ? '实时数据' : '历史数据'}
-          </span>
+          <span className="text-xs text-muted-foreground">最近 1 小时</span>
         </div>
         {chartData.timestamps.length > 0 ? (
           <PingChart
@@ -339,20 +329,18 @@ export default function ServerDetail() {
             height={400}
           />
         ) : (
-          <EmptyChart loading={historyLoading} />
+          <EmptyChart />
         )}
       </div>
 
       {/* 系统信息 + 三网详情 */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        {/* 系统信息 */}
+        {/* 系统信息（不显示敏感信息） */}
         <div className="rounded-xl border border-border bg-card p-4">
           <h2 className="mb-3 text-sm font-semibold text-foreground">系统信息</h2>
           <div className="grid grid-cols-2 gap-3 text-sm">
             <InfoItem label="主机名" value={displayServer.hostname} />
-            <InfoItem label="操作系统" value={displayServer.os} />
-            <InfoItem label="架构" value={displayServer.arch} />
-            <InfoItem label="Agent 版本" value={displayServer.agent_version} />
+            <InfoItem label="操作系统" value={displayServer.os || '-'} />
             <InfoItem label="运行时间" value={displayServer.online ? formatUptime(displayServer.uptime) : '---'} />
             <InfoItem label="负载(1分)" value={displayServer.load_1?.toFixed(2) || '---'} />
           </div>
@@ -442,17 +430,13 @@ function InfoItem({ label, value }: { label: string; value: string }) {
 }
 
 /** 空图表占位 */
-function EmptyChart({ loading }: { loading: boolean }) {
+function EmptyChart() {
   return (
     <div className="flex h-[260px] items-center justify-center">
-      {loading ? (
-        <div className="flex flex-col items-center gap-2">
-          <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-          <span className="text-xs text-muted-foreground">加载中...</span>
-        </div>
-      ) : (
-        <span className="text-sm text-muted-foreground">暂无数据</span>
-      )}
+      <div className="flex flex-col items-center gap-2">
+        <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+        <span className="text-xs text-muted-foreground">等待实时数据...</span>
+      </div>
     </div>
   )
 }

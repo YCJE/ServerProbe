@@ -53,8 +53,8 @@ async function request<T>(
 
   if (response.status === 401) {
     clearToken()
-    // 不在 setup-status 请求中跳转
-    if (!path.includes('/auth/setup-status')) {
+    // 不在 setup-status 和公开 API 请求中跳转
+    if (!path.includes('/auth/setup-status') && !path.startsWith('/public/')) {
       window.location.href = '/login'
     }
     throw new Error('未授权，请重新登录')
@@ -172,4 +172,39 @@ export async function getAgents(): Promise<{ agents: AgentInfo[] }> {
 /** 删除 Agent */
 export async function deleteAgent(id: number): Promise<void> {
   await request(`/agents/${id}`, { method: 'DELETE' })
+}
+
+// ==================== 公开 API (无需登录) ====================
+
+/** 公开服务器列表响应（过滤了敏感字段） */
+export interface PublicServerItem {
+  id: number
+  display_name: string
+  hostname: string
+  os: string
+  online: boolean
+  cpu: number
+  mem: number
+  mem_total: number
+  mem_used: number
+  net_rx: number
+  net_tx: number
+  uptime: number
+  load_1: number
+  disk_usage: number
+}
+
+/** 公开服务器列表响应 */
+export interface PublicServerListResponse {
+  servers: PublicServerItem[]
+}
+
+/** 获取公开服务器列表 (无需登录) */
+export async function getPublicServers(): Promise<PublicServerListResponse> {
+  return request<PublicServerListResponse>('/public/servers')
+}
+
+/** 获取公开仪表盘数据 (无需登录) */
+export async function getPublicDashboard(): Promise<{ servers: DashboardItem[] }> {
+  return request<{ servers: DashboardItem[] }>('/public/dashboard')
 }

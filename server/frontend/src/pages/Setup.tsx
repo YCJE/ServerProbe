@@ -22,11 +22,11 @@ export default function Setup() {
     checkSetupStatus()
   }, [checkSetupStatus])
 
-  // 如果不需要初始化，跳转到登录或首页
+  // 如果不需要初始化，跳转到登录或管理后台
   useEffect(() => {
     if (!needsSetup && !authLoading) {
       if (isAuthenticated) {
-        navigate('/', { replace: true })
+        navigate('/admin', { replace: true })
       } else {
         navigate('/login', { replace: true })
       }
@@ -71,7 +71,7 @@ export default function Setup() {
 
     try {
       await setup(username.trim(), password)
-      navigate('/', { replace: true })
+      navigate('/admin', { replace: true })
     } catch (err) {
       setError(err instanceof Error ? err.message : '设置失败')
     }

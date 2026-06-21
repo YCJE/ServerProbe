@@ -217,3 +217,106 @@ func (h *ServerHandler) HandleDashboard(c *gin.Context) {
 	items := h.monitor.GetDashboardData()
 	c.JSON(http.StatusOK, gin.H{"servers": items})
 }
+
+// HandlePublicServers 公开服务器列表 (无需登录，仅返回非敏感信息)
+// 路由: GET /api/v1/public/servers
+func (h *ServerHandler) HandlePublicServers(c *gin.Context) {
+	agents, err := h.agentRepo.List()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取服务器列表失败"})
+		return
+	}
+
+	type PublicServerItem struct {
+		ID          int64   `json:"id"`
+		DisplayName string  `json:"display_name"`
+		Hostname    string  `json:"hostname"`
+		OS          string  `json:"os"`
+		Online      bool    `json:"online"`
+		CPU         float64 `json:"cpu"`
+		Mem         float64 `json:"mem"`
+		MemTotal    uint64  `json:"mem_total"`
+		MemUsed     uint64  `json:"mem_used"`
+		NetRx       uint64  `json:"net_rx"`
+		NetTx       uint64  `json:"net_tx"`
+		Uptime      uint64  `json:"uptime"`
+		Load1       float64 `json:"load_1"`
+		DiskUsage   float64 `json:"disk_usage"`
+	}
+
+	items := make([]PublicServerItem, 0, len(agents))
+	for _, agent := range agents {
+		item := PublicServerItem{
+			ID:          agent.ID,
+			DisplayName: agent.DisplayName,
+			Hostname:    agent.Hostname,
+			OS:          agent.OS,
+			Online:      h.monitor.IsOnline(agent.ID),
+		}
+
+		if rb := h.monitor.GetRingBuffer(agent.ID); rb != nil {
+			points := rb.Latest(1)
+			if len(points) > 0 {
+				p := points[0]
+				item.CPU = p.CPU
+				item.Mem = p.Mem
+				item.MemTotal = p.MemTotal
+				item.MemUsed = p.MemUsed
+				item.NetRx = p.NetRx
+				item.NetTx = p.NetTx
+				item.Uptime = p.Uptime
+				item.Load1 = p.Load1
+				item.DiskUsage = calcDiskUsage(p.Disks)
+			}
+		}
+
+		items = append(items, item)
+	}
+
+	c.JSON(http.StatusOK, gin.H{"servers": items})
+}
+
+// HandlePublicDashboard 公开仪表盘数据 (无需登录)
+// 路由: GET /api/v1/public/dashboard
+func (h *ServerHandler) HandlePublicDashboard(c *gin.Context) {
+	items := h.monitor.GetDashboardData()
+	// 过滤敏感字段，只保留公开展示所需的数据
+	type PublicDashboardItem struct {
+		AgentID     int64                    `json:"agent_id"`
+		Hostname    string                   `json:"hostname"`
+		DisplayName string                   `json:"display_name"`
+		Online      bool                     `json:"online"`
+		CPU         float64                  `json:"cpu"`
+		Mem         float64                  `json:"mem"`
+		MemTotal    uint64                   `json:"mem_total"`
+		MemUsed     uint64                   `json:"mem_used"`
+		NetRx       uint64                   `json:"net_rx"`
+		NetTx       uint64                   `json:"net_tx"`
+		Load1       float64                  `json:"load_1"`
+		Uptime      uint64                   `json:"uptime"`
+		PingData    []sharedmodel.PingResult `json:"ping_data"`
+		Timestamp   int64                    `json:"timestamp"`
+	}
+
+	publicItems := make([]PublicDashboardItem, 0, len(items))
+	for _, item := range items {
+		publicItems = append(publicItems, PublicDashboardItem{
+			AgentID:     item.AgentID,
+			Hostname:    item.Hostname,
+			DisplayName: item.DisplayName,
+			Online:      item.Online,
+			CPU:         item.CPU,
+			Mem:         item.Mem,
+			MemTotal:    item.MemTotal,
+			MemUsed:     item.MemUsed,
+			NetRx:       item.NetRx,
+			NetTx:       item.NetTx,
+			Load1:       item.Load1,
+			Uptime:      item.Uptime,
+			PingData:    item.PingData,
+			Timestamp:   item.Timestamp,
+		})
+	}
+
+	c.JSON(http.StatusOK, gin.H{"servers": publicItems})
+}

@@ -28,10 +28,10 @@ export default function Login() {
     }
   }, [needsSetup, navigate])
 
-  // 已登录则跳转到首页
+  // 已登录则跳转到管理后台
   useEffect(() => {
     if (isAuthenticated && !needsSetup) {
-      navigate('/', { replace: true })
+      navigate('/admin', { replace: true })
     }
   }, [isAuthenticated, needsSetup, navigate])
 
@@ -50,7 +50,7 @@ export default function Login() {
 
     try {
       await login(username.trim(), password)
-      navigate('/', { replace: true })
+      navigate('/admin', { replace: true })
     } catch (err) {
       setError(err instanceof Error ? err.message : '登录失败')
     }

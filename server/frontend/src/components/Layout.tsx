@@ -28,15 +28,10 @@ export default function Layout() {
 
   const navGroups = [
     {
-      title: '服务器展示',
-      items: [
-        { to: '/', label: '仪表盘', icon: '▣', end: true },
-      ],
-    },
-    {
       title: '管理',
       items: [
-        { to: '/agents', label: 'Agent 管理', icon: '⬡', end: false },
+        { to: '/admin', label: '仪表盘', icon: '▣', end: true },
+        { to: '/admin/agents', label: 'Agent 管理', icon: '⬡', end: false },
       ],
     },
   ]
@@ -116,6 +111,15 @@ export default function Layout() {
 
           {/* 侧边栏底部信息 */}
           <div className="absolute bottom-0 left-0 w-56 border-t border-border p-3 text-xs text-muted-foreground">
+            <a
+              href="/"
+              className="mb-2 flex items-center gap-1.5 rounded-md px-2 py-1.5 text-foreground transition-colors hover:bg-accent"
+            >
+              <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+              </svg>
+              返回公开页
+            </a>
             <p>纯只读安全探针</p>
             <p className="mt-1 text-muted-foreground/60">v1.0.0</p>
           </div>

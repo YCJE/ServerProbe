@@ -64,15 +64,25 @@ func NewRouter(
 			auth.POST("/logout", authHandler.HandleLogout)
 		}
 
+		// 公开 API（无需登录，仅返回非敏感信息）
+		public := api.Group("/public")
+		{
+			public.GET("/servers", serverHandler.HandlePublicServers)
+			public.GET("/dashboard", serverHandler.HandlePublicDashboard)
+		}
+
+		// 公开仪表盘 WebSocket（无需登录）
+		r.GET("/ws/public/dashboard", dashboardWSHandler.HandlePublicDashboardWS)
+
+		// 管理员仪表盘 WebSocket（需要 token）
+		r.GET("/ws/dashboard", dashboardWSHandler.HandleDashboardWS)
+
 		// Agent 相关
 		agent := api.Group("/agent")
 		{
 			agent.GET("/config", agentHandler.HandleGetAgentConfig)
 			agent.GET("/report", agentHandler.HandleWebSocket)
 		}
-
-		// 仪表盘 WebSocket（token 通过 query 参数传递，不需要 AuthRequired 中间件）
-		r.GET("/ws/dashboard", dashboardWSHandler.HandleDashboardWS)
 
 		// 需要认证的 API
 		protected := api.Group("")

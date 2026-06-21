@@ -13,6 +13,13 @@ import {
 
 interface ServerCardProps {
   server: ServerData
+  /**
+   * 链接基础路径。
+   * - 公开页面传 "" (空字符串)，链接为 `/server/:id`
+   * - 管理页面传 "/admin"，链接为 `/admin/server/:id`
+   * 默认为 "/admin"（保持向后兼容）
+   */
+  basePath?: string
 }
 
 /** 进度条组件 */
@@ -53,11 +60,11 @@ function PingInfo({ ping, online }: { ping?: PingResult; online: boolean }) {
 }
 
 /** 服务器卡片组件 */
-export default function ServerCard({ server }: ServerCardProps) {
+export default function ServerCard({ server, basePath = '/admin' }: ServerCardProps) {
   const navigate = useNavigate()
 
   const handleClick = () => {
-    navigate(`/server/${server.id}`)
+    navigate(`${basePath}/server/${server.id}`)
   }
 
   const memUsagePercent = server.mem_total > 0
