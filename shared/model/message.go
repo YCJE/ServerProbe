@@ -2,15 +2,18 @@ package model
 
 // WSMessage 是 WebSocket 通信的顶层消息封装
 type WSMessage struct {
-	Type      string      `json:"type"`      // 消息类型
-	Token     string      `json:"token"`     // Agent Token（register 时为空）
-	Timestamp int64       `json:"timestamp"` // Unix 时间戳
-	Hostname  string      `json:"hostname"`  // 主机名
-	OS        string      `json:"os"`        // 操作系统
-	Code      string      `json:"code"`      // 注册码（仅 register 消息）
-	Data      *MetricData `json:"data"`      // 监控数据（仅 report 消息）
-	PingData  []PingResult `json:"ping_data"` // Ping 结果（仅 ping_result 消息）
-	Reason    string      `json:"reason"`    // 失败原因（仅 register_fail 消息）
+	Type            string      `json:"type"`            // 消息类型
+	Token           string      `json:"token"`           // Agent Token（register 时为空）
+	Timestamp       int64       `json:"timestamp"`       // Unix 时间戳
+	Hostname        string      `json:"hostname"`        // 主机名
+	OS              string      `json:"os"`              // 操作系统
+	Arch            string      `json:"arch"`            // CPU 架构
+	AgentVersion    string      `json:"agent_version"`   // Agent 版本
+	HostFingerprint string      `json:"host_fingerprint"` // 主机指纹
+	Code            string      `json:"code"`            // 注册码（仅 register 消息）
+	Data            *MetricData `json:"data"`            // 监控数据（仅 report 消息）
+	PingData        []PingResult `json:"ping_data"`       // Ping 结果（仅 ping_result 消息）
+	Reason          string      `json:"reason"`          // 失败原因（仅 register_fail 消息）
 
 	// config_update 消息字段
 	PingTargets  []PingTarget `json:"ping_targets"`

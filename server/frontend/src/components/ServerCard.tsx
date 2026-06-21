@@ -73,10 +73,10 @@ export default function ServerCard({ server }: ServerCardProps) {
       <div className="mb-3 flex items-start justify-between">
         <div className="min-w-0 flex-1">
           <h3 className="truncate text-base font-semibold text-foreground">
-            {server.hostname}
+            {server.display_name || server.hostname}
           </h3>
           <p className="mt-0.5 truncate text-xs text-muted-foreground">
-            {server.os} · {server.arch}
+            {server.hostname} · {server.os} · {server.arch}
           </p>
         </div>
         <div className="ml-2 flex shrink-0 items-center gap-1.5">

@@ -35,6 +35,21 @@ func NewSQLiteDB(dataDir string) (*SQLiteDB, error) {
 		return nil, fmt.Errorf("打开 SQLite 失败: %w", err)
 	}
 
+	// 启用 WAL 模式，提高并发读写性能
+	sqlDB, err := db.DB()
+	if err != nil {
+		return nil, fmt.Errorf("获取 SQL DB 失败: %w", err)
+	}
+	if _, err := sqlDB.Exec("PRAGMA journal_mode=WAL;"); err != nil {
+		log.Printf("警告: 设置 WAL 模式失败: %v", err)
+	}
+	if _, err := sqlDB.Exec("PRAGMA busy_timeout=5000;"); err != nil {
+		log.Printf("警告: 设置 busy_timeout 失败: %v", err)
+	}
+	// 设置连接池
+	sqlDB.SetMaxOpenConns(1) // SQLite 单写多读，限制连接数避免锁冲突
+	sqlDB.SetMaxIdleConns(1)
+
 	// 自动迁移表结构
 	if err := db.AutoMigrate(
 		&model.Agent{},

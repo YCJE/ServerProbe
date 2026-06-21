@@ -56,10 +56,12 @@ func (m *Middleware) AuthRequired() gin.HandlerFunc {
 type loginRateLimiter struct {
 	mu       sync.Mutex
 	attempts map[string][]time.Time
+	lastClean time.Time
 }
 
 var rateLimiter = &loginRateLimiter{
-	attempts: make(map[string][]time.Time),
+	attempts:  make(map[string][]time.Time),
+	lastClean: time.Now(),
 }
 
 // LoginRateLimit 登录限速
@@ -73,7 +75,25 @@ func (m *Middleware) LoginRateLimit() gin.HandlerFunc {
 		now := time.Now()
 		cutoff := now.Add(-time.Minute)
 
-		// 清理过期记录
+		// 每 5 分钟清理一次不活跃 IP 的记录，防止内存泄漏
+		if now.Sub(rateLimiter.lastClean) > 5*time.Minute {
+			for ip, attempts := range rateLimiter.attempts {
+				valid := attempts[:0]
+				for _, t := range attempts {
+					if t.After(cutoff) {
+						valid = append(valid, t)
+					}
+				}
+				if len(valid) == 0 {
+					delete(rateLimiter.attempts, ip)
+				} else {
+					rateLimiter.attempts[ip] = valid
+				}
+			}
+			rateLimiter.lastClean = now
+		}
+
+		// 清理当前 IP 的过期记录
 		attempts := rateLimiter.attempts[ip]
 		valid := attempts[:0]
 		for _, t := range attempts {
@@ -96,14 +116,11 @@ func (m *Middleware) LoginRateLimit() gin.HandlerFunc {
 	}
 }
 
-// CORS 跨域中间件
+// CORS 跨域中间件 (前端内嵌，同源访问，不需要跨域)
 func (m *Middleware) CORS() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		c.Header("Access-Control-Allow-Origin", c.GetHeader("Origin"))
-		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization")
-		c.Header("Access-Control-Allow-Credentials", "true")
-
+		// 前端内嵌在 Server 中，同源访问，不需要 CORS
+		// 仅处理 OPTIONS 预检请求
 		if c.Request.Method == "OPTIONS" {
 			c.AbortWithStatus(http.StatusNoContent)
 			return

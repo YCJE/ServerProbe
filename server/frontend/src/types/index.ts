@@ -59,6 +59,7 @@ export interface PingResult {
 export interface ServerData {
   id: number
   hostname: string
+  display_name: string
   os: string
   arch: string
   agent_version: string
@@ -80,6 +81,7 @@ export interface ServerData {
 export interface DashboardItem {
   agent_id: number
   hostname: string
+  display_name: string
   online: boolean
   cpu: number
   mem: number
@@ -165,6 +167,8 @@ export interface ApiError {
 /** 注册码 */
 export interface RegisterCode {
   code: string
+  display_name: string
+  remark: string
   expires_at: string
   used: boolean
 }
@@ -173,6 +177,7 @@ export interface RegisterCode {
 export interface AgentInfo {
   id: number
   hostname: string
+  display_name: string
   os: string
   arch: string
   agent_version: string

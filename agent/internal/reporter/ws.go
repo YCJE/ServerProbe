@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -118,10 +119,13 @@ func (c *WSClient) register() error {
 	hostname, _ := getHostname()
 
 	msg := sharedmodel.WSMessage{
-		Type:     sharedmodel.MsgTypeRegister,
-		Code:     c.registerCode,
-		Hostname: hostname,
-		OS:       getOS(),
+		Type:            sharedmodel.MsgTypeRegister,
+		Code:            c.registerCode,
+		Hostname:        hostname,
+		OS:              runtime.GOOS,
+		Arch:            runtime.GOARCH,
+		AgentVersion:    "1.0.0",
+		HostFingerprint: getHostFingerprint(),
 	}
 
 	c.mu.Lock()

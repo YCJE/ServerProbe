@@ -147,8 +147,11 @@ export async function getDashboard(): Promise<{ servers: DashboardItem[] }> {
 // ==================== Agent 管理相关 API ====================
 
 /** 生成注册码 */
-export async function generateRegisterCode(): Promise<RegisterCode> {
-  return request<RegisterCode>('/agents/register-codes', { method: 'POST' })
+export async function generateRegisterCode(displayName: string, remark: string): Promise<RegisterCode> {
+  return request<RegisterCode>('/agents/register-codes', {
+    method: 'POST',
+    body: JSON.stringify({ display_name: displayName, remark }),
+  })
 }
 
 /** 获取注册码列表 */

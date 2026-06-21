@@ -215,6 +215,8 @@ export const useServerStore = create<ServerStoreState>((set, get) => ({
   handleDashboardMessage: (data: DashboardItem[]) => {
     const newMap = new Map(get().dashboardData)
     const now = Date.now()
+    const existingIds = new Set(get().servers.map((s) => s.id))
+    const newServers: ServerData[] = []
 
     for (const item of data) {
       newMap.set(item.agent_id, item)
@@ -238,11 +240,38 @@ export const useServerStore = create<ServerStoreState>((set, get) => ({
         }
         set({ realtimeHistory: history })
       }
+
+      // 新服务器，添加到列表
+      if (!existingIds.has(item.agent_id)) {
+        newServers.push({
+          id: item.agent_id,
+          hostname: item.hostname || `Agent-${item.agent_id}`,
+          display_name: item.display_name || '',
+          os: '',
+          arch: '',
+          agent_version: '',
+          online: item.online,
+          last_seen: item.timestamp,
+          cpu: item.cpu,
+          mem: item.mem,
+          mem_total: item.mem_total,
+          mem_used: item.mem_used,
+          net_rx: item.net_rx,
+          net_tx: item.net_tx,
+          uptime: item.uptime,
+          load_1: item.load_1,
+          disk_usage: item.disk_usage || 0,
+          ping_data: item.ping_data || [],
+        })
+      }
     }
 
-    set({ dashboardData: newMap })
+    // 合并新服务器
+    if (newServers.length > 0) {
+      set({ servers: [...get().servers, ...newServers] })
+    }
 
-    // 同步更新服务器列表的在线状态等信息
+    // 更新已有服务器的实时数据
     const servers = get().servers.map((server) => {
       const live = newMap.get(server.id)
       if (live) {
@@ -260,12 +289,14 @@ export const useServerStore = create<ServerStoreState>((set, get) => ({
           disk_usage: live.disk_usage,
           ping_data: live.ping_data,
           last_seen: live.timestamp,
+          hostname: live.hostname || server.hostname,
+          display_name: live.display_name || server.display_name,
         }
       }
       return server
     })
 
-    set({ servers })
+    set({ servers, dashboardData: newMap })
   },
 
   // 设置主题

@@ -26,9 +26,19 @@ export default function Layout() {
   const onlineCount = servers.filter((s) => s.online).length
   const totalCount = servers.length
 
-  const navItems = [
-    { to: '/', label: '仪表盘', icon: '▣', end: true },
-    { to: '/agents', label: 'Agent 管理', icon: '⬡', end: false },
+  const navGroups = [
+    {
+      title: '服务器展示',
+      items: [
+        { to: '/', label: '仪表盘', icon: '▣', end: true },
+      ],
+    },
+    {
+      title: '管理',
+      items: [
+        { to: '/agents', label: 'Agent 管理', icon: '⬡', end: false },
+      ],
+    },
   ]
 
   return (
@@ -77,23 +87,30 @@ export default function Layout() {
       <div className="flex flex-1 overflow-hidden">
         {/* 侧边栏 */}
         <aside className="hidden w-56 shrink-0 border-r border-border bg-card md:block">
-          <nav className="flex flex-col gap-1 p-3">
-            {navItems.map((item) => (
-              <NavLink
-                key={item.to}
-                to={item.to}
-                end={item.end}
-                className={({ isActive }) =>
-                  `flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors ${
-                    isActive
-                      ? 'bg-primary text-primary-foreground font-medium'
-                      : 'text-muted-foreground hover:bg-accent hover:text-foreground'
-                  }`
-                }
-              >
-                <span className="text-base">{item.icon}</span>
-                <span>{item.label}</span>
-              </NavLink>
+          <nav className="flex flex-col gap-4 p-3">
+            {navGroups.map((group) => (
+              <div key={group.title} className="flex flex-col gap-1">
+                <h3 className="px-3 pb-1 text-xs font-medium uppercase tracking-wider text-muted-foreground/70">
+                  {group.title}
+                </h3>
+                {group.items.map((item) => (
+                  <NavLink
+                    key={item.to}
+                    to={item.to}
+                    end={item.end}
+                    className={({ isActive }) =>
+                      `flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors ${
+                        isActive
+                          ? 'bg-primary text-primary-foreground font-medium'
+                          : 'text-muted-foreground hover:bg-accent hover:text-foreground'
+                      }`
+                    }
+                  >
+                    <span className="text-base">{item.icon}</span>
+                    <span>{item.label}</span>
+                  </NavLink>
+                ))}
+              </div>
             ))}
           </nav>
 

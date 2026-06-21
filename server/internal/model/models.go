@@ -9,6 +9,7 @@ type Agent struct {
 	ID              int64     `gorm:"primaryKey;autoIncrement" json:"id"`
 	Token           string    `gorm:"uniqueIndex;not null" json:"-"`
 	Hostname        string    `gorm:"not null" json:"hostname"`
+	DisplayName     string    `json:"display_name"` // 用户自定义名称
 	OS              string    `json:"os"`
 	Arch            string    `json:"arch"`
 	AgentVersion    string    `json:"agent_version"`
@@ -24,6 +25,8 @@ func (Agent) TableName() string { return "agents" }
 // RegisterCode 注册码（GORM 模型）
 type RegisterCode struct {
 	Code          string    `gorm:"primaryKey" json:"code"`
+	DisplayName   string    `json:"display_name"` // 用户自定义服务器名称
+	Remark        string    `json:"remark"`       // 备注
 	CreatedAt     time.Time `gorm:"autoCreateTime" json:"created_at"`
 	ExpiresAt     time.Time `gorm:"not null" json:"expires_at"`
 	Used          bool      `gorm:"default:false" json:"used"`

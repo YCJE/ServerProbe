@@ -78,8 +78,12 @@ func (h *AuthHandler) HandleLogin(c *gin.Context) {
 			return
 		}
 
-		// TODO: 验证 TOTP（M5 实现）
-		// 暂时跳过 TOTP 验证
+		// TOTP 验证暂未实现，拒绝登录而非跳过
+		c.JSON(http.StatusUnauthorized, LoginResponse{
+			Success: false,
+			Message: "两步验证未配置，请联系管理员重置账户",
+		})
+		return
 	}
 
 	// 生成 JWT

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/server-probe/server/internal/model"
 	"github.com/server-probe/server/internal/repository"
 	sharedmodel "github.com/server-probe/shared/model"
 )
@@ -218,6 +219,13 @@ func (m *MonitorService) StartHeartbeatChecker(timeout time.Duration) {
 
 // GetDashboardData 获取仪表盘数据
 func (m *MonitorService) GetDashboardData() []DashboardItem {
+	// 先获取所有 Agent 的 hostname 和 display_name（避免在持锁期间进行 DB 调用）
+	agents, _ := m.agentRepo.List()
+	agentMap := make(map[int64]*model.Agent, len(agents))
+	for i := range agents {
+		agentMap[agents[i].ID] = &agents[i]
+	}
+
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
@@ -230,7 +238,7 @@ func (m *MonitorService) GetDashboardData() []DashboardItem {
 		}
 
 		p := points[0]
-		items = append(items, DashboardItem{
+		item := DashboardItem{
 			AgentID:    agentID,
 			Online:     m.isOnlineLocked(agentID),
 			CPU:        p.CPU,
@@ -243,7 +251,15 @@ func (m *MonitorService) GetDashboardData() []DashboardItem {
 			Uptime:     p.Uptime,
 			PingData:   p.PingData,
 			Timestamp:  p.Timestamp,
-		})
+		}
+
+		// 补充 hostname 和 display_name
+		if agent := agentMap[agentID]; agent != nil {
+			item.Hostname = agent.Hostname
+			item.DisplayName = agent.DisplayName
+		}
+
+		items = append(items, item)
 	}
 
 	return items
@@ -257,16 +273,18 @@ func (m *MonitorService) isOnlineLocked(agentID int64) bool {
 
 // DashboardItem 仪表盘数据项
 type DashboardItem struct {
-	AgentID   int64                        `json:"agent_id"`
-	Online    bool                         `json:"online"`
-	CPU       float64                      `json:"cpu"`
-	Mem       float64                      `json:"mem"`
-	MemTotal  uint64                       `json:"mem_total"`
-	MemUsed   uint64                       `json:"mem_used"`
-	NetRx     uint64                       `json:"net_rx"`
-	NetTx     uint64                       `json:"net_tx"`
-	Load1     float64                      `json:"load_1"`
-	Uptime    uint64                       `json:"uptime"`
-	PingData  []sharedmodel.PingResult     `json:"ping_data"`
-	Timestamp int64                        `json:"timestamp"`
+	AgentID     int64                        `json:"agent_id"`
+	Hostname    string                       `json:"hostname"`
+	DisplayName string                       `json:"display_name"`
+	Online      bool                         `json:"online"`
+	CPU         float64                      `json:"cpu"`
+	Mem         float64                      `json:"mem"`
+	MemTotal    uint64                       `json:"mem_total"`
+	MemUsed     uint64                       `json:"mem_used"`
+	NetRx       uint64                       `json:"net_rx"`
+	NetTx       uint64                       `json:"net_tx"`
+	Load1       float64                      `json:"load_1"`
+	Uptime      uint64                       `json:"uptime"`
+	PingData    []sharedmodel.PingResult     `json:"ping_data"`
+	Timestamp   int64                        `json:"timestamp"`
 }

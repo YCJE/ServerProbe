@@ -120,12 +120,10 @@ func (h *AgentHandler) handleRegister(conn *websocket.Conn, msg *sharedmodel.WSM
 		Code:            msg.Code,
 		Hostname:        msg.Hostname,
 		OS:              msg.OS,
-		AgentVersion:    msg.OS, // 从消息中获取
-		HostFingerprint: msg.Token, // 复用 Token 字段传递指纹
+		Arch:            msg.Arch,
+		AgentVersion:    msg.AgentVersion,
+		HostFingerprint: msg.HostFingerprint,
 	}
-
-	// 从消息中提取更多信息
-	req.Hostname = msg.Hostname
 
 	result, err := h.registry.RegisterAgent(req)
 	if err != nil {

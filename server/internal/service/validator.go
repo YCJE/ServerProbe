@@ -2,6 +2,7 @@ package service
 
 import (
 	"fmt"
+	"sync"
 	"time"
 
 	sharedmodel "github.com/server-probe/shared/model"
@@ -9,6 +10,7 @@ import (
 
 // DataValidator 数据合理性校验
 type DataValidator struct {
+	mu             sync.Mutex
 	lastReportTime map[int64]time.Time // Agent ID -> 上次上报时间
 }
 
@@ -80,6 +82,9 @@ func (v *DataValidator) ValidatePingResult(result *sharedmodel.PingResult) error
 // 过快（< 1 秒）拒绝，过慢（> 90 秒）标记离线
 func (v *DataValidator) CheckReportFrequency(agentID int64) error {
 	now := time.Now()
+
+	v.mu.Lock()
+	defer v.mu.Unlock()
 
 	if lastTime, ok := v.lastReportTime[agentID]; ok {
 		interval := now.Sub(lastTime)

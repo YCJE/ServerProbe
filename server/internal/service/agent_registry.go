@@ -28,7 +28,7 @@ func NewAgentRegistryService(agentRepo *repository.AgentRepository, registerRepo
 }
 
 // GenerateRegisterCode 生成注册码
-func (s *AgentRegistryService) GenerateRegisterCode() (*model.RegisterCode, error) {
+func (s *AgentRegistryService) GenerateRegisterCode(displayName, remark string) (*model.RegisterCode, error) {
 	// 检查未使用注册码数量
 	count, err := s.registerRepo.CountUnused()
 	if err != nil {
@@ -45,15 +45,17 @@ func (s *AgentRegistryService) GenerateRegisterCode() (*model.RegisterCode, erro
 	}
 
 	rc := &model.RegisterCode{
-		Code:      code,
-		ExpiresAt: time.Now().Add(15 * time.Minute),
+		Code:        code,
+		DisplayName: displayName,
+		Remark:      remark,
+		ExpiresAt:   time.Now().Add(15 * time.Minute),
 	}
 
 	if err := s.registerRepo.Create(rc); err != nil {
 		return nil, fmt.Errorf("保存注册码失败: %w", err)
 	}
 
-	log.Printf("生成注册码: %s, 有效期 15 分钟", code)
+	log.Printf("生成注册码: %s, 名称: %s, 有效期 15 分钟", code, displayName)
 	return rc, nil
 }
 
@@ -86,6 +88,10 @@ func (s *AgentRegistryService) RegisterAgent(req RegisterAgentRequest) (*Registe
 		existingAgent.Arch = req.Arch
 		existingAgent.AgentVersion = req.AgentVersion
 		existingAgent.Online = false
+		// 如果注册码有显示名称且 Agent 没有显示名称，则设置
+		if rc.DisplayName != "" && existingAgent.DisplayName == "" {
+			existingAgent.DisplayName = rc.DisplayName
+		}
 		if err := s.agentRepo.Update(existingAgent); err != nil {
 			return nil, fmt.Errorf("更新 Agent 失败: %w", err)
 		}
@@ -109,6 +115,7 @@ func (s *AgentRegistryService) RegisterAgent(req RegisterAgentRequest) (*Registe
 	agent := &model.Agent{
 		Token:            token,
 		Hostname:         req.Hostname,
+		DisplayName:      rc.DisplayName, // 使用注册码中的显示名称
 		OS:               req.OS,
 		Arch:             req.Arch,
 		AgentVersion:     req.AgentVersion,

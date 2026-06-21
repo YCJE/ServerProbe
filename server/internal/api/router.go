@@ -12,12 +12,13 @@ import (
 
 // Router API 路由
 type Router struct {
-	router        *gin.Engine
-	middleware    *Middleware
-	authHandler   *AuthHandler
-	serverHandler *ServerHandler
-	agentHandler  *AgentHandler
-	agentAPIHandler *AgentAPIHandler
+	router             *gin.Engine
+	middleware         *Middleware
+	authHandler        *AuthHandler
+	serverHandler      *ServerHandler
+	agentHandler       *AgentHandler
+	agentAPIHandler    *AgentAPIHandler
+	dashboardWSHandler *DashboardWSHandler
 }
 
 // NewRouter 创建路由
@@ -44,6 +45,7 @@ func NewRouter(
 	serverHandler := NewServerHandler(agentRepo, monitor, recordRepo)
 	agentHandler := NewAgentHandler(registry, monitor, configSync, validator)
 	agentAPIHandler := NewAgentAPIHandler(registry, agentRepo)
+	dashboardWSHandler := NewDashboardWSHandler(monitor, jwtManager)
 
 	// 健康检查
 	r.GET("/api/v1/health", func(c *gin.Context) {
@@ -69,6 +71,9 @@ func NewRouter(
 			agent.GET("/report", agentHandler.HandleWebSocket)
 		}
 
+		// 仪表盘 WebSocket（token 通过 query 参数传递，不需要 AuthRequired 中间件）
+		r.GET("/ws/dashboard", dashboardWSHandler.HandleDashboardWS)
+
 		// 需要认证的 API
 		protected := api.Group("")
 		protected.Use(middleware.AuthRequired())
@@ -91,12 +96,13 @@ func NewRouter(
 	}
 
 	return &Router{
-		router:          r,
-		middleware:      middleware,
-		authHandler:     authHandler,
-		serverHandler:   serverHandler,
-		agentHandler:    agentHandler,
-		agentAPIHandler: agentAPIHandler,
+		router:             r,
+		middleware:         middleware,
+		authHandler:        authHandler,
+		serverHandler:      serverHandler,
+		agentHandler:       agentHandler,
+		agentAPIHandler:    agentAPIHandler,
+		dashboardWSHandler: dashboardWSHandler,
 	}
 }
 

@@ -8,6 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/server-probe/server/internal/repository"
 	"github.com/server-probe/server/internal/service"
+	sharedmodel "github.com/server-probe/shared/model"
 )
 
 // ServerHandler 服务器信息处理器
@@ -36,18 +37,24 @@ func (h *ServerHandler) HandleListServers(c *gin.Context) {
 	}
 
 	type ServerListItem struct {
-		ID           int64   `json:"id"`
-		Hostname     string  `json:"hostname"`
-		OS           string  `json:"os"`
-		Arch         string  `json:"arch"`
-		AgentVersion string  `json:"agent_version"`
-		Online       bool    `json:"online"`
-		LastSeen     string  `json:"last_seen"`
-		CPU          float64 `json:"cpu"`
-		Mem          float64 `json:"mem"`
-		NetRx        uint64  `json:"net_rx"`
-		NetTx        uint64  `json:"net_tx"`
-		Uptime       uint64  `json:"uptime"`
+		ID           int64       `json:"id"`
+		Hostname     string      `json:"hostname"`
+		DisplayName  string      `json:"display_name"`
+		OS           string      `json:"os"`
+		Arch         string      `json:"arch"`
+		AgentVersion string      `json:"agent_version"`
+		Online       bool        `json:"online"`
+		LastSeen     string      `json:"last_seen"`
+		CPU          float64     `json:"cpu"`
+		Mem          float64     `json:"mem"`
+		MemTotal     uint64      `json:"mem_total"`
+		MemUsed      uint64      `json:"mem_used"`
+		NetRx        uint64      `json:"net_rx"`
+		NetTx        uint64      `json:"net_tx"`
+		Uptime       uint64      `json:"uptime"`
+		Load1        float64     `json:"load_1"`
+		DiskUsage    float64     `json:"disk_usage"`
+		PingData     interface{} `json:"ping_data"`
 	}
 
 	items := make([]ServerListItem, 0, len(agents))
@@ -55,6 +62,7 @@ func (h *ServerHandler) HandleListServers(c *gin.Context) {
 		item := ServerListItem{
 			ID:           agent.ID,
 			Hostname:     agent.Hostname,
+			DisplayName:  agent.DisplayName,
 			OS:           agent.OS,
 			Arch:         agent.Arch,
 			AgentVersion: agent.AgentVersion,
@@ -66,11 +74,17 @@ func (h *ServerHandler) HandleListServers(c *gin.Context) {
 		if rb := h.monitor.GetRingBuffer(agent.ID); rb != nil {
 			points := rb.Latest(1)
 			if len(points) > 0 {
-				item.CPU = points[0].CPU
-				item.Mem = points[0].Mem
-				item.NetRx = points[0].NetRx
-				item.NetTx = points[0].NetTx
-				item.Uptime = points[0].Uptime
+				p := points[0]
+				item.CPU = p.CPU
+				item.Mem = p.Mem
+				item.MemTotal = p.MemTotal
+				item.MemUsed = p.MemUsed
+				item.NetRx = p.NetRx
+				item.NetTx = p.NetTx
+				item.Uptime = p.Uptime
+				item.Load1 = p.Load1
+				item.DiskUsage = calcDiskUsage(p.Disks)
+				item.PingData = p.PingData
 			}
 		}
 
@@ -78,6 +92,38 @@ func (h *ServerHandler) HandleListServers(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"servers": items})
+}
+
+// calcDiskUsage 从磁盘分区列表计算使用率
+// 优先取根分区（/），否则取最大分区的使用率
+func calcDiskUsage(disks []sharedmodel.DiskInfo) float64 {
+	if len(disks) == 0 {
+		return 0
+	}
+
+	// 优先查找根分区
+	for _, d := range disks {
+		if d.Device == "/" && d.Total > 0 {
+			return float64(d.Used) / float64(d.Total) * 100
+		}
+	}
+
+	// 否则取最大分区
+	var maxDisk *sharedmodel.DiskInfo
+	for i := range disks {
+		if disks[i].Total == 0 {
+			continue
+		}
+		if maxDisk == nil || disks[i].Total > maxDisk.Total {
+			maxDisk = &disks[i]
+		}
+	}
+
+	if maxDisk != nil && maxDisk.Total > 0 {
+		return float64(maxDisk.Used) / float64(maxDisk.Total) * 100
+	}
+
+	return 0
 }
 
 // HandleGetServer 获取单台服务器详情

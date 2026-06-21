@@ -27,15 +27,24 @@ func NewAgentAPIHandler(registry *service.AgentRegistryService, agentRepo *repos
 
 // RegisterCodeResponse 注册码响应
 type RegisterCodeResponse struct {
-	Code      string    `json:"code"`
-	ExpiresAt time.Time `json:"expires_at"`
-	Used      bool      `json:"used"`
+	Code        string    `json:"code"`
+	DisplayName string    `json:"display_name"`
+	Remark      string    `json:"remark"`
+	ExpiresAt   time.Time `json:"expires_at"`
+	Used        bool      `json:"used"`
 }
 
 // HandleGenerateRegisterCode 生成注册码
 // 路由: POST /api/v1/agents/register-codes
 func (h *AgentAPIHandler) HandleGenerateRegisterCode(c *gin.Context) {
-	rc, err := h.registry.GenerateRegisterCode()
+	var req struct {
+		DisplayName string `json:"display_name"`
+		Remark      string `json:"remark"`
+	}
+	// 忽略绑定错误，允许空 body
+	_ = c.ShouldBindJSON(&req)
+
+	rc, err := h.registry.GenerateRegisterCode(req.DisplayName, req.Remark)
 	if err != nil {
 		log.Printf("生成注册码失败: %v", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -43,9 +52,11 @@ func (h *AgentAPIHandler) HandleGenerateRegisterCode(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, RegisterCodeResponse{
-		Code:      rc.Code,
-		ExpiresAt: rc.ExpiresAt,
-		Used:      rc.Used,
+		Code:        rc.Code,
+		DisplayName: rc.DisplayName,
+		Remark:      rc.Remark,
+		ExpiresAt:   rc.ExpiresAt,
+		Used:        rc.Used,
 	})
 }
 
@@ -61,9 +72,11 @@ func (h *AgentAPIHandler) HandleListRegisterCodes(c *gin.Context) {
 	result := make([]RegisterCodeResponse, 0, len(codes))
 	for _, rc := range codes {
 		result = append(result, RegisterCodeResponse{
-			Code:      rc.Code,
-			ExpiresAt: rc.ExpiresAt,
-			Used:      rc.Used,
+			Code:        rc.Code,
+			DisplayName: rc.DisplayName,
+			Remark:      rc.Remark,
+			ExpiresAt:   rc.ExpiresAt,
+			Used:        rc.Used,
 		})
 	}
 
