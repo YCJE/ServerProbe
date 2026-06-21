@@ -37,6 +37,7 @@ type LoginResponse struct {
 	Success   bool   `json:"success"`
 	Message   string `json:"message"`
 	NeedTOTP  bool   `json:"need_totp"`
+	Token     string `json:"token,omitempty"`
 }
 
 // HandleLogin 处理登录
@@ -94,6 +95,7 @@ func (h *AuthHandler) HandleLogin(c *gin.Context) {
 	c.JSON(http.StatusOK, LoginResponse{
 		Success: true,
 		Message: "登录成功",
+		Token:   token,
 	})
 }
 
@@ -151,7 +153,22 @@ func (h *AuthHandler) HandleSetup(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"success": true, "message": "管理员账户创建成功"})
+	// 生成 JWT,自动登录
+	token, err := h.jwtManager.GenerateToken(admin.ID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "生成 Token 失败"})
+		return
+	}
+
+	// 设置 Cookie
+	c.SetSameSite(http.SameSiteStrictMode)
+	c.SetCookie("token", token, int(12*time.Hour/time.Second), "/", "", true, true)
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "管理员账户创建成功",
+		"token":   token,
+	})
 }
 
 // HandleCheckSetup 检查是否需要初始化

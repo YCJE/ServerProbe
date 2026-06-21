@@ -28,7 +28,7 @@ export function clearToken(): void {
   localStorage.removeItem('probe_token')
 }
 
-/** 封装 fetch 请求，自动携带 Token */
+/** 封装 fetch 请求，自动携带 Token 和 Cookie */
 async function request<T>(
   path: string,
   options: RequestInit = {},
@@ -46,11 +46,15 @@ async function request<T>(
   const response = await fetch(`${API_BASE}${path}`, {
     ...options,
     headers,
+    credentials: 'include',  // 自动发送 Cookie
   })
 
   if (response.status === 401) {
     clearToken()
-    window.location.href = '/login'
+    // 不在 setup-status 请求中跳转
+    if (!path.includes('/auth/setup-status')) {
+      window.location.href = '/login'
+    }
     throw new Error('未授权，请重新登录')
   }
 

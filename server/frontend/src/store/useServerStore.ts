@@ -115,6 +115,7 @@ export const useServerStore = create<ServerStoreState>((set, get) => ({
       const status = await getSetupStatus()
       set({ needsSetup: status.needs_setup, authLoading: false })
     } catch {
+      // 请求失败时默认不需要 setup,让用户看到登录页
       set({ authLoading: false })
     }
   },
