@@ -15,9 +15,10 @@ import (
 
 // Syncer 配置拉取器
 type Syncer struct {
-	serverURL string
-	token     string
-	interval  time.Duration
+	serverURL   string
+	token       string
+	interval    time.Duration
+	insecureTLS bool
 
 	currentConfig *sharedmodel.AgentConfig
 	mu             sync.RWMutex
@@ -25,12 +26,13 @@ type Syncer struct {
 }
 
 // NewSyncer 创建配置拉取器
-func NewSyncer(serverURL, token string, interval time.Duration) *Syncer {
+func NewSyncer(serverURL, token string, interval time.Duration, insecureTLS bool) *Syncer {
 	return &Syncer{
-		serverURL: serverURL,
-		token:     token,
-		interval:  interval,
-		stopCh:    make(chan struct{}),
+		serverURL:   serverURL,
+		token:       token,
+		interval:    interval,
+		insecureTLS: insecureTLS,
+		stopCh:      make(chan struct{}),
 	}
 }
 
@@ -76,13 +78,18 @@ func (s *Syncer) sync() {
 
 	url := s.serverURL + "/api/v1/agent/config?token=" + s.token
 
-	// 创建 HTTP 客户端（强制 TLS 验证）
+	// 创建 HTTP 客户端
+	tlsConfig := &tls.Config{
+		MinVersion: tls.VersionTLS12,
+	}
+	if s.insecureTLS {
+		tlsConfig.InsecureSkipVerify = true
+	}
+
 	client := &http.Client{
 		Timeout: 10 * time.Second,
 		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{
-				MinVersion: tls.VersionTLS12,
-			},
+			TLSClientConfig: tlsConfig,
 		},
 	}
 

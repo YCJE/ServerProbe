@@ -21,6 +21,7 @@ type WSClient struct {
 	serverURL    string
 	token        string
 	registerCode string
+	insecureTLS  bool
 
 	conn        *websocket.Conn
 	mu          sync.Mutex
@@ -37,11 +38,12 @@ type WSClient struct {
 }
 
 // NewWSClient 创建 WebSocket 客户端
-func NewWSClient(serverURL, token, registerCode string) *WSClient {
+func NewWSClient(serverURL, token, registerCode string, insecureTLS bool) *WSClient {
 	return &WSClient{
 		serverURL:            serverURL,
 		token:                token,
 		registerCode:         registerCode,
+		insecureTLS:          insecureTLS,
 		reconnectCh:          make(chan struct{}, 1),
 		maxReconnectInterval: 60 * time.Second,
 	}
@@ -78,11 +80,16 @@ func (c *WSClient) Connect() error {
 		return fmt.Errorf("安全错误：必须使用 wss:// 协议")
 	}
 
-	// 创建 WebSocket 拨号器（强制 TLS 验证）
+	// 创建 WebSocket 拨号器
+	tlsConfig := &tls.Config{
+		MinVersion: tls.VersionTLS12,
+	}
+	if c.insecureTLS {
+		tlsConfig.InsecureSkipVerify = true
+	}
+
 	dialer := websocket.Dialer{
-		TLSClientConfig: &tls.Config{
-			MinVersion: tls.VersionTLS12,
-		},
+		TLSClientConfig:  tlsConfig,
 		HandshakeTimeout: 10 * time.Second,
 	}
 

@@ -21,6 +21,7 @@ type AgentConfig struct {
 	ReportInterval     int    `yaml:"report_interval"`
 	ConfigSyncInterval int    `yaml:"config_sync_interval"`
 	PingMethod         string `yaml:"ping_method"`
+	InsecureTLS        bool   `yaml:"insecure_tls"` // 跳过 TLS 证书验证 (自签名证书时使用)
 }
 
 func main() {
@@ -44,7 +45,7 @@ func main() {
 	pingCollector := collector.NewPingCollector(cfg.PingMethod)
 
 	// 创建 WebSocket 客户端
-	wsClient := reporter.NewWSClient(cfg.ServerURL, cfg.Token, cfg.RegisterCode)
+	wsClient := reporter.NewWSClient(cfg.ServerURL, cfg.Token, cfg.RegisterCode, cfg.InsecureTLS)
 
 	// 设置回调
 	var configSyncer *config.Syncer
@@ -94,7 +95,7 @@ func main() {
 	go startPingProbe(wsClient, pingCollector, &pingTargets, 60*time.Second)
 
 	// 启动配置拉取
-	configSyncer = config.NewSyncer(cfg.ServerURL, cfg.Token, time.Duration(cfg.ConfigSyncInterval)*time.Second)
+	configSyncer = config.NewSyncer(cfg.ServerURL, cfg.Token, time.Duration(cfg.ConfigSyncInterval)*time.Second, cfg.InsecureTLS)
 	if cfg.Token != "" {
 		configSyncer.Start()
 	}

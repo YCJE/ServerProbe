@@ -168,6 +168,7 @@ register_code: "${REGISTER_CODE}"
 report_interval: 3
 config_sync_interval: 3600
 ping_method: "auto"
+insecure_tls: true
 EOF
 
 chmod 600 "${CONFIG_DIR}/config.yml"
