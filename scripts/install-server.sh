@@ -216,6 +216,7 @@ Wants=network-online.target
 Type=simple
 User=probe-server
 Group=probe-server
+WorkingDirectory=${DATA_DIR}
 ExecStart=${INSTALL_DIR}/probe-server --config ${CONFIG_DIR}/config.yml
 Restart=always
 RestartSec=5

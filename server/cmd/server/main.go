@@ -136,7 +136,9 @@ func main() {
 		keyPath = cfg.TLS.KeyFile
 		log.Printf("使用指定 TLS 证书: %s", certPath)
 	} else {
-		certPath, keyPath, err = pkg.EnsureTLS(*certDir)
+		// 自签证书存放到数据目录下
+		autoCertDir := filepath.Join(*dataDir, "certs")
+		certPath, keyPath, err = pkg.EnsureTLS(autoCertDir)
 		if err != nil {
 			log.Fatalf("TLS 证书初始化失败: %v", err)
 		}
