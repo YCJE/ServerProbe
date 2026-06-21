@@ -159,3 +159,24 @@ export interface ApiError {
   error: string
   message?: string
 }
+
+// ==================== 注册码相关类型 ====================
+
+/** 注册码 */
+export interface RegisterCode {
+  code: string
+  expires_at: string
+  used: boolean
+}
+
+/** Agent 信息 */
+export interface AgentInfo {
+  id: number
+  hostname: string
+  os: string
+  arch: string
+  agent_version: string
+  online: boolean
+  last_seen: string
+  created_at: string
+}

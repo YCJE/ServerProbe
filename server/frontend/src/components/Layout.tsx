@@ -28,6 +28,7 @@ export default function Layout() {
 
   const navItems = [
     { to: '/', label: '仪表盘', icon: '▣', end: true },
+    { to: '/agents', label: 'Agent 管理', icon: '⬡', end: false },
   ]
 
   return (

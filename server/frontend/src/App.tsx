@@ -6,6 +6,7 @@ import Login from '@/pages/Login'
 import Setup from '@/pages/Setup'
 import Dashboard from '@/pages/Dashboard'
 import ServerDetail from '@/pages/ServerDetail'
+import AgentManagement from '@/pages/AgentManagement'
 
 /** 受保护路由：未登录时跳转到登录页 */
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -66,6 +67,7 @@ function App() {
       >
         <Route index element={<Dashboard />} />
         <Route path="server/:id" element={<ServerDetail />} />
+        <Route path="agents" element={<AgentManagement />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

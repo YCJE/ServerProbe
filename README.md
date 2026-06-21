@@ -736,18 +736,35 @@ systemctl restart probe-agent
 
 ### Q: 忘记管理员密码怎么办?
 
+**方法一: 命令行重置 (推荐)**
+
 ```bash
 # 停止 Server
 systemctl stop probe-server
 
-# 删除管理员数据 (需要重新设置)
+# 删除管理员账户 (需要重新设置)
 sqlite3 /var/lib/probe-server/data.db "DELETE FROM admins;"
 
-# 重启
+# 重启 Server
 systemctl start probe-server
 ```
 
-重新访问面板会要求设置新的管理员账号。
+重启后访问面板,会自动跳转到"初始化设置"页面,重新设置管理员账号和密码。
+
+**方法二: 如果没有 sqlite3 命令**
+
+```bash
+# 停止 Server
+systemctl stop probe-server
+
+# 直接删除数据库文件 (会丢失所有数据,包括 Agent 信息和历史记录)
+rm /var/lib/probe-server/data.db
+
+# 重启 Server
+systemctl start probe-server
+```
+
+> 注意: 方法二会丢失所有数据,仅在没有重要数据时使用。
 
 ### Q: 如何查看 Server 版本?
 

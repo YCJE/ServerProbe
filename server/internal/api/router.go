@@ -1,21 +1,23 @@
 package api
 
 import (
+	"net/http"
+
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 	"github.com/server-probe/server/internal/pkg"
 	"github.com/server-probe/server/internal/repository"
 	"github.com/server-probe/server/internal/service"
-	"net/http"
 )
 
 // Router API 路由
 type Router struct {
-	router      *gin.Engine
-	middleware  *Middleware
-	authHandler *AuthHandler
+	router        *gin.Engine
+	middleware    *Middleware
+	authHandler   *AuthHandler
 	serverHandler *ServerHandler
-	agentHandler *AgentHandler
+	agentHandler  *AgentHandler
+	agentAPIHandler *AgentAPIHandler
 }
 
 // NewRouter 创建路由
@@ -41,6 +43,7 @@ func NewRouter(
 	authHandler := NewAuthHandler(adminRepo, jwtManager)
 	serverHandler := NewServerHandler(agentRepo, monitor, recordRepo)
 	agentHandler := NewAgentHandler(registry, monitor, configSync, validator)
+	agentAPIHandler := NewAgentAPIHandler(registry, agentRepo)
 
 	// 健康检查
 	r.GET("/api/v1/health", func(c *gin.Context) {
@@ -76,42 +79,30 @@ func NewRouter(
 			protected.GET("/servers/:id/history", serverHandler.HandleGetServerHistory)
 			protected.GET("/dashboard", serverHandler.HandleDashboard)
 
-			// 注册码
-			protected.GET("/agents/register-codes", h.handleListRegisterCodes)
-			protected.POST("/agents/register-codes", h.handleGenerateRegisterCode)
-			protected.DELETE("/agents/register-codes/:code", h.handleDeleteRegisterCode)
+			// 注册码管理
+			protected.GET("/agents/register-codes", agentAPIHandler.HandleListRegisterCodes)
+			protected.POST("/agents/register-codes", agentAPIHandler.HandleGenerateRegisterCode)
+			protected.DELETE("/agents/register-codes/:code", agentAPIHandler.HandleDeleteRegisterCode)
+
+			// Agent 管理
+			protected.GET("/agents", agentAPIHandler.HandleListAgents)
+			protected.DELETE("/agents/:id", agentAPIHandler.HandleDeleteAgent)
 		}
 	}
 
 	return &Router{
-		router:        r,
-		middleware:    middleware,
-		authHandler:   authHandler,
-		serverHandler: serverHandler,
-		agentHandler:  agentHandler,
+		router:          r,
+		middleware:      middleware,
+		authHandler:     authHandler,
+		serverHandler:   serverHandler,
+		agentHandler:    agentHandler,
+		agentAPIHandler: agentAPIHandler,
 	}
 }
 
 // GetRouter 返回 gin 引擎
 func (r *Router) GetRouter() *gin.Engine {
 	return r.router
-}
-
-// 临时占位，后面移到单独的 handler
-var h = &placeholderHandler{}
-
-type placeholderHandler struct{}
-
-func (p *placeholderHandler) handleListRegisterCodes(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"codes": []interface{}{}})
-}
-
-func (p *placeholderHandler) handleGenerateRegisterCode(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"code": ""})
-}
-
-func (p *placeholderHandler) handleDeleteRegisterCode(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"success": true})
 }
 
 // 确保 websocket 包被使用

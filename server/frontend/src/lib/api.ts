@@ -8,6 +8,8 @@ import type {
   HistoryData,
   DashboardItem,
   TimeRange,
+  RegisterCode,
+  AgentInfo,
 } from '@/types'
 
 /** API 基础路径 */
@@ -140,4 +142,31 @@ export async function getServerHistory(
 /** 获取仪表盘数据（HTTP 轮询备用） */
 export async function getDashboard(): Promise<{ servers: DashboardItem[] }> {
   return request<{ servers: DashboardItem[] }>('/dashboard')
+}
+
+// ==================== Agent 管理相关 API ====================
+
+/** 生成注册码 */
+export async function generateRegisterCode(): Promise<RegisterCode> {
+  return request<RegisterCode>('/agents/register-codes', { method: 'POST' })
+}
+
+/** 获取注册码列表 */
+export async function getRegisterCodes(): Promise<{ codes: RegisterCode[] }> {
+  return request<{ codes: RegisterCode[] }>('/agents/register-codes')
+}
+
+/** 删除注册码 */
+export async function deleteRegisterCode(code: string): Promise<void> {
+  await request(`/agents/register-codes/${code}`, { method: 'DELETE' })
+}
+
+/** 获取 Agent 列表 */
+export async function getAgents(): Promise<{ agents: AgentInfo[] }> {
+  return request<{ agents: AgentInfo[] }>('/agents')
+}
+
+/** 删除 Agent */
+export async function deleteAgent(id: number): Promise<void> {
+  await request(`/agents/${id}`, { method: 'DELETE' })
 }
