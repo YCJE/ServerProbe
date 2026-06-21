@@ -1,6 +1,6 @@
 module github.com/server-probe/server
 
-go 1.26.4
+go 1.23
 
 replace github.com/server-probe/shared => ../shared
 

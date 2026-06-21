@@ -134,7 +134,7 @@ grep -r "secret.*=.*\"" --include="*.go" | grep -v test
 如果您发现了安全漏洞,请按以下流程报告:
 
 1. **不要** 在 GitHub Issue 中公开披露
-2. 发送邮件至: security@example.com (替换为实际邮箱)
+2. 发送邮件至: 请在 GitHub Issues 中查看维护者联系方式,或通过 GitHub Security Advisory 报告
 3. 邮件标题: `[SECURITY] Server Probe - 简要描述`
 4. 邮件内容请包含:
    - 漏洞描述

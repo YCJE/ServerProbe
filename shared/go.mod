@@ -1,3 +1,3 @@
 module github.com/server-probe/shared
 
-go 1.26.4
+go 1.23

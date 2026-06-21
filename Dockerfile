@@ -9,9 +9,9 @@ COPY server/frontend/ ./
 RUN npm run build
 
 # 阶段2: 构建后端
-FROM golang:1.22-alpine AS backend-builder
+FROM golang:1.23-alpine AS backend-builder
 WORKDIR /app
-COPY go.work go.work.sum ./
+COPY go.work ./
 COPY shared/ ./shared/
 COPY server/go.mod server/go.sum ./server/
 COPY agent/go.mod agent/go.sum ./agent/

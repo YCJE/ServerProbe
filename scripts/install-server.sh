@@ -21,7 +21,7 @@ INSTALL_DIR="/usr/local/bin"
 CONFIG_DIR="/etc/probe-server"
 DATA_DIR="/var/lib/probe-server"
 SERVICE_NAME="probe-server"
-DOWNLOAD_BASE="https://github.com/server-probe/server-probe/releases/latest/download"
+DOWNLOAD_BASE="https://github.com/YCJE/ServerProbe/releases/latest/download"
 
 # 解析参数
 while [[ $# -gt 0 ]]; do
@@ -65,7 +65,7 @@ info "系统: $OS/$ARCH"
 
 # 确定下载 URL
 if [ -n "$VERSION" ]; then
-    DOWNLOAD_BASE="https://github.com/server-probe/server-probe/releases/download/${VERSION}"
+    DOWNLOAD_BASE="https://github.com/YCJE/ServerProbe/releases/download/${VERSION}"
 fi
 
 SERVER_URL="${DOWNLOAD_BASE}/probe-server-${OS}-${ARCH}"

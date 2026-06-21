@@ -165,13 +165,13 @@ jobs:
             ### 快速安装 Server
 
             ```bash
-            curl -fsSL https://raw.githubusercontent.com/server-probe/server-probe/main/scripts/install-server.sh | bash -s -- --port 8443
+            curl -fsSL https://raw.githubusercontent.com/YCJE/ServerProbe/main/scripts/install-server.sh | bash -s -- --port 8443
             ```
 
             ### 快速安装 Agent
 
             ```bash
-            curl -fsSL https://raw.githubusercontent.com/server-probe/server-probe/main/scripts/install-agent.sh | bash -s -- --server https://your-server.com:8443 --code YOUR_CODE
+            curl -fsSL https://raw.githubusercontent.com/YCJE/ServerProbe/main/scripts/install-agent.sh | bash -s -- --server https://your-server.com:8443 --code YOUR_CODE
             ```
 
             ### 校验
