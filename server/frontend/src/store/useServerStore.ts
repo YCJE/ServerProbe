@@ -176,6 +176,10 @@ export const useServerStore = create<ServerStoreState>((set, get) => ({
       set({ servers: response.servers, serversLoading: false })
     } catch (err) {
       set({ serversLoading: false })
+      // 如果是认证错误，更新认证状态
+      if (err instanceof Error && err.message.includes('未授权')) {
+        set({ isAuthenticated: false })
+      }
       throw err
     }
   },

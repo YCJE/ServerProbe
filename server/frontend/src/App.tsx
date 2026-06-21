@@ -42,7 +42,7 @@ function App() {
     }
   }, [isAuthenticated, needsSetup, location.pathname, connectWebSocket, disconnectWebSocket])
 
-  // 初始化设置中显示加载状态
+  // 仅在首次初始化检查时显示加载状态（不影响公开页面访问）
   if (authLoading && needsSetup) {
     return (
       <div className="flex h-screen items-center justify-center bg-background">

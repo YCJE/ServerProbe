@@ -55,7 +55,10 @@ async function request<T>(
     clearToken()
     // 不在 setup-status 和公开 API 请求中跳转
     if (!path.includes('/auth/setup-status') && !path.startsWith('/public/')) {
-      window.location.href = '/login'
+      // 使用 setTimeout 避免阻塞当前请求的错误处理
+      setTimeout(() => {
+        window.location.href = '/login'
+      }, 0)
     }
     throw new Error('未授权，请重新登录')
   }
