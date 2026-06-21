@@ -38,7 +38,7 @@
 
 ```bash
 # 一键安装
-curl -fsSL https://raw.githubusercontent.com/YCJE/ServerProbe/main/scripts/install-server.sh | bash -s -- --port 8443
+curl -fsSL https://raw.githubusercontent.com/YCJE/ServerProbe/master/scripts/install-server.sh | bash -s -- --port 8443
 
 # 或手动安装
 # 1. 下载二进制
@@ -68,7 +68,7 @@ probe-server --config /etc/probe-server/config.yml
 2. 在被监控服务器上执行:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/YCJE/ServerProbe/main/scripts/install-agent.sh | bash -s -- --server https://your-server.com:8443 --code ABC123XY
+curl -fsSL https://raw.githubusercontent.com/YCJE/ServerProbe/master/scripts/install-agent.sh | bash -s -- --server https://your-server.com:8443 --code ABC123XY
 ```
 
 ### Docker 部署
@@ -139,7 +139,7 @@ journalctl -u probe-agent -f    # 日志
 ### 升级 Agent
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/YCJE/ServerProbe/main/scripts/upgrade-agent.sh | bash
+curl -fsSL https://raw.githubusercontent.com/YCJE/ServerProbe/master/scripts/upgrade-agent.sh | bash
 ```
 
 ## 构建
