@@ -146,7 +146,7 @@ func (MetricRecord) TableName() string { return "metric_records" }
 
 // Admin 管理员账户（GORM 模型）
 type Admin struct {
-	ID           int64     `gorm:"primaryKey" json:"id"`
+	ID           int64     `gorm:"primaryKey;autoIncrement" json:"id"`
 	Username     string    `gorm:"uniqueIndex;not null" json:"username"`
 	PasswordHash string    `gorm:"not null" json:"-"`
 	TOTPSecret   string    `json:"-"`

@@ -42,7 +42,12 @@ func NewRouter(
 	serverHandler := NewServerHandler(agentRepo, monitor, recordRepo)
 	agentHandler := NewAgentHandler(registry, monitor, configSync, validator)
 
-	// API 路由组
+	// 健康检查
+	r.GET("/api/v1/health", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"ok": true, "service": "server-probe"})
+	})
+
+	// API v1
 	api := r.Group("/api/v1")
 	{
 		// 认证相关（无需登录）

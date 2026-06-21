@@ -1,6 +1,7 @@
 package api
 
 import (
+	"log"
 	"net/http"
 	"time"
 
@@ -174,11 +175,16 @@ func (h *AuthHandler) HandleSetup(c *gin.Context) {
 // HandleCheckSetup 检查是否需要初始化
 // 路由: GET /api/v1/auth/setup-status
 func (h *AuthHandler) HandleCheckSetup(c *gin.Context) {
+	log.Printf("[SetupCheck] 请求来自 %s", c.ClientIP())
+
 	count, err := h.adminRepo.Count()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "检查失败"})
+		log.Printf("[SetupCheck] 查询管理员数量失败: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "检查失败", "detail": err.Error()})
 		return
 	}
+
+	log.Printf("[SetupCheck] 管理员数量: %d, needs_setup: %v", count, count == 0)
 
 	c.JSON(http.StatusOK, gin.H{
 		"needs_setup": count == 0,
