@@ -1,10 +1,15 @@
 #!/bin/bash
-# Server Probe Server 一键安装脚本
-# 用法: curl -fsSL https://your-server.com/install-server.sh | bash -s -- --port 8443 --password <管理员密码>
+# Server Probe Server 安装脚本
+# 支持两种模式:
+#   1. 从源码构建 (默认,无需 Release)
+#   2. 下载预编译二进制 (需要 GitHub Release)
+#
+# 用法:
+#   从源码构建:  ./install-server.sh --port 8443
+#   下载二进制:  ./install-server.sh --port 8443 --release
 
 set -e
 
-# 颜色输出
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -16,35 +21,37 @@ error() { echo -e "${RED}[ERROR]${NC} $1"; exit 1; }
 
 # 默认参数
 PORT=8443
-ADMIN_PASSWORD=""
 INSTALL_DIR="/usr/local/bin"
 CONFIG_DIR="/etc/probe-server"
 DATA_DIR="/var/lib/probe-server"
 SERVICE_NAME="probe-server"
+FROM_SOURCE=true
+VERSION=""
+REPO_URL="https://github.com/YCJE/ServerProbe.git"
 DOWNLOAD_BASE="https://github.com/YCJE/ServerProbe/releases/latest/download"
 
-# 解析参数
 while [[ $# -gt 0 ]]; do
     case $1 in
         --port) PORT="$2"; shift 2;;
-        --password) ADMIN_PASSWORD="$2"; shift 2;;
         --data-dir) DATA_DIR="$2"; shift 2;;
         --version) VERSION="$2"; shift 2;;
+        --release) FROM_SOURCE=false; shift;;
+        --from-source) FROM_SOURCE=true; shift;;
         --help)
-            echo "用法: install-server.sh [--port <端口>] [--password <密码>] [--data-dir <目录>] [--version <版本>]"
+            echo "用法: install-server.sh [选项]"
             echo ""
             echo "选项:"
-            echo "  --port       监听端口 (默认: 8443)"
-            echo "  --password   管理员密码 (至少12位,含大小写字母和数字)"
-            echo "  --data-dir   数据目录 (默认: /var/lib/probe-server)"
-            echo "  --version    指定版本 (默认: latest)"
+            echo "  --port <端口>       监听端口 (默认: 8443)"
+            echo "  --data-dir <目录>   数据目录 (默认: /var/lib/probe-server)"
+            echo "  --version <版本>    指定版本 (仅 --release 模式)"
+            echo "  --release           从 GitHub Release 下载二进制"
+            echo "  --from-source       从源码构建 (默认)"
             exit 0
             ;;
         *) error "未知参数: $1";;
     esac
 done
 
-# 检查 root 权限
 if [ "$EUID" -ne 0 ]; then
     error "请以 root 用户运行此脚本"
 fi
@@ -53,43 +60,94 @@ fi
 info "检测系统信息..."
 OS=$(uname -s | tr '[:upper:]' '[:lower:]')
 ARCH=$(uname -m)
-
 case $ARCH in
     x86_64)  ARCH="amd64";;
     aarch64) ARCH="arm64";;
     armv7l)  ARCH="armv7";;
     *) error "不支持的架构: $ARCH";;
 esac
-
 info "系统: $OS/$ARCH"
 
-# 确定下载 URL
-if [ -n "$VERSION" ]; then
-    DOWNLOAD_BASE="https://github.com/YCJE/ServerProbe/releases/download/${VERSION}"
-fi
-
-SERVER_URL="${DOWNLOAD_BASE}/probe-server-${OS}-${ARCH}"
 TMP_FILE="/tmp/probe-server"
 
-# 下载 Server 二进制
-info "下载 Server..."
-if command -v curl &> /dev/null; then
-    curl -fsSL -o "$TMP_FILE" "$SERVER_URL" || error "下载失败: $SERVER_URL"
-else
-    wget -qO "$TMP_FILE" "$SERVER_URL" || error "下载失败: $SERVER_URL"
-fi
+if [ "$FROM_SOURCE" = true ]; then
+    # ========== 从源码构建 ==========
+    info "从源码构建 Server..."
 
-# 校验 SHA256
-SHA256_URL="${SERVER_URL}.sha256"
-if command -v curl &> /dev/null; then
-    curl -fsSL -o "${TMP_FILE}.sha256" "$SHA256_URL" 2>/dev/null || true
-else
-    wget -qO "${TMP_FILE}.sha256" "$SHA256_URL" 2>/dev/null || true
-fi
+    # 检查依赖
+    if ! command -v go &> /dev/null; then
+        info "安装 Go..."
+        GO_VERSION="1.23.4"
+        GO_URL="https://go.dev/dl/go${GO_VERSION}.${OS}-${ARCH}.tar.gz"
+        if command -v curl &> /dev/null; then
+            curl -fsSL "$GO_URL" | tar -C /usr/local -xzf -
+        else
+            wget -qO- "$GO_URL" | tar -C /usr/local -xzf -
+        fi
+        export PATH=$PATH:/usr/local/go/bin
+        echo 'export PATH=$PATH:/usr/local/go/bin' >> /etc/profile.d/go.sh
+        info "Go ${GO_VERSION} 安装完成"
+    fi
 
-if [ -f "${TMP_FILE}.sha256" ]; then
-    info "校验文件完整性..."
-    echo "$(cat ${TMP_FILE}.sha256)  ${TMP_FILE}" | sha256sum -c - || error "校验失败"
+    if ! command -v node &> /dev/null; then
+        info "安装 Node.js..."
+        if command -v apt-get &> /dev/null; then
+            curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+            apt-get install -y nodejs
+        elif command -v yum &> /dev/null; then
+            curl -fsSL https://rpm.nodesource.com/setup_20.x | bash -
+            yum install -y nodejs
+        else
+            error "请手动安装 Node.js 20+"
+        fi
+        info "Node.js 安装完成"
+    fi
+
+    # 克隆仓库
+    BUILD_DIR="/tmp/server-probe-build"
+    rm -rf "$BUILD_DIR"
+    info "克隆代码仓库..."
+    git clone --depth 1 "$REPO_URL" "$BUILD_DIR"
+
+    # 构建前端
+    info "构建前端..."
+    cd "$BUILD_DIR/server/frontend"
+    npm install
+    npm run build
+
+    # 构建后端
+    info "构建 Server 二进制..."
+    cd "$BUILD_DIR/server"
+    CGO_ENABLED=0 go build -ldflags "-s -w" -o "$TMP_FILE" ./cmd/server
+
+    # 清理
+    rm -rf "$BUILD_DIR"
+    info "构建完成"
+else
+    # ========== 下载预编译二进制 ==========
+    if [ -n "$VERSION" ]; then
+        DOWNLOAD_BASE="https://github.com/YCJE/ServerProbe/releases/download/${VERSION}"
+    fi
+
+    SERVER_URL="${DOWNLOAD_BASE}/probe-server-${OS}-${ARCH}"
+    info "下载 Server..."
+    if command -v curl &> /dev/null; then
+        curl -fsSL -o "$TMP_FILE" "$SERVER_URL" || error "下载失败: $SERVER_URL"
+    else
+        wget -qO "$TMP_FILE" "$SERVER_URL" || error "下载失败: $SERVER_URL"
+    fi
+
+    # 校验 SHA256
+    SHA256_URL="${SERVER_URL}.sha256"
+    if command -v curl &> /dev/null; then
+        curl -fsSL -o "${TMP_FILE}.sha256" "$SHA256_URL" 2>/dev/null || true
+    else
+        wget -qO "${TMP_FILE}.sha256" "$SHA256_URL" 2>/dev/null || true
+    fi
+    if [ -f "${TMP_FILE}.sha256" ]; then
+        info "校验文件完整性..."
+        echo "$(cat ${TMP_FILE}.sha256)  ${TMP_FILE}" | sha256sum -c - || error "校验失败"
+    fi
 fi
 
 # 安装二进制
@@ -97,7 +155,7 @@ info "安装 Server..."
 chmod +x "$TMP_FILE"
 mv "$TMP_FILE" "${INSTALL_DIR}/probe-server"
 
-# 创建 probe-server 用户
+# 创建用户
 if ! id probe-server &>/dev/null; then
     info "创建 probe-server 用户..."
     useradd -r -s /usr/sbin/nologin -d "$DATA_DIR" probe-server
@@ -165,7 +223,6 @@ systemctl daemon-reload
 systemctl enable "${SERVICE_NAME}"
 systemctl start "${SERVICE_NAME}"
 
-# 等待启动
 sleep 2
 if systemctl is-active --quiet "${SERVICE_NAME}"; then
     info "Server 启动成功！"
@@ -173,7 +230,6 @@ else
     error "Server 启动失败，请检查日志: journalctl -u ${SERVICE_NAME} -e"
 fi
 
-# 输出信息
 SERVER_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
 if [ -z "$SERVER_IP" ]; then
     SERVER_IP="localhost"
@@ -187,12 +243,10 @@ echo ""
 echo "访问地址: https://${SERVER_IP}:${PORT}"
 echo ""
 echo "首次访问需要在浏览器中设置管理员账号"
-if [ -n "$ADMIN_PASSWORD" ]; then
-    echo "管理员密码: ${ADMIN_PASSWORD}"
-fi
 echo ""
 echo "配置文件: ${CONFIG_DIR}/config.yml"
 echo "数据目录: ${DATA_DIR}"
+echo "JWT 密钥: 已自动生成 (在配置文件中)"
 echo ""
 echo "常用命令:"
 echo "  查看状态: systemctl status ${SERVICE_NAME}"
@@ -201,4 +255,5 @@ echo "  重启服务: systemctl restart ${SERVICE_NAME}"
 echo "  停止服务: systemctl stop ${SERVICE_NAME}"
 echo ""
 echo -e "${YELLOW}注意: Server 使用自签名 TLS 证书, 浏览器会提示不安全连接, 请手动信任。${NC}"
+echo -e "${YELLOW}如需使用域名和正式证书, 请参考 README.md 中的 Nginx 反向代理配置。${NC}"
 echo ""
