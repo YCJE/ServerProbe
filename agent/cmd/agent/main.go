@@ -6,6 +6,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/goccy/go-yaml"
 	"github.com/server-probe/agent/internal/collector"
 	"github.com/server-probe/agent/internal/config"
 	"github.com/server-probe/agent/internal/reporter"
@@ -164,36 +165,49 @@ func collectAllData(
 	}, nil
 }
 
-// loadConfig 加载配置
+// loadConfig 加载 YAML 配置文件
 func loadConfig(path string) *AgentConfig {
-	// 简化版：从环境变量读取
 	cfg := &AgentConfig{
-		ServerURL:          os.Getenv("PROBE_SERVER"),
-		Token:              os.Getenv("PROBE_TOKEN"),
-		RegisterCode:       os.Getenv("PROBE_CODE"),
 		ReportInterval:     3,
 		ConfigSyncInterval: 3600,
 		PingMethod:         "auto",
 	}
 
-	// 如果环境变量未设置，使用默认值
-	if cfg.ServerURL == "" {
-		cfg.ServerURL = "https://localhost:443"
+	data, err := os.ReadFile(path)
+	if err != nil {
+		log.Fatalf("读取配置文件失败: %v", err)
 	}
+
+	if err := yaml.Unmarshal(data, cfg); err != nil {
+		log.Fatalf("解析配置文件失败: %v", err)
+	}
+
+	// 设置默认值
 	if cfg.ReportInterval <= 0 {
 		cfg.ReportInterval = 3
 	}
 	if cfg.ConfigSyncInterval <= 0 {
 		cfg.ConfigSyncInterval = 3600
 	}
+	if cfg.PingMethod == "" {
+		cfg.PingMethod = "auto"
+	}
 
 	return cfg
 }
 
-// saveConfig 保存配置
+// saveConfig 保存 YAML 配置文件
 func saveConfig(path string, cfg *AgentConfig) {
-	// 简化版：仅更新环境变量（实际应写入文件）
-	_ = cfg
+	data, err := yaml.Marshal(cfg)
+	if err != nil {
+		log.Printf("序列化配置失败: %v", err)
+		return
+	}
+
+	// 保持文件权限 600
+	if err := os.WriteFile(path, data, 0600); err != nil {
+		log.Printf("保存配置文件失败: %v", err)
+	}
 }
 
 // startPingProbe 启动 Ping 探测

@@ -1,8 +1,9 @@
 module github.com/server-probe/agent
 
-go 1.23
+go 1.25.0
 
 require (
+	github.com/goccy/go-yaml v1.19.2
 	github.com/gorilla/websocket v1.5.3
 	github.com/prometheus-community/pro-bing v0.9.0
 	github.com/server-probe/shared v0.0.0

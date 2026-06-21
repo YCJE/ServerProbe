@@ -1,18 +1,18 @@
 # Binaries
+bin/
+dist/
 *.exe
 *.exe~
 *.dll
 *.so
 *.dylib
-bin/
 
 # Go test
 *.test
 *.out
-coverage.html
 coverage
-coverage_rb
 coverage_*
+coverage.html
 
 # IDE
 .idea/
@@ -28,7 +28,6 @@ Thumbs.db
 server/web/
 server/frontend/node_modules/
 server/frontend/dist/
-dist/
 
 # Runtime data
 *.db
@@ -40,3 +39,12 @@ certs/
 # Environment
 .env
 .env.local
+
+# Git
+.git/
+.gitignore
+
+# Docs
+*.md
+!README.md
+!SECURITY.md

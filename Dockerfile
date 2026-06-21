@@ -12,7 +12,7 @@ RUN npm run build
 FROM golang:1.23-alpine AS backend-builder
 WORKDIR /app
 COPY go.work ./
-COPY shared/ ./shared/
+COPY shared/go.mod ./shared/
 COPY server/go.mod server/go.sum ./server/
 COPY agent/go.mod agent/go.sum ./agent/
 RUN go mod download
