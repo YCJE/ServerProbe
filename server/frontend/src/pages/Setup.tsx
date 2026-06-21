@@ -10,17 +10,11 @@ export default function Setup() {
   const authLoading = useServerStore((s) => s.authLoading)
   const needsSetup = useServerStore((s) => s.needsSetup)
   const isAuthenticated = useServerStore((s) => s.isAuthenticated)
-  const checkSetupStatus = useServerStore((s) => s.checkSetupStatus)
 
   const [username, setUsername] = useState('admin')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [error, setError] = useState('')
-
-  // 检查是否需要初始化
-  useEffect(() => {
-    checkSetupStatus()
-  }, [checkSetupStatus])
 
   // 如果不需要初始化，跳转到登录或管理后台
   useEffect(() => {

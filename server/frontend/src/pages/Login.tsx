@@ -10,16 +10,10 @@ export default function Login() {
   const authLoading = useServerStore((s) => s.authLoading)
   const isAuthenticated = useServerStore((s) => s.isAuthenticated)
   const needsSetup = useServerStore((s) => s.needsSetup)
-  const checkSetupStatus = useServerStore((s) => s.checkSetupStatus)
 
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
-
-  // 检查是否需要初始化
-  useEffect(() => {
-    checkSetupStatus()
-  }, [checkSetupStatus])
 
   // 如果需要初始化，跳转到设置页
   useEffect(() => {

@@ -120,9 +120,10 @@ export const useServerStore = create<ServerStoreState>((set, get) => ({
       const status = await getSetupStatus()
       set({ needsSetup: status.needs_setup, authLoading: false })
     } catch (err) {
-      // 请求失败时默认需要 setup，确保首次安装能进入设置页
+      // 请求失败时不设置 needsSetup=true，避免误跳 Setup 页
+      // 保持 needsSetup=false，让用户看到登录页或公开页
       console.error('checkSetupStatus failed:', err)
-      set({ needsSetup: true, authLoading: false })
+      set({ needsSetup: false, authLoading: false })
     }
   },
 

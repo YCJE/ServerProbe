@@ -18,7 +18,6 @@ function App() {
   const disconnectWebSocket = useServerStore((s) => s.disconnectWebSocket)
   const isAuthenticated = useServerStore((s) => s.isAuthenticated)
   const needsSetup = useServerStore((s) => s.needsSetup)
-  const authLoading = useServerStore((s) => s.authLoading)
   const location = useLocation()
 
   // 初始化主题
@@ -42,17 +41,8 @@ function App() {
     }
   }, [isAuthenticated, needsSetup, location.pathname, connectWebSocket, disconnectWebSocket])
 
-  // 仅在首次初始化检查时显示加载状态（不影响公开页面访问）
-  if (authLoading && needsSetup) {
-    return (
-      <div className="flex h-screen items-center justify-center bg-background">
-        <div className="flex flex-col items-center gap-3">
-          <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-          <p className="text-sm text-muted-foreground">加载中...</p>
-        </div>
-      </div>
-    )
-  }
+  // 不再使用 authLoading 阻塞路由渲染
+  // 公开页面无需等待认证状态，管理页面由路由守卫处理
 
   return (
     <Routes>

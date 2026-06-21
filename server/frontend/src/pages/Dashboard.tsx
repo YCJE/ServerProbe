@@ -11,7 +11,9 @@ export default function Dashboard() {
 
   // 获取服务器列表
   useEffect(() => {
-    fetchServers().catch(() => {})
+    fetchServers().catch(() => {
+      // 错误处理在 API 层已做，这里不显示 spinner
+    })
   }, [fetchServers])
 
   // 统计信息
@@ -31,18 +33,8 @@ export default function Dashboard() {
     return { total, online, offline, avgCpu, avgMem, totalRx, totalTx }
   }, [servers])
 
-  // 仅在首次加载且无任何数据时显示加载状态
-  // 如果 WebSocket 已经推送了数据，不显示加载圈圈
-  if (serversLoading && servers.length === 0 && !wsConnected) {
-    return (
-      <div className="flex h-full items-center justify-center">
-        <div className="flex flex-col items-center gap-3">
-          <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-          <p className="text-sm text-muted-foreground">加载中...</p>
-        </div>
-      </div>
-    )
-  }
+  // 不再显示全屏加载 spinner，直接显示内容
+  // 如果正在加载且无数据，显示"加载中"文本而非 spinner
 
   return (
     <div className="space-y-4">
