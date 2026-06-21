@@ -95,6 +95,19 @@ if [ "$FROM_SOURCE" = true ]; then
         info "Go ${GO_VERSION} 安装完成"
     fi
 
+    # 检查 git
+    if ! command -v git &> /dev/null; then
+        info "安装 git..."
+        if command -v apt-get &> /dev/null; then
+            apt-get update -qq && apt-get install -y git
+        elif command -v yum &> /dev/null; then
+            yum install -y git
+        else
+            error "请手动安装 git"
+        fi
+        info "git 安装完成"
+    fi
+
     # 克隆并构建
     BUILD_DIR="/tmp/server-probe-build"
     rm -rf "$BUILD_DIR"
