@@ -238,6 +238,8 @@ systemctl restart probe-server
 
 **第 4 步: 配置 Nginx 反向代理**
 
+> **重要**: 只写一个监听 80 的 server 块，**不要预先写 443 块**。Certbot 申请证书时会自动创建 443 块并配置证书。预先写 443 块会导致 Certbot 重复添加，产生 `conflicting server name` 冲突。
+
 ```bash
 cat > /etc/nginx/conf.d/probe.conf << 'EOF'
 server {
@@ -249,21 +251,7 @@ server {
         root /var/www/html;
     }
 
-    # 重定向到 HTTPS
-    location / {
-        return 301 https://$host$request_uri;
-    }
-}
-
-server {
-    listen 443 ssl http2;
-    server_name probe.yourdomain.com;
-
-    # SSL 证书路径 (Certbot 会自动填充)
-    # ssl_certificate /etc/letsencrypt/live/probe.yourdomain.com/fullchain.pem;
-    # ssl_certificate_key /etc/letsencrypt/live/probe.yourdomain.com/privkey.pem;
-
-    # 反向代理到 Server
+    # 反向代理到 Server (证书申请前先用 HTTP)
     location / {
         proxy_pass https://127.0.0.1:8443;
         proxy_set_header Host $host;
@@ -284,6 +272,15 @@ server {
 EOF
 ```
 
+测试配置并重载:
+
+```bash
+nginx -t
+systemctl reload nginx
+```
+
+此时通过 `http://probe.yourdomain.com` 即可访问 (HTTP，浏览器会提示不安全，下一步申请证书后自动变为 HTTPS)。
+
 **第 5 步: 申请 SSL 证书**
 
 ```bash
@@ -291,16 +288,23 @@ EOF
 certbot --nginx -d probe.yourdomain.com
 ```
 
-按提示操作,Certbot 会自动修改 Nginx 配置并申请证书。
+按提示操作，Certbot 会自动:
+1. 验证域名所有权
+2. 申请 SSL 证书
+3. 修改 Nginx 配置: 将 80 端口重定向到 443，自动添加 443 server 块和证书路径
+4. 重载 Nginx
 
-**第 6 步: 重启 Nginx**
+**第 6 步: 验证**
 
 ```bash
-nginx -t          # 测试配置
+# 测试 Nginx 配置 (不应有 conflicting server name 警告)
+nginx -t
+
+# 重载
 systemctl reload nginx
 ```
 
-现在可以通过 `https://probe.yourdomain.com` 访问了,浏览器不会再报警告。
+现在通过 `https://probe.yourdomain.com` 访问了，浏览器不会再报警告。
 
 **第 7 步: 设置证书自动续期**
 
@@ -308,8 +312,10 @@ systemctl reload nginx
 # 测试续期
 certbot renew --dry-run
 
-# Certbot 会自动添加 cron 定时任务,无需手动配置
+# Certbot 会自动添加 cron 定时任务，无需手动配置
 ```
+
+> **如果出现 `conflicting server name` 警告**: 说明 `probe.conf` 中有多个重复的 server 块。执行 `cat -n /etc/nginx/conf.d/probe.conf` 查看内容，只保留 Certbot 管理的 server 块 (含 `# managed by Certbot` 注释的行)，删除多余的 server 块，然后 `nginx -t && systemctl reload nginx`。
 
 ### 使用自有证书
 
