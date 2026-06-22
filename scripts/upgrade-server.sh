@@ -1,10 +1,10 @@
 #!/bin/bash
-# Server Probe Agent 升级脚本
-# 仅更新二进制文件，保留配置、用户、服务
+# Server Probe Server 升级脚本
+# 仅更新二进制文件，保留配置、数据、用户、服务
 #
 # 用法:
-#   curl -fsSL https://raw.githubusercontent.com/YCJE/ServerProbe/master/scripts/upgrade-agent.sh | bash
-#   或: bash upgrade-agent.sh [--release]
+#   curl -fsSL https://raw.githubusercontent.com/YCJE/ServerProbe/master/scripts/upgrade-server.sh | bash
+#   或: bash upgrade-server.sh [--release]
 
 set -e
 
@@ -22,8 +22,8 @@ VERSION=""
 REPO_URL="https://github.com/YCJE/ServerProbe.git"
 DOWNLOAD_BASE="https://github.com/YCJE/ServerProbe/releases/latest/download"
 INSTALL_DIR="/usr/local/bin"
-SERVICE_NAME="probe-agent"
-TMP_FILE="/tmp/probe-agent-upgrade"
+SERVICE_NAME="probe-server"
+TMP_FILE="/tmp/probe-server-upgrade"
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -31,9 +31,9 @@ while [[ $# -gt 0 ]]; do
         --from-source) FROM_SOURCE=true; shift;;
         --version) VERSION="$2"; shift 2;;
         --help)
-            echo "用法: upgrade-agent.sh [选项]"
+            echo "用法: upgrade-server.sh [选项]"
             echo ""
-            echo "仅更新二进制文件，保留所有配置"
+            echo "仅更新二进制文件，保留所有配置和数据"
             echo ""
             echo "选项:"
             echo "  --release         从 GitHub Release 下载二进制"
@@ -50,8 +50,8 @@ if [ "$EUID" -ne 0 ]; then
 fi
 
 # 检查是否已安装
-if [ ! -f "${INSTALL_DIR}/probe-agent" ]; then
-    error "Agent 未安装，请先运行安装脚本"
+if [ ! -f "${INSTALL_DIR}/probe-server" ]; then
+    error "Server 未安装，请先运行安装脚本"
 fi
 
 if ! systemctl list-unit-files | grep -q "${SERVICE_NAME}"; then
@@ -60,7 +60,7 @@ fi
 
 echo ""
 echo "========================================"
-echo -e "${YELLOW}  Server Probe Agent 升级程序${NC}"
+echo -e "${YELLOW}  Server Probe Server 升级程序${NC}"
 echo "========================================"
 echo ""
 
@@ -78,12 +78,12 @@ info "系统: $OS/$ARCH"
 
 # 备份当前二进制
 info "备份当前二进制..."
-cp "${INSTALL_DIR}/probe-agent" "${INSTALL_DIR}/probe-agent.bak"
-info "已备份到: ${INSTALL_DIR}/probe-agent.bak"
+cp "${INSTALL_DIR}/probe-server" "${INSTALL_DIR}/probe-server.bak"
+info "已备份到: ${INSTALL_DIR}/probe-server.bak"
 
 # 构建或下载新二进制
 if [ "$FROM_SOURCE" = true ]; then
-    info "从源码构建 Agent..."
+    info "从源码构建 Server..."
 
     # 确保 Go 可用
     if ! command -v go &> /dev/null; then
@@ -92,6 +92,11 @@ if [ "$FROM_SOURCE" = true ]; then
         else
             error "Go 未安装，请使用 --release 模式或先安装 Go"
         fi
+    fi
+
+    # 确保 Node.js 可用
+    if ! command -v node &> /dev/null; then
+        error "Node.js 未安装，请使用 --release 模式或先安装 Node.js"
     fi
 
     # 确保 git 可用
@@ -104,9 +109,14 @@ if [ "$FROM_SOURCE" = true ]; then
     info "克隆代码仓库..."
     git clone --depth 1 "$REPO_URL" "$BUILD_DIR"
 
-    info "构建 Agent 二进制..."
-    cd "$BUILD_DIR/agent"
-    CGO_ENABLED=0 go build -ldflags "-s -w" -o "$TMP_FILE" ./cmd/agent
+    info "构建前端..."
+    cd "$BUILD_DIR/server/frontend"
+    npm install --silent 2>/dev/null
+    npm run build 2>/dev/null
+
+    info "构建 Server 二进制..."
+    cd "$BUILD_DIR/server"
+    CGO_ENABLED=0 go build -ldflags "-s -w" -o "$TMP_FILE" ./cmd/server
 
     rm -rf "$BUILD_DIR"
     info "构建完成"
@@ -115,29 +125,22 @@ else
         DOWNLOAD_BASE="https://github.com/YCJE/ServerProbe/releases/download/${VERSION}"
     fi
 
-    AGENT_URL="${DOWNLOAD_BASE}/probe-agent-${OS}-${ARCH}"
-    info "下载 Agent..."
+    SERVER_URL="${DOWNLOAD_BASE}/probe-server-${OS}-${ARCH}"
+    info "下载 Server..."
     if command -v curl &> /dev/null; then
-        curl -fsSL -o "$TMP_FILE" "$AGENT_URL" || error "下载失败: $AGENT_URL"
+        curl -fsSL -o "$TMP_FILE" "$SERVER_URL" || error "下载失败: $SERVER_URL"
     else
-        wget -qO "$TMP_FILE" "$AGENT_URL" || error "下载失败: $AGENT_URL"
+        wget -qO "$TMP_FILE" "$SERVER_URL" || error "下载失败: $SERVER_URL"
     fi
 fi
 
 # 替换二进制
 info "更新二进制文件..."
 chmod +x "$TMP_FILE"
-mv "$TMP_FILE" "${INSTALL_DIR}/probe-agent"
+mv "$TMP_FILE" "${INSTALL_DIR}/probe-server"
 
-# 重新设置 setcap (ICMP Ping)
-info "重新配置 ICMP 权限..."
-if command -v setcap &> /dev/null; then
-    if setcap cap_net_raw+ep "${INSTALL_DIR}/probe-agent" 2>/dev/null; then
-        info "ICMP Ping 已启用 (CAP_NET_RAW)"
-    else
-        warn "setcap 失败，将使用 unprivileged ICMP 或 TCP Ping"
-    fi
-fi
+# 确保 probe-server 用户有执行权限
+chown probe-server:probe-server "${INSTALL_DIR}/probe-server" 2>/dev/null || true
 
 # 重启服务
 info "重启服务..."
@@ -148,11 +151,7 @@ if systemctl is-active --quiet "${SERVICE_NAME}"; then
     info "升级成功！服务已重启"
 else
     warn "服务启动失败，正在回滚..."
-    cp "${INSTALL_DIR}/probe-agent.bak" "${INSTALL_DIR}/probe-agent"
-    # 回滚后也要重新 setcap
-    if command -v setcap &> /dev/null; then
-        setcap cap_net_raw+ep "${INSTALL_DIR}/probe-agent" 2>/dev/null || true
-    fi
+    cp "${INSTALL_DIR}/probe-server.bak" "${INSTALL_DIR}/probe-server"
     systemctl restart "${SERVICE_NAME}"
     sleep 2
     if systemctl is-active --quiet "${SERVICE_NAME}"; then
@@ -164,14 +163,14 @@ else
 fi
 
 # 清理备份
-rm -f "${INSTALL_DIR}/probe-agent.bak"
+rm -f "${INSTALL_DIR}/probe-server.bak"
 
 echo ""
 echo "========================================"
-echo -e "${GREEN}  Server Probe Agent 升级完成！${NC}"
+echo -e "${GREEN}  Server Probe Server 升级完成！${NC}"
 echo "========================================"
 echo ""
-echo "配置已保留，无需重新注册"
+echo "配置和数据已保留，无需重新设置"
 echo ""
 echo "查看状态: systemctl status ${SERVICE_NAME}"
 echo "查看日志: journalctl -u ${SERVICE_NAME} -f"

@@ -640,11 +640,26 @@ curl -fsSL https://raw.githubusercontent.com/YCJE/ServerProbe/master/scripts/uni
 > # 3. 执行: bash uninstall-server.sh
 > ```
 
-### 升级 Agent
+### 升级
+
+升级脚本仅更新二进制文件，保留所有配置和数据，无需卸载重装。升级失败会自动回滚到旧版本。
+
+**升级 Server:**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/YCJE/ServerProbe/master/scripts/upgrade-server.sh | bash
+```
+
+**升级 Agent:**
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/YCJE/ServerProbe/master/scripts/upgrade-agent.sh | bash
 ```
+
+> 如果 `curl` 无法解析 `raw.githubusercontent.com`，可使用 ghproxy 加速:
+> ```bash
+> curl -fsSL https://ghproxy.com/https://raw.githubusercontent.com/YCJE/ServerProbe/master/scripts/upgrade-server.sh -o /tmp/upgrade.sh && bash /tmp/upgrade.sh
+> ```
 
 ### 备份数据
 
