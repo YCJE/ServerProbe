@@ -93,9 +93,16 @@ export class DashboardWebSocket {
       this.reconnectTimer = null
     }
     if (this.ws) {
+      // 断开前清除所有事件处理器，防止 onclose 竞态触发重连
+      this.ws.onopen = null
+      this.ws.onmessage = null
+      this.ws.onerror = null
+      this.ws.onclose = null
       this.ws.close()
       this.ws = null
     }
+    this.listeners.clear()
+    this.statusListeners.clear()
     this.setConnected(false)
   }
 

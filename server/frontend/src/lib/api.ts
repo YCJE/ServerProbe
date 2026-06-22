@@ -15,6 +15,17 @@ import type {
 /** API 基础路径 */
 const API_BASE = '/api/v1'
 
+/** 自定义 API 错误类，携带 HTTP 状态码 */
+export class ApiError extends Error {
+  constructor(public status: number, message: string) {
+    super(message)
+    this.name = 'ApiError'
+  }
+}
+
+/** 防止 401 时多次触发重定向 */
+let isRedirecting = false
+
 /** 获取存储的 JWT Token */
 export function getToken(): string | null {
   return localStorage.getItem('probe_token')
@@ -70,12 +81,16 @@ async function request<T>(
     clearToken()
     // 不在 setup-status 和公开 API 请求中跳转
     if (!path.includes('/auth/setup-status') && !path.startsWith('/public/')) {
-      // 使用 setTimeout 避免阻塞当前请求的错误处理
-      setTimeout(() => {
-        window.location.href = '/login'
-      }, 0)
+      // 使用防重定向标志，避免多次 401 触发多次跳转
+      if (!isRedirecting) {
+        isRedirecting = true
+        setTimeout(() => {
+          window.location.href = '/login'
+          isRedirecting = false
+        }, 0)
+      }
     }
-    throw new Error('未授权，请重新登录')
+    throw new ApiError(401, '未授权，请重新登录')
   }
 
   if (!response.ok) {

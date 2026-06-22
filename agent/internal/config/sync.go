@@ -3,8 +3,8 @@ package config
 import (
 	"crypto/tls"
 	"encoding/json"
-	"log"
 	"io"
+	"log"
 	"net/http"
 	"strings"
 	"sync"
@@ -23,6 +23,7 @@ type Syncer struct {
 	currentConfig *sharedmodel.AgentConfig
 	mu             sync.RWMutex
 	stopCh         chan struct{}
+	stopOnce       sync.Once
 }
 
 // NewSyncer 创建配置拉取器
@@ -58,7 +59,7 @@ func (s *Syncer) Start() {
 
 // Stop 停止拉取
 func (s *Syncer) Stop() {
-	close(s.stopCh)
+	s.stopOnce.Do(func() { close(s.stopCh) })
 }
 
 // GetConfig 获取当前配置
@@ -76,7 +77,15 @@ func (s *Syncer) sync() {
 		return
 	}
 
-	url := s.serverURL + "/api/v1/agent/config?token=" + s.token
+	// 加读锁获取 token
+	s.mu.RLock()
+	token := s.token
+	s.mu.RUnlock()
+
+	if token == "" {
+		log.Printf("拉取配置失败: 缺少 Token")
+		return
+	}
 
 	// 创建 HTTP 客户端
 	tlsConfig := &tls.Config{
@@ -93,7 +102,15 @@ func (s *Syncer) sync() {
 		},
 	}
 
-	resp, err := client.Get(url)
+	url := s.serverURL + "/api/v1/agent/config"
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		log.Printf("创建请求失败: %v", err)
+		return
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	resp, err := client.Do(req)
 	if err != nil {
 		log.Printf("拉取配置失败: %v", err)
 		return

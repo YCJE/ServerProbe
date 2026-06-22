@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, useCallback } from 'react'
+import { useEffect, useState, useMemo, useCallback, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useServerStore } from '@/store/useServerStore'
 import { getServerHistory } from '@/lib/api'
@@ -51,6 +51,15 @@ export default function ServerDetail() {
   const [historyData, setHistoryData] = useState<HistoryData | null>(null)
   const [historyLoading, setHistoryLoading] = useState(false)
 
+  // 跟踪组件是否已挂载，防止卸载后 setState
+  const mountedRef = useRef(true)
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+    }
+  }, [])
+
   const isDark = useMemo(() => {
     if (theme === 'dark') return true
     if (theme === 'light') return false
@@ -65,25 +74,37 @@ export default function ServerDetail() {
     }
     return () => {
       clearRealtimeHistory()
+      // 卸载时清除 currentServer，防止 realtimeHistory 持续增长
+      useServerStore.setState({ currentServer: null })
     }
   }, [serverId, fetchServerDetail, clearRealtimeHistory])
 
   // 加载历史数据（非实时范围时）
   const loadHistory = useCallback(async (range: TimeRange) => {
     if (isRealtimeRange(range)) {
-      setHistoryData(null)
+      if (mountedRef.current) {
+        setHistoryData(null)
+      }
       return
     }
 
-    setHistoryLoading(true)
+    if (mountedRef.current) {
+      setHistoryLoading(true)
+    }
     try {
       const data = await getServerHistory(serverId, range)
-      setHistoryData(data)
+      if (mountedRef.current) {
+        setHistoryData(data)
+      }
     } catch (err) {
       console.error('加载历史数据失败:', err)
-      setHistoryData(null)
+      if (mountedRef.current) {
+        setHistoryData(null)
+      }
     } finally {
-      setHistoryLoading(false)
+      if (mountedRef.current) {
+        setHistoryLoading(false)
+      }
     }
   }, [serverId])
 

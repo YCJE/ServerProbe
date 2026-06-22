@@ -2,8 +2,10 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"log"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/goccy/go-yaml"
@@ -50,6 +52,7 @@ func main() {
 	// 设置回调
 	var configSyncer *config.Syncer
 	var pingTargets []sharedmodel.PingTarget
+	var pingTargetsMu sync.Mutex
 
 	wsClient.SetCallbacks(
 		// 注册成功回调
@@ -67,7 +70,9 @@ func main() {
 		// 配置更新回调
 		func(config *sharedmodel.AgentConfig) {
 			log.Printf("收到配置更新，探测目标 %d 个", len(config.PingTargets))
+			pingTargetsMu.Lock()
 			pingTargets = config.PingTargets
+			pingTargetsMu.Unlock()
 		},
 		nil,
 	)
@@ -92,7 +97,7 @@ func main() {
 	})
 
 	// 启动 Ping 探测
-	go startPingProbe(wsClient, pingCollector, &pingTargets, 60*time.Second)
+	go startPingProbe(wsClient, pingCollector, &pingTargets, &pingTargetsMu, 60*time.Second)
 
 	// 启动配置拉取
 	configSyncer = config.NewSyncer(cfg.ServerURL, cfg.Token, time.Duration(cfg.ConfigSyncInterval)*time.Second, cfg.InsecureTLS)
@@ -119,35 +124,50 @@ func collectAllData(
 	if err != nil {
 		return nil, err
 	}
-	cpuInfo := cpuResult.(sharedmodel.CPUInfo)
+	cpuInfo, ok := cpuResult.(sharedmodel.CPUInfo)
+	if !ok {
+		return nil, fmt.Errorf("CPU 采集器返回类型错误: %T", cpuResult)
+	}
 
 	// 采集内存
 	memResult, err := mem.Collect()
 	if err != nil {
 		return nil, err
 	}
-	memInfo := memResult.(sharedmodel.MemoryInfo)
+	memInfo, ok := memResult.(sharedmodel.MemoryInfo)
+	if !ok {
+		return nil, fmt.Errorf("Memory 采集器返回类型错误: %T", memResult)
+	}
 
 	// 采集磁盘
 	diskResult, err := disk.Collect()
 	if err != nil {
 		return nil, err
 	}
-	diskInfo := diskResult.([]sharedmodel.DiskInfo)
+	diskInfo, ok := diskResult.([]sharedmodel.DiskInfo)
+	if !ok {
+		return nil, fmt.Errorf("Disk 采集器返回类型错误: %T", diskResult)
+	}
 
 	// 采集网络
 	netResult, err := net.Collect()
 	if err != nil {
 		return nil, err
 	}
-	netInfo := netResult.(sharedmodel.NetworkInfo)
+	netInfo, ok := netResult.(sharedmodel.NetworkInfo)
+	if !ok {
+		return nil, fmt.Errorf("Network 采集器返回类型错误: %T", netResult)
+	}
 
 	// 采集系统信息
 	sysResult, err := sys.Collect()
 	if err != nil {
 		return nil, err
 	}
-	sysInfo := sysResult.(sharedmodel.SystemInfo)
+	sysInfo, ok := sysResult.(sharedmodel.SystemInfo)
+	if !ok {
+		return nil, fmt.Errorf("System 采集器返回类型错误: %T", sysResult)
+	}
 
 	// 采集运行时间
 	uptime, _ := sys.CollectUptime()
@@ -212,18 +232,28 @@ func saveConfig(path string, cfg *AgentConfig) {
 }
 
 // startPingProbe 启动 Ping 探测
-func startPingProbe(client *reporter.WSClient, pinger *collector.PingCollector, targets *[]sharedmodel.PingTarget, interval time.Duration) {
+func startPingProbe(client *reporter.WSClient, pinger *collector.PingCollector, targetsPtr *[]sharedmodel.PingTarget, mu *sync.Mutex, interval time.Duration) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-ticker.C:
-			if !client.IsConnected() || len(*targets) == 0 {
+			if !client.IsConnected() {
 				continue
 			}
 
-			results := pinger.PingTargets(*targets)
+			// 加锁拷贝一份探测目标，避免长时间持锁
+			mu.Lock()
+			targets := make([]sharedmodel.PingTarget, len(*targetsPtr))
+			copy(targets, *targetsPtr)
+			mu.Unlock()
+
+			if len(targets) == 0 {
+				continue
+			}
+
+			results := pinger.PingTargets(targets)
 			if len(results) > 0 {
 				if err := client.SendPingResult(results); err != nil {
 					log.Printf("上报 Ping 结果失败: %v", err)

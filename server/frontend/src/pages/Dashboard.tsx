@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react'
+import { useMemo } from 'react'
 import { useServerStore } from '@/store/useServerStore'
 import ServerCard from '@/components/ServerCard'
 
@@ -9,12 +9,8 @@ export default function Dashboard() {
   const fetchServers = useServerStore((s) => s.fetchServers)
   const wsConnected = useServerStore((s) => s.wsConnected)
 
-  // 获取服务器列表
-  useEffect(() => {
-    fetchServers().catch(() => {
-      // 错误处理在 API 层已做，这里不显示 spinner
-    })
-  }, [fetchServers])
+  // 服务器列表由 Layout 组件统一获取，此处不再重复调用 fetchServers
+  // 仅保留 fetchServers 引用用于手动刷新按钮
 
   // 统计信息
   const stats = useMemo(() => {
@@ -35,6 +31,7 @@ export default function Dashboard() {
 
   // 不再显示全屏加载 spinner，直接显示内容
   // 如果正在加载且无数据，显示"加载中"文本而非 spinner
+  // serversLoading 仅用于指示后台加载状态（由 Layout 触发）
 
   return (
     <div className="space-y-4">

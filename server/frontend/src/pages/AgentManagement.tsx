@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import {
   generateRegisterCode,
   getRegisterCodes,
@@ -22,6 +22,9 @@ export default function AgentManagement() {
   const [remark, setRemark] = useState('')
   const [formError, setFormError] = useState('')
 
+  // 跟踪复制按钮的定时器，卸载时清理
+  const timeoutRefs = useRef<ReturnType<typeof setTimeout>[]>([])
+
   // 每秒触发一次重渲染，用于更新倒计时
   const [, setTick] = useState(0)
   useEffect(() => {
@@ -29,6 +32,14 @@ export default function AgentManagement() {
       setTick((t) => t + 1)
     }, 1000)
     return () => clearInterval(interval)
+  }, [])
+
+  // 卸载时清理所有复制按钮的定时器
+  useEffect(() => {
+    return () => {
+      timeoutRefs.current.forEach(clearTimeout)
+      timeoutRefs.current = []
+    }
   }, [])
 
   // 从当前浏览器地址获取 Server URL
@@ -107,7 +118,8 @@ export default function AgentManagement() {
     try {
       await navigator.clipboard.writeText(text)
       setCopied(id)
-      setTimeout(() => setCopied(null), 2000)
+      const t = setTimeout(() => setCopied(null), 2000)
+      timeoutRefs.current.push(t)
     } catch {
       // 降级方案
       const textarea = document.createElement('textarea')
@@ -117,7 +129,8 @@ export default function AgentManagement() {
       document.execCommand('copy')
       document.body.removeChild(textarea)
       setCopied(id)
-      setTimeout(() => setCopied(null), 2000)
+      const t = setTimeout(() => setCopied(null), 2000)
+      timeoutRefs.current.push(t)
     }
   }
 

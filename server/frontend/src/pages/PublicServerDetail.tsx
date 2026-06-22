@@ -60,16 +60,20 @@ export default function PublicServerDetail() {
   // 首次加载时通过公开 API 获取服务器列表（用于在没有 WS 数据时也能展示）
   useEffect(() => {
     if (servers.length === 0) {
+      setLoading(true)
       getPublicServers()
         .then((res) => {
-          // 仅触发 store 更新，数据通过 handleDashboardMessage 流入 servers
-          // 这里不直接操作 store，等待 WS 推送
           if (res.servers.length === 0) {
             setLoading(false)
           }
+          // 如果有数据，等待 WS 推送更新 store
         })
         .catch(() => {
           setLoading(false)
+        })
+        .finally(() => {
+          // 安全兜底: 5 秒后强制关闭 loading
+          setTimeout(() => setLoading(false), 5000)
         })
     } else {
       setLoading(false)

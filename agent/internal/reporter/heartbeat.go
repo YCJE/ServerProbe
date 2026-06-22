@@ -2,6 +2,7 @@ package reporter
 
 import (
 	"log"
+	"sync"
 	"time"
 
 	sharedmodel "github.com/server-probe/shared/model"
@@ -12,6 +13,7 @@ type Heartbeat struct {
 	client   *WSClient
 	interval time.Duration
 	stopCh   chan struct{}
+	stopOnce sync.Once
 }
 
 // NewHeartbeat 创建心跳维持器
@@ -46,7 +48,7 @@ func (h *Heartbeat) Start() {
 
 // Stop 停止心跳
 func (h *Heartbeat) Stop() {
-	close(h.stopCh)
+	h.stopOnce.Do(func() { close(h.stopCh) })
 }
 
 // Uploader 数据上报器
@@ -54,6 +56,7 @@ type Uploader struct {
 	client   *WSClient
 	interval time.Duration
 	stopCh   chan struct{}
+	stopOnce sync.Once
 }
 
 // NewUploader 创建数据上报器
@@ -98,5 +101,5 @@ func (u *Uploader) Start(collectFn func() (*sharedmodel.MetricData, error)) {
 
 // Stop 停止上报
 func (u *Uploader) Stop() {
-	close(u.stopCh)
+	u.stopOnce.Do(func() { close(u.stopCh) })
 }

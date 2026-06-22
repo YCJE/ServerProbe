@@ -1,7 +1,6 @@
 package collector
 
 import (
-	"bytes"
 	"fmt"
 	"strconv"
 	"strings"
@@ -67,9 +66,17 @@ func (c *CPUCollector) Collect() (interface{}, error) {
 	// 计算使用率
 	var usage float64
 	if c.prevStat != nil {
-		totalDelta := currentStat.total() - c.prevStat.total()
-		busyDelta := currentStat.busy() - c.prevStat.busy()
-		if totalDelta > 0 {
+		prevTotal := c.prevStat.total()
+		prevBusy := c.prevStat.busy()
+		currentTotal := currentStat.total()
+		currentBusy := currentStat.busy()
+
+		if currentTotal > prevTotal {
+			totalDelta := currentTotal - prevTotal
+			var busyDelta uint64
+			if currentBusy > prevBusy {
+				busyDelta = currentBusy - prevBusy
+			}
 			usage = float64(busyDelta) / float64(totalDelta) * 100
 		} else {
 			usage = c.prevUsage
@@ -230,6 +237,3 @@ func roundFloat(val float64, n int) float64 {
 	}
 	return float64(int64(val*multiplier+0.5)) / multiplier
 }
-
-// 确保 bytes 包被使用（避免在某些构建中未使用的导入错误）
-var _ = bytes.Buffer{}

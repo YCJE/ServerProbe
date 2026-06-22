@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
+import { Routes, Route, Navigate } from 'react-router-dom'
 import { useServerStore } from '@/store/useServerStore'
 import PublicLayout from '@/components/PublicLayout'
 import Layout from '@/components/Layout'
@@ -13,12 +13,9 @@ import AgentManagement from '@/pages/AgentManagement'
 
 function App() {
   const initTheme = useServerStore((s) => s.initTheme)
-  const checkSetupStatus = useServerStore((s) => s.checkSetupStatus)
-  const connectWebSocket = useServerStore((s) => s.connectWebSocket)
-  const disconnectWebSocket = useServerStore((s) => s.disconnectWebSocket)
   const isAuthenticated = useServerStore((s) => s.isAuthenticated)
   const needsSetup = useServerStore((s) => s.needsSetup)
-  const location = useLocation()
+  const checkSetupStatus = useServerStore((s) => s.checkSetupStatus)
 
   // 初始化主题
   useEffect(() => {
@@ -30,25 +27,18 @@ function App() {
     checkSetupStatus()
   }, [checkSetupStatus])
 
-  // 仅在访问管理后台相关页面时连接需要认证的 WebSocket
-  useEffect(() => {
-    const isAdminRoute = location.pathname.startsWith('/admin')
-    if (isAuthenticated && !needsSetup && isAdminRoute) {
-      connectWebSocket()
-      return () => {
-        disconnectWebSocket()
-      }
-    }
-  }, [isAuthenticated, needsSetup, location.pathname, connectWebSocket, disconnectWebSocket])
-
-  // 不再使用 authLoading 阻塞路由渲染
-  // 公开页面无需等待认证状态，管理页面由路由守卫处理
+  // 未初始化时所有路由都指向 Setup
+  // WebSocket 连接管理已移至 Layout.tsx，避免 admin 路由间导航导致 WS 断开重连
+  if (needsSetup) {
+    return (
+      <Routes>
+        <Route path="*" element={<Setup />} />
+      </Routes>
+    )
+  }
 
   return (
     <Routes>
-      {/* 初始化设置（未初始化时所有路由都指向 Setup） */}
-      {needsSetup && <Route path="*" element={<Setup />} />}
-
       {/* 公开页面 (无需登录) */}
       <Route element={<PublicLayout />}>
         <Route path="/" element={<PublicDashboard />} />

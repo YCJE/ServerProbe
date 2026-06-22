@@ -13,6 +13,7 @@ import {
   logout as apiLogout,
   getToken,
   clearToken,
+  ApiError,
 } from '@/lib/api'
 import { getDashboardWebSocket, getPublicDashboardWebSocket } from '@/lib/websocket'
 
@@ -51,6 +52,10 @@ interface ServerStoreState {
   realtimeHistory: RealtimePoint[]
   currentServerLoading: boolean
 
+  // WebSocket 监听器清理函数（内部使用）
+  _wsCleanups: (() => void)[] | null
+  _publicWsCleanups: (() => void)[] | null
+
   // Actions
   initAuth: () => Promise<void>
   checkSetupStatus: () => Promise<void>
@@ -71,6 +76,9 @@ interface ServerStoreState {
 
 /** 实时历史数据最大保留点数 */
 const MAX_REALTIME_POINTS = 1200
+
+/** 确保系统主题变化监听器只注册一次 */
+let mediaQueryListenerRegistered = false
 
 /** 应用主题到 DOM */
 function applyTheme(theme: Theme): void {
@@ -104,6 +112,8 @@ export const useServerStore = create<ServerStoreState>((set, get) => ({
   currentServer: null,
   realtimeHistory: [],
   currentServerLoading: false,
+  _wsCleanups: null,
+  _publicWsCleanups: null,
 
   // 初始化认证状态
   initAuth: async () => {
@@ -177,8 +187,8 @@ export const useServerStore = create<ServerStoreState>((set, get) => ({
       set({ servers: response.servers, serversLoading: false })
     } catch (err) {
       set({ serversLoading: false })
-      // 如果是认证错误，更新认证状态
-      if (err instanceof Error && err.message.includes('未授权')) {
+      // 使用状态码判断认证错误，避免依赖错误消息字符串
+      if (err instanceof ApiError && err.status === 401) {
         set({ isAuthenticated: false })
       }
       throw err
@@ -200,64 +210,65 @@ export const useServerStore = create<ServerStoreState>((set, get) => ({
   // 连接 WebSocket
   connectWebSocket: () => {
     const ws = getDashboardWebSocket()
-
-    ws.onStatusChange((connected) => {
-      set({ wsConnected: connected })
-    })
-
-    ws.onMessage((message) => {
-      if (message.servers && message.servers.length > 0) {
-        get().handleDashboardMessage(message.servers)
-      }
-    })
-
+    // 先清理旧监听器，防止累积泄漏
+    get()._wsCleanups?.forEach((fn) => fn())
+    const cleanups = [
+      ws.onStatusChange((connected) => set({ wsConnected: connected })),
+      ws.onMessage((message) => {
+        if (message.servers && message.servers.length > 0) {
+          get().handleDashboardMessage(message.servers)
+        }
+      }),
+    ]
+    set({ _wsCleanups: cleanups })
     ws.connect()
   },
 
   // 断开 WebSocket
   disconnectWebSocket: () => {
-    const ws = getDashboardWebSocket()
-    ws.disconnect()
-    set({ wsConnected: false })
+    get()._wsCleanups?.forEach((fn) => fn())
+    set({ _wsCleanups: null, wsConnected: false })
+    getDashboardWebSocket().disconnect()
   },
 
   // 连接公开仪表盘 WebSocket（无需登录）
   connectPublicDashboardWS: () => {
     const ws = getPublicDashboardWebSocket()
-
-    ws.onStatusChange((connected) => {
-      set({ publicWsConnected: connected })
-    })
-
-    ws.onMessage((message) => {
-      if (message.servers && message.servers.length > 0) {
-        get().handleDashboardMessage(message.servers)
-      }
-    })
-
+    // 先清理旧监听器，防止累积泄漏
+    get()._publicWsCleanups?.forEach((fn) => fn())
+    const cleanups = [
+      ws.onStatusChange((connected) => set({ publicWsConnected: connected })),
+      ws.onMessage((message) => {
+        if (message.servers && message.servers.length > 0) {
+          get().handleDashboardMessage(message.servers)
+        }
+      }),
+    ]
+    set({ _publicWsCleanups: cleanups })
     ws.connect()
   },
 
   // 断开公开仪表盘 WebSocket
   disconnectPublicDashboardWS: () => {
-    const ws = getPublicDashboardWebSocket()
-    ws.disconnect()
-    set({ publicWsConnected: false })
+    get()._publicWsCleanups?.forEach((fn) => fn())
+    set({ _publicWsCleanups: null, publicWsConnected: false })
+    getPublicDashboardWebSocket().disconnect()
   },
 
   // 处理仪表盘实时数据
   handleDashboardMessage: (data: DashboardItem[]) => {
-    const newMap = new Map(get().dashboardData)
+    const state = get()
+    const newMap = new Map(state.dashboardData)
     const now = Date.now()
-    const existingIds = new Set(get().servers.map((s) => s.id))
-    const newServers: ServerData[] = []
+    const existingIds = new Set(state.servers.map((s) => s.id))
+    let newRealtimeHistory = state.realtimeHistory
+    const newServersToAdd: ServerData[] = []
 
     for (const item of data) {
       newMap.set(item.agent_id, item)
 
       // 如果当前正在查看该服务器的详情页，追加实时历史数据
-      const currentServer = get().currentServer
-      if (currentServer && currentServer.id === item.agent_id) {
+      if (state.currentServer && state.currentServer.id === item.agent_id) {
         const point: RealtimePoint = {
           timestamp: item.timestamp || now,
           cpu: item.cpu,
@@ -266,18 +277,17 @@ export const useServerStore = create<ServerStoreState>((set, get) => ({
           net_tx: item.net_tx,
           ping_data: item.ping_data,
         }
-
-        const history = [...get().realtimeHistory, point]
-        // 限制历史数据点数量
-        if (history.length > MAX_REALTIME_POINTS) {
-          history.splice(0, history.length - MAX_REALTIME_POINTS)
+        newRealtimeHistory = [...newRealtimeHistory, point]
+        if (newRealtimeHistory.length > MAX_REALTIME_POINTS) {
+          newRealtimeHistory = newRealtimeHistory.slice(
+            newRealtimeHistory.length - MAX_REALTIME_POINTS,
+          )
         }
-        set({ realtimeHistory: history })
       }
 
       // 新服务器，添加到列表
       if (!existingIds.has(item.agent_id)) {
-        newServers.push({
+        newServersToAdd.push({
           id: item.agent_id,
           hostname: item.hostname || `Agent-${item.agent_id}`,
           display_name: item.display_name || '',
@@ -300,13 +310,9 @@ export const useServerStore = create<ServerStoreState>((set, get) => ({
       }
     }
 
-    // 合并新服务器
-    if (newServers.length > 0) {
-      set({ servers: [...get().servers, ...newServers] })
-    }
-
-    // 更新已有服务器的实时数据
-    const servers = get().servers.map((server) => {
+    // 一次性更新所有状态：合并新服务器并更新已有服务器的实时数据
+    const allServers = [...state.servers, ...newServersToAdd]
+    const updatedServers = allServers.map((server) => {
       const live = newMap.get(server.id)
       if (live) {
         return {
@@ -330,7 +336,11 @@ export const useServerStore = create<ServerStoreState>((set, get) => ({
       return server
     })
 
-    set({ servers, dashboardData: newMap })
+    set({
+      dashboardData: newMap,
+      servers: updatedServers,
+      realtimeHistory: newRealtimeHistory,
+    })
   },
 
   // 设置主题
@@ -346,12 +356,16 @@ export const useServerStore = create<ServerStoreState>((set, get) => ({
     applyTheme(theme)
     set({ theme })
 
-    // 监听系统主题变化
-    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
-      if (get().theme === 'system') {
-        applyTheme('system')
-      }
-    })
+    // 监听系统主题变化（使用模块级变量确保只注册一次）
+    if (!mediaQueryListenerRegistered) {
+      const mql = window.matchMedia('(prefers-color-scheme: dark)')
+      mql.addEventListener('change', () => {
+        if (get().theme === 'system') {
+          applyTheme('system')
+        }
+      })
+      mediaQueryListenerRegistered = true
+    }
   },
 
   // 清除实时历史数据

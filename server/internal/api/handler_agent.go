@@ -276,7 +276,15 @@ func (h *AgentHandler) sendConfigUpdate(ws *agentWSConn, agentID int64) {
 // HandleGetAgentConfig 处理 Agent 配置拉取
 // 路由: GET /api/v1/agent/config
 func (h *AgentHandler) HandleGetAgentConfig(c *gin.Context) {
-	token := c.Query("token")
+	// 优先从 Authorization header 获取 Token，兼容 query 参数
+	token := ""
+	authHeader := c.GetHeader("Authorization")
+	if len(authHeader) > 7 && authHeader[:7] == "Bearer " {
+		token = authHeader[7:]
+	}
+	if token == "" {
+		token = c.Query("token")
+	}
 	if token == "" {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "缺少 Token"})
 		return

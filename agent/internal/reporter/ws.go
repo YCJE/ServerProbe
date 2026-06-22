@@ -23,17 +23,17 @@ type WSClient struct {
 	registerCode string
 	insecureTLS  bool
 
-	conn        *websocket.Conn
-	mu          sync.Mutex
-	connected   bool
-	reconnectCh chan struct{}
+	conn      *websocket.Conn
+	mu        sync.Mutex
+	connected bool
 
 	// 回调函数
-	onRegisterOK    func(token string)
-	onConfigUpdate  func(config *sharedmodel.AgentConfig)
-	onMessage       func(msg *sharedmodel.WSMessage)
+	onRegisterOK   func(token string)
+	onConfigUpdate func(config *sharedmodel.AgentConfig)
+	onMessage      func(msg *sharedmodel.WSMessage)
 
 	// 重连参数
+	reconnectAttempts    int
 	maxReconnectInterval time.Duration
 }
 
@@ -44,7 +44,6 @@ func NewWSClient(serverURL, token, registerCode string, insecureTLS bool) *WSCli
 		token:                token,
 		registerCode:         registerCode,
 		insecureTLS:          insecureTLS,
-		reconnectCh:          make(chan struct{}, 1),
 		maxReconnectInterval: 60 * time.Second,
 	}
 }
@@ -62,6 +61,14 @@ func (c *WSClient) SetCallbacks(
 
 // Connect 连接 Server
 func (c *WSClient) Connect() error {
+	// 检查是否已存在连接
+	c.mu.Lock()
+	if c.conn != nil {
+		c.mu.Unlock()
+		return fmt.Errorf("已存在连接")
+	}
+	c.mu.Unlock()
+
 	// 强制 TLS：拒绝明文连接
 	if !strings.HasPrefix(c.serverURL, "https://") {
 		return fmt.Errorf("安全错误：Server 地址必须使用 https://，拒绝明文连接")
@@ -104,6 +111,7 @@ func (c *WSClient) Connect() error {
 	c.mu.Lock()
 	c.conn = conn
 	c.connected = true
+	c.reconnectAttempts = 0
 	c.mu.Unlock()
 
 	// 如果有注册码，先注册
@@ -153,7 +161,6 @@ func (c *WSClient) register() error {
 	if err != nil {
 		return fmt.Errorf("读取注册响应失败: %w", err)
 	}
-	conn.SetReadDeadline(time.Time{})
 
 	var response sharedmodel.WSMessage
 	if err := json.Unmarshal(message, &response); err != nil {
@@ -162,7 +169,9 @@ func (c *WSClient) register() error {
 
 	switch response.Type {
 	case sharedmodel.MsgTypeRegisterOK:
+		c.mu.Lock()
 		c.token = response.Token
+		c.mu.Unlock()
 		if c.onRegisterOK != nil {
 			c.onRegisterOK(response.Token)
 		}
@@ -170,6 +179,9 @@ func (c *WSClient) register() error {
 		return nil
 
 	case sharedmodel.MsgTypeRegisterFail:
+		c.mu.Lock()
+		c.registerCode = "" // 仅在收到 register_fail 时清除注册码，避免无效重试
+		c.mu.Unlock()
 		return fmt.Errorf("注册被拒绝: %s", response.Reason)
 
 	default:
@@ -194,6 +206,13 @@ func (c *WSClient) Run() {
 			continue
 		}
 
+		// 设置读取超时和 pong handler
+		conn.SetReadDeadline(time.Now().Add(90 * time.Second))
+		conn.SetPongHandler(func(string) error {
+			conn.SetReadDeadline(time.Now().Add(90 * time.Second))
+			return nil
+		})
+
 		_, message, err := conn.ReadMessage()
 		if err != nil {
 			log.Printf("WebSocket 读取错误: %v", err)
@@ -204,6 +223,8 @@ func (c *WSClient) Run() {
 			conn.Close()
 			continue
 		}
+		// 读到消息后重置读取超时，避免消息处理时间影响下一次读取
+		conn.SetReadDeadline(time.Time{})
 
 		var msg sharedmodel.WSMessage
 		if err := json.Unmarshal(message, &msg); err != nil {
@@ -247,6 +268,8 @@ func (c *WSClient) SendMessage(msg *sharedmodel.WSMessage) error {
 	}
 
 	msg.Token = c.token
+	c.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+	defer c.conn.SetWriteDeadline(time.Time{})
 	return c.conn.WriteJSON(msg)
 }
 
@@ -288,26 +311,24 @@ func (c *WSClient) IsConnected() bool {
 
 // reconnect 重连
 func (c *WSClient) reconnect() error {
-	interval := c.getReconnectInterval()
-	log.Printf("等待 %v 后重连...", interval)
-	time.Sleep(interval)
-
 	return c.Connect()
 }
 
 // getReconnectInterval 获取重连间隔（指数退避）
 func (c *WSClient) getReconnectInterval() time.Duration {
-	// 简化版：固定 5 秒递增到 60 秒
-	// 实际实现应记录重连次数
-	return 5 * time.Second
+	c.mu.Lock()
+	c.reconnectAttempts++
+	attempts := c.reconnectAttempts
+	c.mu.Unlock()
+
+	interval := time.Duration(5*(1<<(attempts-1))) * time.Second
+	if interval > c.maxReconnectInterval {
+		interval = c.maxReconnectInterval
+	}
+	return interval
 }
 
 // getHostname 获取主机名
 func getHostname() (string, error) {
 	return executeHostname()
-}
-
-// getOS 获取操作系统
-func getOS() string {
-	return executeOS()
 }

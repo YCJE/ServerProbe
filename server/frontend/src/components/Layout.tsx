@@ -9,14 +9,23 @@ export default function Layout() {
   const logout = useServerStore((s) => s.logout)
   const wsConnected = useServerStore((s) => s.wsConnected)
   const fetchServers = useServerStore((s) => s.fetchServers)
+  const connectWebSocket = useServerStore((s) => s.connectWebSocket)
+  const disconnectWebSocket = useServerStore((s) => s.disconnectWebSocket)
+  const isAuthenticated = useServerStore((s) => s.isAuthenticated)
   const servers = useServerStore((s) => s.servers)
 
-  // 首次加载时获取服务器列表
+  // 首次加载时获取服务器列表并连接 WebSocket
   useEffect(() => {
-    fetchServers().catch(() => {
-      // 错误处理在 API 层已做
-    })
-  }, [fetchServers])
+    if (isAuthenticated) {
+      fetchServers().catch(() => {
+        // 错误处理在 API 层已做
+      })
+      connectWebSocket()
+      return () => {
+        disconnectWebSocket()
+      }
+    }
+  }, [isAuthenticated, fetchServers, connectWebSocket, disconnectWebSocket])
 
   const handleLogout = async () => {
     await logout()

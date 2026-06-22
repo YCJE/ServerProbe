@@ -3,6 +3,8 @@ package collector
 import (
 	"fmt"
 	"net"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/prometheus-community/pro-bing"
@@ -22,7 +24,9 @@ const (
 
 // PingCollector Ping 探测采集器
 type PingCollector struct {
-	method PingMethod
+	method         PingMethod
+	detectedOnce   bool
+	detectedMethod PingMethod
 }
 
 // NewPingCollector 创建 Ping 采集器
@@ -84,19 +88,30 @@ func (c *PingCollector) pingTarget(target sharedmodel.PingTarget) sharedmodel.Pi
 	return result
 }
 
-// detectBestMethod 自动检测最佳 Ping 方式
+// detectBestMethod 自动检测最佳 Ping 方式（缓存检测结果）
 func (c *PingCollector) detectBestMethod() PingMethod {
+	// 如果已检测过，直接返回缓存的结果
+	if c.detectedOnce {
+		return c.detectedMethod
+	}
+
 	// 尝试 privileged ICMP
 	if canPrivilegedICMP() {
+		c.detectedMethod = PingMethodICMP
+		c.detectedOnce = true
 		return PingMethodICMP
 	}
 
 	// 尝试 unprivileged ICMP
 	if canUnprivilegedICMP() {
+		c.detectedMethod = PingMethodICMPUnprivileged
+		c.detectedOnce = true
 		return PingMethodICMPUnprivileged
 	}
 
 	// 降级到 TCP
+	c.detectedMethod = PingMethodTCP
+	c.detectedOnce = true
 	return PingMethodTCP
 }
 
@@ -324,47 +339,33 @@ type parsedURL struct {
 	port string
 }
 
-// parseURL 解析 URL
+// parseURL 解析 URL（使用 net/url 标准库，支持 IPv6）
 func parseURL(rawURL string) (*parsedURL, error) {
-	// 简化解析
-	host := rawURL
-	port := "443"
-
-	// 去除协议前缀
-	if startsWith(rawURL, "https://") {
-		host = rawURL[8:]
-		port = "443"
-	} else if startsWith(rawURL, "http://") {
-		host = rawURL[7:]
-		port = "80"
+	// 如果没有 scheme，添加临时的 http:// 以便 url.Parse 正确解析主机和端口
+	if !strings.Contains(rawURL, "://") {
+		rawURL = "http://" + rawURL
 	}
 
-	// 去除路径
-	for i := 0; i < len(host); i++ {
-		if host[i] == '/' {
-			host = host[:i]
-			break
-		}
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return nil, err
 	}
 
-	// 分离端口
-	for i := 0; i < len(host); i++ {
-		if host[i] == ':' {
-			port = host[i+1:]
-			host = host[:i]
-			break
+	host := u.Hostname()
+	if host == "" {
+		return nil, fmt.Errorf("URL 中缺少主机名")
+	}
+
+	port := u.Port()
+	if port == "" {
+		if u.Scheme == "https" {
+			port = "443"
+		} else {
+			port = "80"
 		}
 	}
 
 	return &parsedURL{host: host, port: port}, nil
-}
-
-// startsWith 检查字符串前缀
-func startsWith(s, prefix string) bool {
-	if len(s) < len(prefix) {
-		return false
-	}
-	return s[:len(prefix)] == prefix
 }
 
 // sqrtFloat 计算平方根
