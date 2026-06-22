@@ -105,7 +105,7 @@ func main() {
 
 	// 启动数据聚合服务
 	aggregation.Start()
-	retentionDays := 90
+	retentionDays := 2 // 默认保留 2 天
 	if cfg.Aggregation.RetentionDays > 0 {
 		retentionDays = cfg.Aggregation.RetentionDays
 	}

@@ -50,10 +50,10 @@ func (r *RecordRepository) DeleteOlderThan(before int64) (int64, error) {
 	return result.RowsAffected, result.Error
 }
 
-// CleanupExpired 清理过期数据（默认保留 90 天）
+// CleanupExpired 清理过期数据（默认保留 2 天）
 func (r *RecordRepository) CleanupExpired(retentionDays int) (int64, error) {
 	if retentionDays <= 0 {
-		retentionDays = 90
+		retentionDays = 2 // 默认保留 2 天
 	}
 	cutoff := time.Now().AddDate(0, 0, -retentionDays).Unix()
 	deleted, err := r.DeleteOlderThan(cutoff)

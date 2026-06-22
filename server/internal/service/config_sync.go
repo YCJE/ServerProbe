@@ -33,7 +33,7 @@ func (s *ConfigSyncService) GetPingInterval() int {
 		return 60 // 默认 60 秒
 	}
 	interval, err := strconv.Atoi(setting.Value)
-	if err != nil || interval < 10 || interval > 3600 {
+	if err != nil || interval < 1 || interval > 3600 {
 		return 60
 	}
 	return interval
@@ -41,14 +41,17 @@ func (s *ConfigSyncService) GetPingInterval() int {
 
 // SetPingInterval 设置 Ping 探测间隔
 func (s *ConfigSyncService) SetPingInterval(interval int) error {
-	if interval < 10 || interval > 3600 {
+	if interval < 1 || interval > 3600 {
 		interval = 60
 	}
 	setting := model.SystemSetting{
 		Key:   "ping_interval",
 		Value: strconv.Itoa(interval),
 	}
-	return s.db.Save(&setting).Error
+	// 使用 FirstOrCreate 实现 upsert (Save 在记录不存在时无法首次创建)
+	return s.db.Where("key = ?", "ping_interval").
+		Assign(model.SystemSetting{Value: strconv.Itoa(interval)}).
+		FirstOrCreate(&setting).Error
 }
 
 // GetAgentConfig 获取 Agent 配置（探测目标）

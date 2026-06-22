@@ -240,7 +240,7 @@ func saveConfig(path string, cfg *AgentConfig) {
 func startPingProbe(client *reporter.WSClient, pinger *collector.PingCollector, targetsPtr *[]sharedmodel.PingTarget, mu *sync.Mutex, intervalPtr *int64) {
 	// 初始 ticker，使用当前间隔
 	currentInterval := atomic.LoadInt64(intervalPtr)
-	if currentInterval < 10 {
+	if currentInterval < 1 {
 		currentInterval = 60
 	}
 	ticker := time.NewTicker(time.Duration(currentInterval) * time.Second)
@@ -250,7 +250,7 @@ func startPingProbe(client *reporter.WSClient, pinger *collector.PingCollector, 
 
 		// 检查间隔是否变化，如变化则重建 ticker
 		newInterval := atomic.LoadInt64(intervalPtr)
-		if newInterval < 10 {
+		if newInterval < 1 {
 			newInterval = 60
 		}
 		if newInterval != currentInterval {

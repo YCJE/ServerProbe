@@ -19,6 +19,7 @@ import {
 
 /** 时间范围选项 */
 const TIME_RANGES: { value: TimeRange; label: string }[] = [
+  { value: 'realtime', label: '实时' },
   { value: '1h', label: '1小时' },
   { value: '6h', label: '6小时' },
   { value: '12h', label: '12小时' },
@@ -28,7 +29,7 @@ const TIME_RANGES: { value: TimeRange; label: string }[] = [
 
 /** 判断是否为实时范围（使用 WebSocket 数据） */
 function isRealtimeRange(range: TimeRange): boolean {
-  return range === '1h'
+  return range === 'realtime'
 }
 
 /** 解析 ping_data，兼容 ringbuffer (数组) 和 sqlite (JSON 字符串) 两种格式 */
@@ -175,11 +176,9 @@ export default function ServerDetail() {
   // 图表数据
   const chartData = useMemo(() => {
     if (isRealtimeRange(timeRange)) {
-      // 使用实时历史数据
+      // 使用实时历史数据 (最近 1 小时)
       const points = realtimeHistory
-      const cutoffTime = timeRange === '1h'
-        ? Date.now() / 1000 - 3600
-        : Date.now() / 1000 - 6 * 3600
+      const cutoffTime = Date.now() / 1000 - 3600
 
       const filtered = points.filter((p) => p.timestamp >= cutoffTime)
 

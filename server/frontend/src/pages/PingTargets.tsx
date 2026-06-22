@@ -18,6 +18,9 @@ const METHOD_OPTIONS = [
 
 /** 探测间隔选项（秒） */
 const INTERVAL_OPTIONS = [
+  { value: 1, label: '1 秒' },
+  { value: 2, label: '2 秒' },
+  { value: 5, label: '5 秒' },
   { value: 10, label: '10 秒' },
   { value: 30, label: '30 秒' },
   { value: 60, label: '60 秒' },

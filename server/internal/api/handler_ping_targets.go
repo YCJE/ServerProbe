@@ -230,8 +230,8 @@ func (h *PingTargetHandler) HandleSetPingInterval(c *gin.Context) {
 		return
 	}
 
-	if req.Interval < 10 || req.Interval > 3600 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "探测间隔必须在 10-3600 秒之间"})
+	if req.Interval < 1 || req.Interval > 3600 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "探测间隔必须在 1-3600 秒之间"})
 		return
 	}
 

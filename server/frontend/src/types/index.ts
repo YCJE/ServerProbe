@@ -4,7 +4,7 @@
 export type Theme = 'light' | 'dark' | 'system'
 
 /** 时间范围 */
-export type TimeRange = '1h' | '6h' | '12h' | '1d' | '2d'
+export type TimeRange = 'realtime' | '1h' | '6h' | '12h' | '1d' | '2d'
 
 // ==================== 服务器相关类型 ====================
 

@@ -1,8 +1,11 @@
 package collector
 
 import (
+	"context"
 	"fmt"
+	"math"
 	"net"
+	"net/http"
 	"net/url"
 	"strings"
 	"time"
@@ -202,13 +205,13 @@ func (c *PingCollector) doTCPPing(result *sharedmodel.PingResult, target string)
 
 	addr := net.JoinHostPort(ips[0].String(), port)
 
-	count := 5
+	count := 10
 	successCount := 0
 	var latencies []float64
 
 	for i := 0; i < count; i++ {
 		start := time.Now()
-		conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
+		conn, err := net.DialTimeout("tcp", addr, 3*time.Second)
 		elapsed := time.Since(start)
 
 		if err == nil {
@@ -255,7 +258,7 @@ func (c *PingCollector) doTCPPing(result *sharedmodel.PingResult, target string)
 			for _, lat := range latencies {
 				variance += (lat - mean) * (lat - mean)
 			}
-			result.Jitter = sqrtFloat(variance / float64(len(latencies)))
+			result.Jitter = math.Sqrt(variance / float64(len(latencies)))
 		}
 	}
 }
@@ -264,23 +267,80 @@ func (c *PingCollector) doTCPPing(result *sharedmodel.PingResult, target string)
 func (c *PingCollector) doHTTPPing(result *sharedmodel.PingResult, target string) {
 	result.Method = string(PingMethodHTTP)
 
-	count := 3
+	// 预解析 DNS，排除 DNS 时间
+	parsed, err := parseURL(target)
+	if err != nil {
+		result.Loss = 100
+		return
+	}
+
+	ips, err := net.LookupIP(parsed.host)
+	if err != nil || len(ips) == 0 {
+		result.Loss = 100
+		return
+	}
+
+	// 构建 URL scheme
+	scheme := "http"
+	if parsed.port == "443" || strings.Contains(target, "https://") {
+		scheme = "https"
+	}
+
+	count := 10
 	successCount := 0
 	var latencies []float64
 
+	// 创建自定义 Transport，使用预解析的 IP 排除 DNS 时间
+	dialer := &net.Dialer{Timeout: 3 * time.Second}
+	transport := &http.Transport{
+		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			// 替换 addr 中的域名为预解析的 IP
+			_, port, err := net.SplitHostPort(addr)
+			if err != nil {
+				port = parsed.port
+			}
+			return dialer.DialContext(ctx, network, net.JoinHostPort(ips[0].String(), port))
+		},
+		TLSHandshakeTimeout: 3 * time.Second,
+	}
+
+	client := &http.Client{
+		Timeout: 5 * time.Second,
+		Transport: transport,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+
 	for i := 0; i < count; i++ {
-		// 使用自定义 DialContext 排除 DNS 时间
-		// 简化版：直接测量总时间
-		elapsed := measureHTTPTime(target)
-		if elapsed > 0 {
+		reqURL := target
+		if !strings.Contains(target, "://") {
+			reqURL = fmt.Sprintf("%s://%s", scheme, target)
+		}
+
+		req, err := http.NewRequest("GET", reqURL, nil)
+		if err != nil {
+			continue
+		}
+		req.Host = parsed.host
+
+		start := time.Now()
+		resp, err := client.Do(req)
+		elapsed := time.Since(start)
+
+		if err == nil {
+			resp.Body.Close()
 			successCount++
-			latencies = append(latencies, elapsed)
+			latencies = append(latencies, float64(elapsed.Microseconds())/1000.0)
 		}
 
 		if i < count-1 {
 			time.Sleep(500 * time.Millisecond)
 		}
 	}
+
+	// 关闭空闲连接，避免连接堆积
+	transport.CloseIdleConnections()
 
 	result.PacketsSent = count
 	result.PacketsRecv = successCount
@@ -290,47 +350,34 @@ func (c *PingCollector) doHTTPPing(result *sharedmodel.PingResult, target string
 	}
 
 	if len(latencies) > 0 {
-		var sum float64
+		var sum, min, max float64
+		min = latencies[0]
+		max = latencies[0]
+
 		for _, lat := range latencies {
 			sum += lat
+			if lat < min {
+				min = lat
+			}
+			if lat > max {
+				max = lat
+			}
 		}
+
 		result.AvgLatency = sum / float64(len(latencies))
-		result.MinLatency = latencies[0]
-		result.MaxLatency = latencies[0]
-		for _, lat := range latencies {
-			if lat < result.MinLatency {
-				result.MinLatency = lat
+		result.MinLatency = min
+		result.MaxLatency = max
+
+		// 计算抖动（标准差）
+		if len(latencies) > 1 {
+			mean := result.AvgLatency
+			var variance float64
+			for _, lat := range latencies {
+				variance += (lat - mean) * (lat - mean)
 			}
-			if lat > result.MaxLatency {
-				result.MaxLatency = lat
-			}
+			result.Jitter = math.Sqrt(variance / float64(len(latencies)))
 		}
 	}
-}
-
-// measureHTTPTime 测量 HTTP 请求时间（排除 DNS）
-func measureHTTPTime(url string) float64 {
-	// 预解析 DNS
-	parsed, err := parseURL(url)
-	if err != nil {
-		return -1
-	}
-
-	ips, err := net.LookupIP(parsed.host)
-	if err != nil || len(ips) == 0 {
-		return -1
-	}
-
-	// 连接到预解析的 IP
-	start := time.Now()
-	conn, err := net.DialTimeout("tcp", net.JoinHostPort(ips[0].String(), parsed.port), 10*time.Second)
-	if err != nil {
-		return -1
-	}
-	defer conn.Close()
-
-	elapsed := time.Since(start)
-	return float64(elapsed.Microseconds()) / 1000.0
 }
 
 // parsedURL 解析后的 URL
@@ -366,19 +413,6 @@ func parseURL(rawURL string) (*parsedURL, error) {
 	}
 
 	return &parsedURL{host: host, port: port}, nil
-}
-
-// sqrtFloat 计算平方根
-func sqrtFloat(x float64) float64 {
-	if x <= 0 {
-		return 0
-	}
-	// 牛顿法
-	z := x
-	for i := 0; i < 10; i++ {
-		z = z - (z*z-x)/(2*z)
-	}
-	return z
 }
 
 // canPrivilegedICMP 检查是否可以使用 privileged ICMP
