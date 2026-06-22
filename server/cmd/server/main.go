@@ -94,7 +94,7 @@ func main() {
 	// 创建 services
 	monitor := service.NewMonitorService(agentRepo)
 	registry := service.NewAgentRegistryService(agentRepo, registerCodeRepo)
-	configSync := service.NewConfigSyncService(pingTargetRepo)
+	configSync := service.NewConfigSyncService(pingTargetRepo, db.DB())
 	validator := service.NewDataValidator()
 	aggregation := service.NewAggregationService(monitor, recordRepo, agentRepo)
 	notifySvc := service.NewNotifyService(notifyRepo, ssrfProtector)

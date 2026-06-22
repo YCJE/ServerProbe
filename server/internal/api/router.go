@@ -46,9 +46,9 @@ func NewRouter(
 	authHandler := NewAuthHandler(adminRepo, jwtManager)
 	serverHandler := NewServerHandler(agentRepo, monitor, recordRepo)
 	agentHandler := NewAgentHandler(registry, monitor, configSync, validator)
-	agentAPIHandler := NewAgentAPIHandler(registry, agentRepo)
+	agentAPIHandler := NewAgentAPIHandler(registry, agentRepo, monitor)
 	dashboardWSHandler := NewDashboardWSHandler(monitor, jwtManager)
-	pingTargetHandler := NewPingTargetHandler(pingTargetRepo)
+	pingTargetHandler := NewPingTargetHandler(pingTargetRepo, configSync)
 
 	// 健康检查
 	r.GET("/api/v1/health", func(c *gin.Context) {
@@ -104,6 +104,7 @@ func NewRouter(
 
 			// Agent 管理
 			protected.GET("/agents", agentAPIHandler.HandleListAgents)
+			protected.PUT("/agents/:id", agentAPIHandler.HandleUpdateAgent)
 			protected.DELETE("/agents/:id", agentAPIHandler.HandleDeleteAgent)
 
 			// 探测目标管理
@@ -111,6 +112,8 @@ func NewRouter(
 			protected.POST("/ping-targets", pingTargetHandler.HandleCreatePingTarget)
 			protected.PUT("/ping-targets/:id", pingTargetHandler.HandleUpdatePingTarget)
 			protected.DELETE("/ping-targets/:id", pingTargetHandler.HandleDeletePingTarget)
+			protected.GET("/ping-targets/interval", pingTargetHandler.HandleGetPingInterval)
+			protected.PUT("/ping-targets/interval", pingTargetHandler.HandleSetPingInterval)
 		}
 	}
 

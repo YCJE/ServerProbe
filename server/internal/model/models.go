@@ -184,3 +184,12 @@ type SharePage struct {
 
 // TableName 指定表名
 func (SharePage) TableName() string { return "share_pages" }
+
+// SystemSetting 系统配置 (键值对存储)
+type SystemSetting struct {
+	Key   string `gorm:"primaryKey" json:"key"`
+	Value string `gorm:"not null" json:"value"`
+}
+
+// TableName 指定表名
+func (SystemSetting) TableName() string { return "system_settings" }

@@ -7,16 +7,18 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/server-probe/server/internal/model"
 	"github.com/server-probe/server/internal/repository"
+	"github.com/server-probe/server/internal/service"
 )
 
 // PingTargetHandler 探测目标处理器
 type PingTargetHandler struct {
-	repo *repository.PingTargetRepository
+	repo       *repository.PingTargetRepository
+	configSync *service.ConfigSyncService
 }
 
 // NewPingTargetHandler 创建探测目标处理器
-func NewPingTargetHandler(repo *repository.PingTargetRepository) *PingTargetHandler {
-	return &PingTargetHandler{repo: repo}
+func NewPingTargetHandler(repo *repository.PingTargetRepository, configSync *service.ConfigSyncService) *PingTargetHandler {
+	return &PingTargetHandler{repo: repo, configSync: configSync}
 }
 
 // HandleListPingTargets 列出所有探测目标
@@ -175,4 +177,44 @@ func (h *PingTargetHandler) HandleDeletePingTarget(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"success": true})
+}
+
+// HandleGetPingInterval 获取 Ping 探测间隔
+// 路由: GET /api/v1/ping-targets/interval
+func (h *PingTargetHandler) HandleGetPingInterval(c *gin.Context) {
+	interval := 60
+	if h.configSync != nil {
+		interval = h.configSync.GetPingInterval()
+	}
+	c.JSON(http.StatusOK, gin.H{"interval": interval})
+}
+
+// HandleSetPingInterval 设置 Ping 探测间隔
+// 路由: PUT /api/v1/ping-targets/interval
+func (h *PingTargetHandler) HandleSetPingInterval(c *gin.Context) {
+	var req struct {
+		Interval int `json:"interval"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的请求体"})
+		return
+	}
+
+	if req.Interval < 10 || req.Interval > 3600 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "探测间隔必须在 10-3600 秒之间"})
+		return
+	}
+
+	if h.configSync == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "配置服务不可用"})
+		return
+	}
+
+	if err := h.configSync.SetPingInterval(req.Interval); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "设置探测间隔失败"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"success": true, "interval": req.Interval})
 }

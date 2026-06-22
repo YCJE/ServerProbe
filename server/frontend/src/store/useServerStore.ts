@@ -11,6 +11,7 @@ import {
   login as apiLogin,
   setup as apiSetup,
   logout as apiLogout,
+  deleteAgent as deleteAgentAPI,
   getToken,
   clearToken,
   ApiError,
@@ -64,6 +65,7 @@ interface ServerStoreState {
   logout: () => Promise<void>
   fetchServers: () => Promise<void>
   fetchServerDetail: (id: number) => Promise<void>
+  deleteAgent: (id: number) => Promise<void>
   connectWebSocket: () => void
   disconnectWebSocket: () => void
   connectPublicDashboardWS: () => void
@@ -205,6 +207,13 @@ export const useServerStore = create<ServerStoreState>((set, get) => ({
       set({ currentServerLoading: false })
       throw err
     }
+  },
+
+  // 删除 Agent，并刷新服务器列表（从仪表盘移除已删除的 Agent）
+  deleteAgent: async (id: number) => {
+    await deleteAgentAPI(id)
+    // 刷新服务器列表，从仪表盘移除已删除的 Agent
+    await get().fetchServers()
   },
 
   // 连接 WebSocket

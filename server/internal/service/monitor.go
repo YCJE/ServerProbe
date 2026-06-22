@@ -89,6 +89,27 @@ func (m *MonitorService) UnregisterConnection(agentID int64) {
 	log.Printf("Agent %d 已断开", agentID)
 }
 
+// UnregisterAgent 完全移除 Agent (删除 Agent 时调用)
+// 关闭连接、删除 ringBuffer、更新在线状态
+func (m *MonitorService) UnregisterAgent(agentID int64) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	// 关闭 WebSocket 连接
+	if conn, ok := m.connections[agentID]; ok {
+		conn.Conn.Close()
+		delete(m.connections, agentID)
+	}
+
+	// 删除 ringBuffer
+	delete(m.ringBuffers, agentID)
+
+	// 更新数据库在线状态
+	_ = m.agentRepo.UpdateOnlineStatus(agentID, false)
+
+	log.Printf("Agent %d 已完全移除 (连接+ringBuffer)", agentID)
+}
+
 // UpdateHeartbeat 更新心跳时间
 func (m *MonitorService) UpdateHeartbeat(agentID int64) {
 	m.mu.Lock()
@@ -137,6 +158,13 @@ func (m *MonitorService) WriteMetricData(agentID int64, data *sharedmodel.Metric
 		Load15:       data.CPU.Load15,
 		Uptime:       data.Uptime,
 		ProcessCount: data.ProcessCount,
+	}
+
+	// 继承上一个数据点的 PingData (Ping 每 60s 上报一次，指标每 3s 上报一次)
+	// 避免新数据点覆盖 Ping 数据导致延迟信息丢失
+	prevPoints := rb.Latest(1)
+	if len(prevPoints) > 0 {
+		point.PingData = prevPoints[0].PingData
 	}
 
 	rb.Write(point)

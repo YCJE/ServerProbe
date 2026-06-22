@@ -4,8 +4,9 @@ import {
   getRegisterCodes,
   deleteRegisterCode,
   getAgents,
-  deleteAgent,
+  updateAgent,
 } from '@/lib/api'
+import { useServerStore } from '@/store/useServerStore'
 import type { RegisterCode, AgentInfo } from '@/types'
 
 /** Agent 管理页 */
@@ -21,6 +22,16 @@ export default function AgentManagement() {
   const [displayName, setDisplayName] = useState('')
   const [remark, setRemark] = useState('')
   const [formError, setFormError] = useState('')
+
+  // 编辑 Agent 状态
+  const [editingAgent, setEditingAgent] = useState<AgentInfo | null>(null)
+  const [editDisplayName, setEditDisplayName] = useState('')
+  const [editError, setEditError] = useState('')
+  const [editSaving, setEditSaving] = useState(false)
+
+  // 从 store 获取 fetchServers 和 deleteAgent，用于删除后刷新仪表盘
+  const fetchServers = useServerStore((s) => s.fetchServers)
+  const deleteAgentFromStore = useServerStore((s) => s.deleteAgent)
 
   // 跟踪复制按钮的定时器，卸载时清理
   const timeoutRefs = useRef<ReturnType<typeof setTimeout>[]>([])
@@ -106,10 +117,47 @@ export default function AgentManagement() {
   const handleDeleteAgent = async (id: number, name: string) => {
     if (!confirm(`确定删除 Agent "${name}"？此操作不可恢复。`)) return
     try {
-      await deleteAgent(id)
+      // 使用 store 的 deleteAgent action，删除后会自动刷新仪表盘数据
+      await deleteAgentFromStore(id)
       await loadData()
     } catch (err) {
       alert(err instanceof Error ? err.message : '删除 Agent 失败')
+    }
+  }
+
+  // 打开编辑弹窗
+  const handleOpenEdit = (agent: AgentInfo) => {
+    setEditingAgent(agent)
+    setEditDisplayName(agent.display_name || '')
+    setEditError('')
+  }
+
+  // 关闭编辑弹窗
+  const handleCloseEdit = () => {
+    setEditingAgent(null)
+    setEditDisplayName('')
+    setEditError('')
+  }
+
+  // 保存编辑
+  const handleSaveEdit = async () => {
+    if (!editingAgent) return
+    setEditError('')
+    if (!editDisplayName.trim()) {
+      setEditError('请输入显示名称')
+      return
+    }
+    setEditSaving(true)
+    try {
+      await updateAgent(editingAgent.id, { display_name: editDisplayName.trim() })
+      handleCloseEdit()
+      await loadData()
+      // 同步刷新仪表盘数据，确保显示名称更新
+      await fetchServers()
+    } catch (err) {
+      setEditError(err instanceof Error ? err.message : '保存失败')
+    } finally {
+      setEditSaving(false)
     }
   }
 
@@ -408,12 +456,20 @@ export default function AgentManagement() {
                       {formatTime(agent.last_seen)}
                     </td>
                     <td className="px-4 py-3">
-                      <button
-                        onClick={() => handleDeleteAgent(agent.id, agent.display_name || agent.hostname)}
-                        className="text-xs text-destructive transition-colors hover:underline"
-                      >
-                        删除
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => handleOpenEdit(agent)}
+                          className="text-xs text-primary transition-colors hover:underline"
+                        >
+                          编辑
+                        </button>
+                        <button
+                          onClick={() => handleDeleteAgent(agent.id, agent.display_name || agent.hostname)}
+                          className="text-xs text-destructive transition-colors hover:underline"
+                        >
+                          删除
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -422,6 +478,82 @@ export default function AgentManagement() {
           </div>
         )}
       </div>
+
+      {/* 编辑 Agent 弹窗 */}
+      {editingAgent && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={handleCloseEdit}>
+          <div
+            className="w-full max-w-md rounded-xl border border-border bg-card p-6 shadow-lg"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="text-base font-semibold text-foreground">编辑 Agent</h3>
+              <button
+                onClick={handleCloseEdit}
+                className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent"
+              >
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              {/* 显示名称 */}
+              <div>
+                <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                  显示名称 <span className="text-destructive">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={editDisplayName}
+                  onChange={(e) => setEditDisplayName(e.target.value)}
+                  placeholder="例如：Web 服务器 01"
+                  className="h-9 w-full rounded-lg border border-border bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground/60 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                  autoFocus
+                />
+              </div>
+
+              {/* 只读信息 */}
+              <div className="rounded-lg bg-secondary/50 p-3 text-xs text-muted-foreground">
+                <div className="flex justify-between py-0.5">
+                  <span>ID</span>
+                  <span className="font-mono text-foreground">{editingAgent.id}</span>
+                </div>
+                <div className="flex justify-between py-0.5">
+                  <span>主机名</span>
+                  <span className="font-mono text-foreground">{editingAgent.hostname || '-'}</span>
+                </div>
+                <div className="flex justify-between py-0.5">
+                  <span>系统</span>
+                  <span className="text-foreground">{editingAgent.os || '-'}</span>
+                </div>
+              </div>
+
+              {editError && (
+                <p className="text-xs text-destructive">{editError}</p>
+              )}
+            </div>
+
+            {/* 操作按钮 */}
+            <div className="mt-6 flex items-center justify-end gap-2">
+              <button
+                onClick={handleCloseEdit}
+                className="flex h-9 items-center rounded-lg border border-border px-4 text-sm text-foreground transition-colors hover:bg-accent"
+              >
+                取消
+              </button>
+              <button
+                onClick={handleSaveEdit}
+                disabled={editSaving}
+                className="flex h-9 items-center rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+              >
+                {editSaving ? '保存中...' : '保存'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

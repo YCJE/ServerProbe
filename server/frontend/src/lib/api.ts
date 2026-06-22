@@ -207,6 +207,11 @@ export async function deleteAgent(id: number): Promise<void> {
   await request(`/agents/${id}`, { method: 'DELETE' })
 }
 
+/** 更新 Agent 信息 */
+export async function updateAgent(id: number, data: { display_name: string }): Promise<{ success: boolean }> {
+  return request(`/agents/${id}`, { method: 'PUT', body: JSON.stringify(data) })
+}
+
 // ==================== 公开 API (无需登录) ====================
 
 /** 公开服务器列表响应（过滤了敏感字段） */
@@ -268,4 +273,14 @@ export async function updatePingTarget(id: number, data: Partial<{ name: string;
 
 export async function deletePingTarget(id: number): Promise<{ success: boolean }> {
   return request(`/ping-targets/${id}`, { method: 'DELETE' })
+}
+
+/** 获取 Ping 探测间隔 */
+export async function getPingInterval(): Promise<{ interval: number }> {
+  return request('/ping-targets/interval')
+}
+
+/** 设置 Ping 探测间隔 */
+export async function setPingInterval(interval: number): Promise<{ success: boolean }> {
+  return request('/ping-targets/interval', { method: 'PUT', body: JSON.stringify({ interval }) })
 }

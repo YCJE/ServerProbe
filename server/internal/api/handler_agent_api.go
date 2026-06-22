@@ -15,13 +15,15 @@ import (
 type AgentAPIHandler struct {
 	registry  *service.AgentRegistryService
 	agentRepo *repository.AgentRepository
+	monitor   *service.MonitorService
 }
 
 // NewAgentAPIHandler 创建 Agent API 处理器
-func NewAgentAPIHandler(registry *service.AgentRegistryService, agentRepo *repository.AgentRepository) *AgentAPIHandler {
+func NewAgentAPIHandler(registry *service.AgentRegistryService, agentRepo *repository.AgentRepository, monitor *service.MonitorService) *AgentAPIHandler {
 	return &AgentAPIHandler{
 		registry:  registry,
 		agentRepo: agentRepo,
+		monitor:   monitor,
 	}
 }
 
@@ -127,10 +129,57 @@ func (h *AgentAPIHandler) HandleDeleteAgent(c *gin.Context) {
 		return
 	}
 
+	// 先清理 MonitorService 中的连接和 ringBuffer
+	h.monitor.UnregisterAgent(agentID)
+
 	if err := h.agentRepo.Delete(agentID); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "删除 Agent 失败"})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{"success": true})
+}
+
+// HandleUpdateAgent 更新 Agent 信息 (显示名称)
+// 路由: PUT /api/v1/agents/:id
+func (h *AgentAPIHandler) HandleUpdateAgent(c *gin.Context) {
+	id := c.Param("id")
+	if id == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少 Agent ID"})
+		return
+	}
+
+	agentID, err := strconv.ParseInt(id, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 Agent ID"})
+		return
+	}
+
+	var req struct {
+		DisplayName string `json:"display_name"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的请求体"})
+		return
+	}
+
+	if len(req.DisplayName) > 100 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "显示名称过长"})
+		return
+	}
+
+	agent, err := h.agentRepo.GetByID(agentID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Agent 不存在"})
+		return
+	}
+
+	agent.DisplayName = req.DisplayName
+	if err := h.agentRepo.Update(agent); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "更新 Agent 失败"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"success": true, "agent": agent})
 }

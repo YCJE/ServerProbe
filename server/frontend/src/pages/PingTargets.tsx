@@ -4,6 +4,8 @@ import {
   createPingTarget,
   updatePingTarget,
   deletePingTarget,
+  getPingInterval,
+  setPingInterval,
 } from '@/lib/api'
 import type { PingTarget } from '@/lib/api'
 
@@ -12,6 +14,16 @@ const METHOD_OPTIONS = [
   { value: 'icmp', label: 'ICMP' },
   { value: 'tcp', label: 'TCP' },
   { value: 'http', label: 'HTTP' },
+]
+
+/** 探测间隔选项（秒） */
+const INTERVAL_OPTIONS = [
+  { value: 10, label: '10 秒' },
+  { value: 30, label: '30 秒' },
+  { value: 60, label: '60 秒' },
+  { value: 120, label: '2 分钟' },
+  { value: 300, label: '5 分钟' },
+  { value: 600, label: '10 分钟' },
 ]
 
 /** 表单数据 */
@@ -42,6 +54,25 @@ export default function PingTargets() {
   const [formError, setFormError] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
+  // 探测间隔状态
+  const [probeInterval, setProbeInterval] = useState<number>(60)
+  const [intervalLoading, setIntervalLoading] = useState(false)
+  const [intervalSaving, setIntervalSaving] = useState(false)
+  const [intervalMessage, setIntervalMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+
+  /** 加载探测间隔 */
+  const loadInterval = useCallback(async () => {
+    setIntervalLoading(true)
+    try {
+      const res = await getPingInterval()
+      setProbeInterval(res.interval)
+    } catch (err) {
+      console.error('加载探测间隔失败:', err)
+    } finally {
+      setIntervalLoading(false)
+    }
+  }, [])
+
   /** 加载探测目标列表 */
   const loadTargets = useCallback(async () => {
     setLoading(true)
@@ -57,7 +88,23 @@ export default function PingTargets() {
 
   useEffect(() => {
     loadTargets()
-  }, [loadTargets])
+    loadInterval()
+  }, [loadTargets, loadInterval])
+
+  /** 保存探测间隔 */
+  const handleSaveInterval = async () => {
+    setIntervalSaving(true)
+    setIntervalMessage(null)
+    try {
+      await setPingInterval(probeInterval)
+      setIntervalMessage({ type: 'success', text: '探测间隔已保存' })
+      setTimeout(() => setIntervalMessage(null), 3000)
+    } catch (err) {
+      setIntervalMessage({ type: 'error', text: err instanceof Error ? err.message : '保存失败' })
+    } finally {
+      setIntervalSaving(false)
+    }
+  }
 
   /** 打开新增弹窗 */
   const handleOpenAdd = () => {
@@ -173,6 +220,65 @@ export default function PingTargets() {
           </svg>
           添加目标
         </button>
+      </div>
+
+      {/* 探测间隔设置 */}
+      <div className="rounded-xl border border-border bg-card">
+        <div className="border-b border-border px-4 py-3">
+          <h2 className="text-sm font-semibold text-foreground">探测间隔设置</h2>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            设置 Ping 探测的执行频率，间隔越小数据越实时但消耗资源越多
+          </p>
+        </div>
+        <div className="p-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+            <div className="flex-1">
+              <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                探测间隔
+              </label>
+              {intervalLoading ? (
+                <div className="flex h-9 items-center gap-2 text-sm text-muted-foreground">
+                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                  加载中...
+                </div>
+              ) : (
+                <select
+                  value={probeInterval}
+                  onChange={(e) => setProbeInterval(Number(e.target.value))}
+                  className="h-9 w-full rounded-lg border border-border bg-background px-3 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                >
+                  {INTERVAL_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+            <button
+              onClick={handleSaveInterval}
+              disabled={intervalSaving || intervalLoading}
+              className="flex h-9 shrink-0 items-center gap-1.5 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+            >
+              {intervalSaving ? (
+                <>
+                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary-foreground border-t-transparent" />
+                  保存中...
+                </>
+              ) : (
+                '保存'
+              )}
+            </button>
+          </div>
+          {intervalMessage && (
+            <p className={`mt-2 text-xs ${intervalMessage.type === 'success' ? 'text-success' : 'text-destructive'}`}>
+              {intervalMessage.text}
+            </p>
+          )}
+          <p className="mt-2 text-xs text-muted-foreground">
+            当前探测间隔：<span className="font-medium text-foreground">{probeInterval} 秒</span>
+          </p>
+        </div>
       </div>
 
       {/* 目标列表 */}
