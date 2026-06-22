@@ -69,11 +69,19 @@ export interface ServerData {
   mem: number
   mem_total: number
   mem_used: number
+  swap_total: number
+  swap_used: number
   net_rx: number
   net_tx: number
   uptime: number
   load_1: number
+  load_5: number
+  load_15: number
   disk_usage: number
+  disks: Array<{ device: string; total: number; used: number }>
+  tcp_connections: number
+  udp_connections: number
+  process_count: number
   ping_data: PingResult[]
 }
 
@@ -87,11 +95,19 @@ export interface DashboardItem {
   mem: number
   mem_total: number
   mem_used: number
+  swap_total: number
+  swap_used: number
   net_rx: number
   net_tx: number
   load_1: number
+  load_5: number
+  load_15: number
   uptime: number
   disk_usage: number
+  disks: Array<{ device: string; total: number; used: number }>
+  tcp_connections: number
+  udp_connections: number
+  process_count: number
   ping_data: PingResult[]
   timestamp: number
 }
@@ -109,15 +125,26 @@ export interface HistoryPoint {
   timestamp: number
   cpu_usage: number
   mem_usage: number
+  mem_total: number
+  mem_used: number
+  swap_total: number
+  swap_used: number
+  disk_usage: string
   net_rx: number
   net_tx: number
+  tcp_connections: number
+  udp_connections: number
+  load_1: number
+  load_5: number
+  load_15: number
+  uptime: number
+  process_count: number
   ping_data: PingResult[]
 }
 
 /** 历史数据响应 */
 export interface HistoryData {
-  agent_id: number
-  range: string
+  source: 'ringbuffer' | 'sqlite'
   points: HistoryPoint[]
 }
 

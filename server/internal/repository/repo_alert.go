@@ -128,7 +128,7 @@ func (r *PingTargetRepository) GetByID(id int64) (*model.PingTarget, error) {
 // List 获取所有探测目标
 func (r *PingTargetRepository) List() ([]model.PingTarget, error) {
 	var targets []model.PingTarget
-	if err := r.db.Order("id ASC").Find(&targets).Error; err != nil {
+	if err := r.db.Order("sort_order ASC, id ASC").Find(&targets).Error; err != nil {
 		return nil, err
 	}
 	return targets, nil
@@ -137,7 +137,7 @@ func (r *PingTargetRepository) List() ([]model.PingTarget, error) {
 // ListEnabled 获取已启用的探测目标
 func (r *PingTargetRepository) ListEnabled() ([]model.PingTarget, error) {
 	var targets []model.PingTarget
-	if err := r.db.Where("enabled = ?", true).Find(&targets).Error; err != nil {
+	if err := r.db.Where("enabled = ?", true).Order("sort_order ASC, id ASC").Find(&targets).Error; err != nil {
 		return nil, err
 	}
 	return targets, nil

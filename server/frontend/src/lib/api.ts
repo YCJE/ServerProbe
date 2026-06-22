@@ -241,3 +241,31 @@ export async function getPublicServers(): Promise<PublicServerListResponse> {
 export async function getPublicDashboard(): Promise<{ servers: DashboardItem[] }> {
   return request<{ servers: DashboardItem[] }>('/public/dashboard')
 }
+
+// ==================== Ping Targets API ====================
+
+export interface PingTarget {
+  id: number
+  name: string
+  target: string
+  method: string
+  enabled: boolean
+  sort_order: number
+  created_at: string
+}
+
+export async function getPingTargets(): Promise<{ targets: PingTarget[] }> {
+  return request('/ping-targets')
+}
+
+export async function createPingTarget(data: { name: string; target: string; method?: string; enabled?: boolean; sort_order?: number }): Promise<{ target: PingTarget }> {
+  return request('/ping-targets', { method: 'POST', body: JSON.stringify(data) })
+}
+
+export async function updatePingTarget(id: number, data: Partial<{ name: string; target: string; method: string; enabled: boolean; sort_order: number }>): Promise<{ target: PingTarget }> {
+  return request(`/ping-targets/${id}`, { method: 'PUT', body: JSON.stringify(data) })
+}
+
+export async function deletePingTarget(id: number): Promise<{ success: boolean }> {
+  return request(`/ping-targets/${id}`, { method: 'DELETE' })
+}

@@ -7,6 +7,7 @@ import (
 
 	"github.com/server-probe/server/internal/model"
 	"github.com/server-probe/server/internal/repository"
+	sharedmodel "github.com/server-probe/shared/model"
 )
 
 // AggregationService 数据聚合落盘服务
@@ -84,28 +85,68 @@ func (s *AggregationService) aggregate() {
 			continue
 		}
 
-		// 计算平均值
-		var cpuSum, memSum float64
-		var netRxSum, netTxSum int64
-		var pingData []interface{}
+		// 计算平均值/累计值
+		var cpuSum, memSum, load1Sum, load5Sum, load15Sum float64
+		var memTotalSum, memUsedSum, swapTotalSum, swapUsedSum, uptimeMax uint64
+		var netRxSum, netTxSum uint64
+		var tcpConnsSum, udpConnsSum, processCountSum int
+		var pingData []sharedmodel.PingResult
 
 		for _, p := range points {
 			cpuSum += p.CPU
 			memSum += p.Mem
-			netRxSum += int64(p.NetRx)
-			netTxSum += int64(p.NetTx)
-			if len(p.PingData) > 0 && pingData == nil {
-				// 取最后一个有效的 Ping 数据
-				pingData = make([]interface{}, len(p.PingData))
-				for i, pd := range p.PingData {
-					pingData[i] = pd
-				}
+			load1Sum += p.Load1
+			load5Sum += p.Load5
+			load15Sum += p.Load15
+			memTotalSum += p.MemTotal
+			memUsedSum += p.MemUsed
+			swapTotalSum += p.SwapTotal
+			swapUsedSum += p.SwapUsed
+			netRxSum += p.NetRx
+			netTxSum += p.NetTx
+			tcpConnsSum += p.TCPConns
+			udpConnsSum += p.UDPConns
+			processCountSum += p.ProcessCount
+			if p.Uptime > uptimeMax {
+				uptimeMax = p.Uptime
 			}
+			// 取最后一个有效的 Ping 数据 (而非第一个)
+		if len(p.PingData) > 0 {
+			pingData = make([]sharedmodel.PingResult, len(p.PingData))
+			copy(pingData, p.PingData)
 		}
+	}
 
-		count := len(points)
-		cpuAvg := cpuSum / float64(count)
-		memAvg := memSum / float64(count)
+	count := len(points)
+	cpuAvg := cpuSum / float64(count)
+	memAvg := memSum / float64(count)
+	load1Avg := load1Sum / float64(count)
+	load5Avg := load5Sum / float64(count)
+	load15Avg := load15Sum / float64(count)
+	// 固定值取最后一个有效值，不取平均
+	memTotalFinal := uint64(0)
+	memUsedFinal := uint64(0)
+	swapTotalFinal := uint64(0)
+	swapUsedFinal := uint64(0)
+	for i := len(points) - 1; i >= 0; i-- {
+		if points[i].MemTotal > 0 {
+			memTotalFinal = points[i].MemTotal
+			memUsedFinal = points[i].MemUsed
+			break
+		}
+	}
+	for i := len(points) - 1; i >= 0; i-- {
+		if points[i].SwapTotal > 0 {
+			swapTotalFinal = points[i].SwapTotal
+			swapUsedFinal = points[i].SwapUsed
+			break
+		}
+	}
+	netRxAvg := netRxSum / uint64(count)
+	netTxAvg := netTxSum / uint64(count)
+	tcpConnsAvg := tcpConnsSum / count
+	udpConnsAvg := udpConnsSum / count
+	processCountAvg := processCountSum / count
 
 		// 序列化磁盘数据
 		diskData := ""
@@ -121,16 +162,27 @@ func (s *AggregationService) aggregate() {
 			pingStr = string(pingBytes)
 		}
 
-		// 创建聚合记录
+		// 创建聚合记录（保存完整字段）
 		record := &model.MetricRecord{
-			AgentID:   agent.ID,
-			Timestamp: now,
-			CPUUsage:  cpuAvg,
-			MemUsage:  memAvg,
-			DiskUsage: diskData,
-			NetRx:     netRxSum / int64(count),
-			NetTx:     netTxSum / int64(count),
-			PingData:  pingStr,
+			AgentID:      agent.ID,
+			Timestamp:    now,
+			CPUUsage:     cpuAvg,
+			MemUsage:     memAvg,
+			MemTotal:     memTotalFinal,
+			MemUsed:      memUsedFinal,
+			SwapTotal:    swapTotalFinal,
+			SwapUsed:     swapUsedFinal,
+			DiskUsage:    diskData,
+			NetRx:        int64(netRxAvg),
+			NetTx:        int64(netTxAvg),
+			TCPConns:     tcpConnsAvg,
+			UDPConns:     udpConnsAvg,
+			Load1:        load1Avg,
+			Load5:        load5Avg,
+			Load15:       load15Avg,
+			Uptime:       uptimeMax,
+			ProcessCount: processCountAvg,
+			PingData:     pingStr,
 		}
 
 		if err := s.recordRepo.Create(record); err != nil {

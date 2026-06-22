@@ -30,6 +30,7 @@ func (s *ConfigSyncService) GetAgentConfig() (*sharedmodel.AgentConfig, error) {
 			ID:      t.ID,
 			Target:  t.Target,
 			Name:    t.Name,
+			Method:  t.Method,
 			Enabled: t.Enabled,
 		})
 	}

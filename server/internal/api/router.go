@@ -19,6 +19,7 @@ type Router struct {
 	agentHandler       *AgentHandler
 	agentAPIHandler    *AgentAPIHandler
 	dashboardWSHandler *DashboardWSHandler
+	pingTargetHandler  *PingTargetHandler
 }
 
 // NewRouter 创建路由
@@ -31,6 +32,7 @@ func NewRouter(
 	registry *service.AgentRegistryService,
 	configSync *service.ConfigSyncService,
 	validator *service.DataValidator,
+	pingTargetRepo *repository.PingTargetRepository,
 ) *Router {
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
@@ -46,6 +48,7 @@ func NewRouter(
 	agentHandler := NewAgentHandler(registry, monitor, configSync, validator)
 	agentAPIHandler := NewAgentAPIHandler(registry, agentRepo)
 	dashboardWSHandler := NewDashboardWSHandler(monitor, jwtManager)
+	pingTargetHandler := NewPingTargetHandler(pingTargetRepo)
 
 	// 健康检查
 	r.GET("/api/v1/health", func(c *gin.Context) {
@@ -102,6 +105,12 @@ func NewRouter(
 			// Agent 管理
 			protected.GET("/agents", agentAPIHandler.HandleListAgents)
 			protected.DELETE("/agents/:id", agentAPIHandler.HandleDeleteAgent)
+
+			// 探测目标管理
+			protected.GET("/ping-targets", pingTargetHandler.HandleListPingTargets)
+			protected.POST("/ping-targets", pingTargetHandler.HandleCreatePingTarget)
+			protected.PUT("/ping-targets/:id", pingTargetHandler.HandleUpdatePingTarget)
+			protected.DELETE("/ping-targets/:id", pingTargetHandler.HandleDeletePingTarget)
 		}
 	}
 
@@ -113,6 +122,7 @@ func NewRouter(
 		agentHandler:       agentHandler,
 		agentAPIHandler:    agentAPIHandler,
 		dashboardWSHandler: dashboardWSHandler,
+		pingTargetHandler:  pingTargetHandler,
 	}
 }
 

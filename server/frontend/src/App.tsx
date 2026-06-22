@@ -10,6 +10,7 @@ import PublicServerDetail from '@/pages/PublicServerDetail'
 import Dashboard from '@/pages/Dashboard'
 import ServerDetail from '@/pages/ServerDetail'
 import AgentManagement from '@/pages/AgentManagement'
+import PingTargets from '@/pages/PingTargets'
 
 function App() {
   const initTheme = useServerStore((s) => s.initTheme)
@@ -58,6 +59,7 @@ function App() {
       >
         <Route index element={<Dashboard />} />
         <Route path="agents" element={<AgentManagement />} />
+        <Route path="ping-targets" element={<PingTargets />} />
         <Route path="server/:id" element={<ServerDetail />} />
       </Route>
 

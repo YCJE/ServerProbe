@@ -124,6 +124,7 @@ func main() {
 		registry,
 		configSync,
 		validator,
+		pingTargetRepo,
 	)
 
 	// 注册前端静态文件处理器

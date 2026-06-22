@@ -41,6 +41,7 @@ export default function Layout() {
       items: [
         { to: '/admin', label: '仪表盘', icon: '▣', end: true },
         { to: '/admin/agents', label: 'Agent 管理', icon: '⬡', end: false },
+        { to: '/admin/ping-targets', label: '探测目标', icon: '◈', end: false },
       ],
     },
   ]

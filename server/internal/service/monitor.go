@@ -153,14 +153,8 @@ func (m *MonitorService) WritePingData(agentID int64, pingData []sharedmodel.Pin
 		return fmt.Errorf("Agent %d 的环形缓冲不存在", agentID)
 	}
 
-	// 获取最新的数据点，更新 Ping 数据
-	points := rb.Latest(1)
-	if len(points) > 0 {
-		points[0].PingData = pingData
-		// 重新写入更新后的数据点
-		rb.Write(points[0])
-	}
-
+	// 更新最新数据点的 PingData (不创建新数据点)
+	rb.UpdateLastPing(pingData)
 	return nil
 }
 
@@ -239,18 +233,27 @@ func (m *MonitorService) GetDashboardData() []DashboardItem {
 
 		p := points[0]
 		item := DashboardItem{
-			AgentID:    agentID,
-			Online:     m.isOnlineLocked(agentID),
-			CPU:        p.CPU,
-			Mem:        p.Mem,
-			MemTotal:   p.MemTotal,
-			MemUsed:    p.MemUsed,
-			NetRx:      p.NetRx,
-			NetTx:      p.NetTx,
-			Load1:      p.Load1,
-			Uptime:     p.Uptime,
-			PingData:   p.PingData,
-			Timestamp:  p.Timestamp,
+			AgentID:      agentID,
+			Online:       m.isOnlineLocked(agentID),
+			CPU:          p.CPU,
+			Mem:          p.Mem,
+			MemTotal:     p.MemTotal,
+			MemUsed:      p.MemUsed,
+			SwapTotal:    p.SwapTotal,
+			SwapUsed:     p.SwapUsed,
+			NetRx:        p.NetRx,
+			NetTx:        p.NetTx,
+			Load1:        p.Load1,
+			Load5:        p.Load5,
+			Load15:       p.Load15,
+			Uptime:       p.Uptime,
+			DiskUsage:    calcDiskUsage(p.Disks),
+			Disks:        p.Disks,
+			TCPConns:     p.TCPConns,
+			UDPConns:     p.UDPConns,
+			ProcessCount: p.ProcessCount,
+			PingData:     p.PingData,
+			Timestamp:    p.Timestamp,
 		}
 
 		// 补充 hostname 和 display_name
@@ -271,20 +274,54 @@ func (m *MonitorService) isOnlineLocked(agentID int64) bool {
 	return ok
 }
 
+// calcDiskUsage 计算磁盘使用率 (优先根分区，否则取最大分区)
+func calcDiskUsage(disks []sharedmodel.DiskInfo) float64 {
+	if len(disks) == 0 {
+		return 0
+	}
+	for _, d := range disks {
+		if d.Device == "/" && d.Total > 0 {
+			return float64(d.Used) / float64(d.Total) * 100
+		}
+	}
+	var maxDisk *sharedmodel.DiskInfo
+	for i := range disks {
+		if disks[i].Total == 0 {
+			continue
+		}
+		if maxDisk == nil || disks[i].Total > maxDisk.Total {
+			maxDisk = &disks[i]
+		}
+	}
+	if maxDisk != nil {
+		return float64(maxDisk.Used) / float64(maxDisk.Total) * 100
+	}
+	return 0
+}
+
 // DashboardItem 仪表盘数据项
 type DashboardItem struct {
-	AgentID     int64                        `json:"agent_id"`
-	Hostname    string                       `json:"hostname"`
-	DisplayName string                       `json:"display_name"`
-	Online      bool                         `json:"online"`
-	CPU         float64                      `json:"cpu"`
-	Mem         float64                      `json:"mem"`
-	MemTotal    uint64                       `json:"mem_total"`
-	MemUsed     uint64                       `json:"mem_used"`
-	NetRx       uint64                       `json:"net_rx"`
-	NetTx       uint64                       `json:"net_tx"`
-	Load1       float64                      `json:"load_1"`
-	Uptime      uint64                       `json:"uptime"`
-	PingData    []sharedmodel.PingResult     `json:"ping_data"`
-	Timestamp   int64                        `json:"timestamp"`
+	AgentID      int64                    `json:"agent_id"`
+	Hostname     string                   `json:"hostname"`
+	DisplayName  string                   `json:"display_name"`
+	Online       bool                     `json:"online"`
+	CPU          float64                  `json:"cpu"`
+	Mem          float64                  `json:"mem"`
+	MemTotal     uint64                   `json:"mem_total"`
+	MemUsed      uint64                   `json:"mem_used"`
+	SwapTotal    uint64                   `json:"swap_total"`
+	SwapUsed     uint64                   `json:"swap_used"`
+	NetRx        uint64                   `json:"net_rx"`
+	NetTx        uint64                   `json:"net_tx"`
+	Load1        float64                  `json:"load_1"`
+	Load5        float64                  `json:"load_5"`
+	Load15       float64                  `json:"load_15"`
+	Uptime       uint64                   `json:"uptime"`
+	DiskUsage    float64                  `json:"disk_usage"`
+	Disks        []sharedmodel.DiskInfo   `json:"disks"`
+	TCPConns     int                      `json:"tcp_connections"`
+	UDPConns     int                      `json:"udp_connections"`
+	ProcessCount int                      `json:"process_count"`
+	PingData     []sharedmodel.PingResult `json:"ping_data"`
+	Timestamp    int64                    `json:"timestamp"`
 }

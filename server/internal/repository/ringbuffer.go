@@ -129,6 +129,20 @@ func (rb *RingBuffer) GetAll() []MetricPoint {
 	return rb.Latest(rb.size)
 }
 
+// UpdateLastPing 更新最新数据点的 PingData (不创建新数据点)
+func (rb *RingBuffer) UpdateLastPing(pingData []sharedmodel.PingResult) bool {
+	rb.mu.Lock()
+	defer rb.mu.Unlock()
+
+	if rb.size == 0 {
+		return false
+	}
+
+	idx := (rb.head - 1 + rb.capacity) % rb.capacity
+	rb.data[idx].PingData = pingData
+	return true
+}
+
 // GetAvgCPU 获取最近 n 个数据点的平均 CPU 使用率
 func (rb *RingBuffer) GetAvgCPU(n int) float64 {
 	points := rb.Latest(n)

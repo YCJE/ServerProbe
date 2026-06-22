@@ -250,6 +250,23 @@ func (h *DashboardWSHandler) pushPublicDashboardData(ws *wsConn) bool {
 
 	publicItems := make([]PublicItem, 0, len(items))
 	for _, item := range items {
+		// 过滤 PingData 中的 Target 字段 (敏感信息)
+		publicPing := make([]sharedmodel.PingResult, 0, len(item.PingData))
+		for _, p := range item.PingData {
+			publicPing = append(publicPing, sharedmodel.PingResult{
+				Name:        p.Name,
+				Method:      p.Method,
+				AvgLatency:  p.AvgLatency,
+				MinLatency:  p.MinLatency,
+				MaxLatency:  p.MaxLatency,
+				Jitter:      p.Jitter,
+				Loss:        p.Loss,
+				PacketsSent: p.PacketsSent,
+				PacketsRecv: p.PacketsRecv,
+				// Target 字段不包含，防止泄露探测目标地址
+			})
+		}
+
 		publicItems = append(publicItems, PublicItem{
 			AgentID:     item.AgentID,
 			Hostname:    item.Hostname,
@@ -263,7 +280,7 @@ func (h *DashboardWSHandler) pushPublicDashboardData(ws *wsConn) bool {
 			NetTx:       item.NetTx,
 			Load1:       item.Load1,
 			Uptime:      item.Uptime,
-			PingData:    item.PingData,
+			PingData:    publicPing,
 			Timestamp:   item.Timestamp,
 		})
 	}

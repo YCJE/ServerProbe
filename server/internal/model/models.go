@@ -122,9 +122,11 @@ type EmailConfig struct {
 // PingTarget 探测目标（GORM 模型）
 type PingTarget struct {
 	ID        int64     `gorm:"primaryKey;autoIncrement" json:"id"`
-	Target    string    `gorm:"not null" json:"target"`
 	Name      string    `gorm:"not null" json:"name"`
+	Target    string    `gorm:"not null" json:"target"`
+	Method    string    `gorm:"default:icmp" json:"method"`
 	Enabled   bool      `gorm:"default:true" json:"enabled"`
+	SortOrder int       `gorm:"default:0" json:"sort_order"`
 	CreatedAt time.Time `gorm:"autoCreateTime" json:"created_at"`
 }
 
@@ -133,15 +135,26 @@ func (PingTarget) TableName() string { return "ping_targets" }
 
 // MetricRecord 历史聚合数据（每5分钟一个点）
 type MetricRecord struct {
-	ID        int64   `gorm:"primaryKey;autoIncrement" json:"id"`
-	AgentID   int64   `gorm:"index:idx_metric_records_agent_time,priority:1;not null" json:"agent_id"`
-	Timestamp int64   `gorm:"index:idx_metric_records_agent_time,priority:2;not null" json:"timestamp"`
-	CPUUsage  float64 `json:"cpu_usage"`
-	MemUsage  float64 `json:"mem_usage"`
-	DiskUsage string  `json:"disk_usage"`
-	NetRx     int64   `json:"net_rx"`
-	NetTx     int64   `json:"net_tx"`
-	PingData  string  `json:"ping_data"`
+	ID            int64   `gorm:"primaryKey;autoIncrement" json:"id"`
+	AgentID       int64   `gorm:"index:idx_metric_records_agent_time,priority:1;not null" json:"agent_id"`
+	Timestamp     int64   `gorm:"index:idx_metric_records_agent_time,priority:2;not null" json:"timestamp"`
+	CPUUsage      float64 `json:"cpu_usage"`
+	MemUsage      float64 `json:"mem_usage"`
+	MemTotal      uint64  `json:"mem_total"`
+	MemUsed       uint64  `json:"mem_used"`
+	SwapTotal     uint64  `json:"swap_total"`
+	SwapUsed      uint64  `json:"swap_used"`
+	DiskUsage     string  `json:"disk_usage"`
+	NetRx         int64   `json:"net_rx"`
+	NetTx         int64   `json:"net_tx"`
+	TCPConns      int     `json:"tcp_connections"`
+	UDPConns      int     `json:"udp_connections"`
+	Load1         float64 `json:"load_1"`
+	Load5         float64 `json:"load_5"`
+	Load15        float64 `json:"load_15"`
+	Uptime        uint64  `json:"uptime"`
+	ProcessCount  int     `json:"process_count"`
+	PingData      string  `json:"ping_data"`
 }
 
 // TableName 指定表名

@@ -72,6 +72,7 @@ type PingTarget struct {
 	ID      int64  `json:"id"`
 	Target  string `json:"target"` // IP 或域名
 	Name    string `json:"name"`   // 显示名称
+	Method  string `json:"method"` // 探测方式: icmp, tcp, http
 	Enabled bool   `json:"enabled"`
 }
 

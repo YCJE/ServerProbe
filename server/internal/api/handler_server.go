@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"net/http"
 	"strconv"
 	"time"
@@ -10,6 +11,60 @@ import (
 	"github.com/server-probe/server/internal/service"
 	sharedmodel "github.com/server-probe/shared/model"
 )
+
+// historyPoint 历史数据点（统一响应格式，字段名与 model.MetricRecord 的 JSON tag 一致）
+type historyPoint struct {
+	Timestamp    int64                    `json:"timestamp"`
+	CPUUsage     float64                  `json:"cpu_usage"`
+	MemUsage     float64                  `json:"mem_usage"`
+	MemTotal     uint64                   `json:"mem_total"`
+	MemUsed      uint64                   `json:"mem_used"`
+	SwapTotal    uint64                   `json:"swap_total"`
+	SwapUsed     uint64                   `json:"swap_used"`
+	DiskUsage    string                   `json:"disk_usage"`
+	NetRx        uint64                   `json:"net_rx"`
+	NetTx        uint64                   `json:"net_tx"`
+	TCPConns     int                      `json:"tcp_connections"`
+	UDPConns     int                      `json:"udp_connections"`
+	Load1        float64                  `json:"load_1"`
+	Load5        float64                  `json:"load_5"`
+	Load15       float64                  `json:"load_15"`
+	Uptime       uint64                   `json:"uptime"`
+	ProcessCount int                      `json:"process_count"`
+	PingData     []sharedmodel.PingResult `json:"ping_data"`
+}
+
+// metricPointToHistoryPoint 将 ringbuffer 的 MetricPoint 转换为统一的历史数据点响应格式
+func metricPointToHistoryPoint(p repository.MetricPoint) historyPoint {
+	hp := historyPoint{
+		Timestamp:    p.Timestamp,
+		CPUUsage:     p.CPU,
+		MemUsage:     p.Mem,
+		MemTotal:     p.MemTotal,
+		MemUsed:      p.MemUsed,
+		SwapTotal:    p.SwapTotal,
+		SwapUsed:     p.SwapUsed,
+		NetRx:        p.NetRx,
+		NetTx:        p.NetTx,
+		TCPConns:     p.TCPConns,
+		UDPConns:     p.UDPConns,
+		Load1:        p.Load1,
+		Load5:        p.Load5,
+		Load15:       p.Load15,
+		Uptime:       p.Uptime,
+		ProcessCount: p.ProcessCount,
+		PingData:     p.PingData,
+	}
+
+	// 序列化磁盘数据为 JSON 字符串，与 MetricRecord.DiskUsage 格式保持一致
+	if len(p.Disks) > 0 {
+		if diskBytes, err := json.Marshal(p.Disks); err == nil {
+			hp.DiskUsage = string(diskBytes)
+		}
+	}
+
+	return hp
+}
 
 // ServerHandler 服务器信息处理器
 type ServerHandler struct {
@@ -37,24 +92,32 @@ func (h *ServerHandler) HandleListServers(c *gin.Context) {
 	}
 
 	type ServerListItem struct {
-		ID           int64       `json:"id"`
-		Hostname     string      `json:"hostname"`
-		DisplayName  string      `json:"display_name"`
-		OS           string      `json:"os"`
-		Arch         string      `json:"arch"`
-		AgentVersion string      `json:"agent_version"`
-		Online       bool        `json:"online"`
-		LastSeen     string      `json:"last_seen"`
-		CPU          float64     `json:"cpu"`
-		Mem          float64     `json:"mem"`
-		MemTotal     uint64      `json:"mem_total"`
-		MemUsed      uint64      `json:"mem_used"`
-		NetRx        uint64      `json:"net_rx"`
-		NetTx        uint64      `json:"net_tx"`
-		Uptime       uint64      `json:"uptime"`
-		Load1        float64     `json:"load_1"`
-		DiskUsage    float64     `json:"disk_usage"`
-		PingData     interface{} `json:"ping_data"`
+		ID            int64                    `json:"id"`
+		Hostname      string                   `json:"hostname"`
+		DisplayName   string                   `json:"display_name"`
+		OS            string                   `json:"os"`
+		Arch          string                   `json:"arch"`
+		AgentVersion  string                   `json:"agent_version"`
+		Online        bool                     `json:"online"`
+		LastSeen      string                   `json:"last_seen"`
+		CPU           float64                  `json:"cpu"`
+		Mem           float64                  `json:"mem"`
+		MemTotal      uint64                   `json:"mem_total"`
+		MemUsed       uint64                   `json:"mem_used"`
+		SwapTotal     uint64                   `json:"swap_total"`
+		SwapUsed      uint64                   `json:"swap_used"`
+		NetRx         uint64                   `json:"net_rx"`
+		NetTx         uint64                   `json:"net_tx"`
+		Uptime        uint64                   `json:"uptime"`
+		Load1         float64                  `json:"load_1"`
+		Load5         float64                  `json:"load_5"`
+		Load15        float64                  `json:"load_15"`
+		DiskUsage     float64                  `json:"disk_usage"`
+		Disks         []sharedmodel.DiskInfo   `json:"disks"`
+		TCPConns      int                      `json:"tcp_connections"`
+		UDPConns      int                      `json:"udp_connections"`
+		ProcessCount  int                      `json:"process_count"`
+		PingData      []sharedmodel.PingResult `json:"ping_data"`
 	}
 
 	items := make([]ServerListItem, 0, len(agents))
@@ -79,11 +142,19 @@ func (h *ServerHandler) HandleListServers(c *gin.Context) {
 				item.Mem = p.Mem
 				item.MemTotal = p.MemTotal
 				item.MemUsed = p.MemUsed
+				item.SwapTotal = p.SwapTotal
+				item.SwapUsed = p.SwapUsed
 				item.NetRx = p.NetRx
 				item.NetTx = p.NetTx
 				item.Uptime = p.Uptime
 				item.Load1 = p.Load1
+				item.Load5 = p.Load5
+				item.Load15 = p.Load15
 				item.DiskUsage = calcDiskUsage(p.Disks)
+				item.Disks = p.Disks
+				item.TCPConns = p.TCPConns
+				item.UDPConns = p.UDPConns
+				item.ProcessCount = p.ProcessCount
 				item.PingData = p.PingData
 			}
 		}
@@ -91,7 +162,7 @@ func (h *ServerHandler) HandleListServers(c *gin.Context) {
 		items = append(items, item)
 	}
 
-	c.JSON(http.StatusOK, gin.H{"servers": items})
+	c.JSON(http.StatusOK, gin.H{"servers": items, "total": len(items)})
 }
 
 // calcDiskUsage 从磁盘分区列表计算使用率
@@ -141,20 +212,46 @@ func (h *ServerHandler) HandleGetServer(c *gin.Context) {
 		return
 	}
 
-	// 获取实时数据
-	var latestData *repository.MetricPoint
+	// 构建扁平化的响应，与前端 ServerData 类型匹配
+	resp := gin.H{
+		"id":             agent.ID,
+		"hostname":       agent.Hostname,
+		"display_name":   agent.DisplayName,
+		"os":             agent.OS,
+		"arch":           agent.Arch,
+		"agent_version":  agent.AgentVersion,
+		"online":         h.monitor.IsOnline(id),
+		"last_seen":      agent.LastSeen.Unix(),
+	}
+
+	// 获取实时数据，补充监控字段
 	if rb := h.monitor.GetRingBuffer(id); rb != nil {
 		points := rb.Latest(1)
 		if len(points) > 0 {
-			latestData = &points[0]
+			p := points[0]
+			resp["cpu"] = p.CPU
+			resp["mem"] = p.Mem
+			resp["mem_total"] = p.MemTotal
+			resp["mem_used"] = p.MemUsed
+			resp["swap_total"] = p.SwapTotal
+			resp["swap_used"] = p.SwapUsed
+			resp["net_rx"] = p.NetRx
+			resp["net_tx"] = p.NetTx
+			resp["load_1"] = p.Load1
+			resp["load_5"] = p.Load5
+			resp["load_15"] = p.Load15
+			resp["uptime"] = p.Uptime
+			resp["disk_usage"] = calcDiskUsage(p.Disks)
+			resp["disks"] = p.Disks
+			resp["tcp_connections"] = p.TCPConns
+			resp["udp_connections"] = p.UDPConns
+			resp["process_count"] = p.ProcessCount
+			resp["ping_data"] = p.PingData
+			resp["timestamp"] = p.Timestamp
 		}
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"agent":       agent,
-		"online":      h.monitor.IsOnline(id),
-		"latest_data": latestData,
-	})
+	c.JSON(http.StatusOK, resp)
 }
 
 // HandleGetServerHistory 获取历史数据
@@ -190,9 +287,14 @@ func (h *ServerHandler) HandleGetServerHistory(c *gin.Context) {
 	if rangeStr == "1h" || rangeStr == "6h" {
 		if rb := h.monitor.GetRingBuffer(id); rb != nil {
 			points := rb.GetByTimeRange(startTime, now)
+			// 将 MetricPoint 转换为统一的历史数据点格式
+			historyPoints := make([]historyPoint, 0, len(points))
+			for _, p := range points {
+				historyPoints = append(historyPoints, metricPointToHistoryPoint(p))
+			}
 			c.JSON(http.StatusOK, gin.H{
-				"source":  "ringbuffer",
-				"records": points,
+				"source": "ringbuffer",
+				"points": historyPoints,
 			})
 			return
 		}
@@ -206,8 +308,8 @@ func (h *ServerHandler) HandleGetServerHistory(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"source":  "sqlite",
-		"records": records,
+		"source": "sqlite",
+		"points": records,
 	})
 }
 

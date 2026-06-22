@@ -71,6 +71,10 @@ export default function ServerCard({ server, basePath = '/admin' }: ServerCardPr
     ? (server.mem_used / server.mem_total) * 100
     : server.mem
 
+  const diskUsage = server.disk_usage || 0
+  const disks = server.disks || []
+  const pingData = server.ping_data || []
+
   return (
     <div
       onClick={handleClick}
@@ -137,15 +141,40 @@ export default function ServerCard({ server, basePath = '/admin' }: ServerCardPr
         {/* 磁盘 */}
         <div>
           <div className="mb-1 flex items-center justify-between text-xs">
-            <span className="text-muted-foreground">磁盘</span>
-            <span className={`font-medium ${getUsageTextColor(server.disk_usage || 0)}`}>
-              {(server.disk_usage || 0).toFixed(1)}%
+            <span className="text-muted-foreground">
+              磁盘
+              {disks.length > 0 && (
+                <span className="ml-1 text-muted-foreground/60">
+                  ({disks.length} 个分区)
+                </span>
+              )}
+            </span>
+            <span className={`font-medium ${getUsageTextColor(diskUsage)}`}>
+              {diskUsage.toFixed(1)}%
             </span>
           </div>
-          <ProgressBar
-            value={server.disk_usage || 0}
-            color={getUsageColor(server.disk_usage || 0)}
-          />
+          <ProgressBar value={diskUsage} color={getUsageColor(diskUsage)} />
+          {/* 磁盘详情 */}
+          {disks.length > 0 && (
+            <div className="mt-1.5 space-y-0.5">
+              {disks.slice(0, 3).map((disk, idx) => {
+                const usage = disk.total > 0 ? (disk.used / disk.total) * 100 : 0
+                return (
+                  <div key={idx} className="flex items-center justify-between text-xs text-muted-foreground/70">
+                    <span className="truncate font-mono">{disk.device}</span>
+                    <span className="ml-2 shrink-0">
+                      {formatBytes(disk.used)} / {formatBytes(disk.total)} ({usage.toFixed(0)}%)
+                    </span>
+                  </div>
+                )
+              })}
+              {disks.length > 3 && (
+                <div className="text-xs text-muted-foreground/50">
+                  还有 {disks.length - 3} 个分区...
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
@@ -178,19 +207,17 @@ export default function ServerCard({ server, basePath = '/admin' }: ServerCardPr
       {/* 三网延迟 */}
       <div className="border-t border-border pt-2.5">
         <div className="mb-1.5 text-xs font-medium text-muted-foreground">三网延迟 / 丢包率</div>
-        <div className="grid grid-cols-3 gap-1">
-          {(server.ping_data || []).slice(0, 3).map((ping, idx) => (
-            <PingInfo key={idx} ping={ping} online={server.online} />
-          ))}
-          {/* 如果没有三网数据，填充占位 */}
-          {(!server.ping_data || server.ping_data.length === 0) && (
-            <>
-              <PingInfo online={server.online} />
-              <PingInfo online={server.online} />
-              <PingInfo online={server.online} />
-            </>
-          )}
-        </div>
+        {pingData.length > 0 ? (
+          <div className="grid grid-cols-3 gap-1">
+            {pingData.slice(0, 3).map((ping, idx) => (
+              <PingInfo key={idx} ping={ping} online={server.online} />
+            ))}
+          </div>
+        ) : (
+          <div className="py-2 text-center text-xs text-muted-foreground/60">
+            未配置探测目标
+          </div>
+        )}
       </div>
     </div>
   )

@@ -31,6 +31,21 @@ function isRealtimeRange(range: TimeRange): boolean {
   return range === '1h' || range === '6h'
 }
 
+/** 解析 ping_data，兼容 ringbuffer (数组) 和 sqlite (JSON 字符串) 两种格式 */
+function parsePingData(raw: unknown): PingResult[] {
+  if (!raw) return []
+  if (Array.isArray(raw)) return raw as PingResult[]
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw)
+      return Array.isArray(parsed) ? parsed : []
+    } catch {
+      return []
+    }
+  }
+  return []
+}
+
 /** 服务器详情页 */
 export default function ServerDetail() {
   const { id } = useParams<{ id: string }>()
@@ -138,11 +153,19 @@ export default function ServerDetail() {
         mem: liveData.mem,
         mem_total: liveData.mem_total,
         mem_used: liveData.mem_used,
+        swap_total: liveData.swap_total || 0,
+        swap_used: liveData.swap_used || 0,
         net_rx: liveData.net_rx,
         net_tx: liveData.net_tx,
         uptime: liveData.uptime,
         load_1: liveData.load_1,
+        load_5: liveData.load_5 || 0,
+        load_15: liveData.load_15 || 0,
         disk_usage: liveData.disk_usage,
+        disks: liveData.disks || [],
+        tcp_connections: liveData.tcp_connections || 0,
+        udp_connections: liveData.udp_connections || 0,
+        process_count: liveData.process_count || 0,
         ping_data: liveData.ping_data,
       }
     }
@@ -177,7 +200,7 @@ export default function ServerDetail() {
       timestamps: historyData.points.map((p) => p.timestamp),
       cpuData: historyData.points.map((p) => p.cpu_usage),
       memData: historyData.points.map((p) => p.mem_usage),
-      pingData: historyData.points.map((p) => p.ping_data || []),
+      pingData: historyData.points.map((p) => parsePingData(p.ping_data)),
     }
   }, [timeRange, realtimeHistory, historyData])
 
@@ -304,6 +327,56 @@ export default function ServerDetail() {
         />
       </div>
 
+      {/* 扩展指标卡片 */}
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
+        {/* TCP 连接数 */}
+        <MetricCard
+          label="TCP 连接"
+          value={displayServer.online ? String(displayServer.tcp_connections || 0) : '---'}
+        />
+        {/* UDP 连接数 */}
+        <MetricCard
+          label="UDP 连接"
+          value={displayServer.online ? String(displayServer.udp_connections || 0) : '---'}
+        />
+        {/* 进程数 */}
+        <MetricCard
+          label="进程数"
+          value={displayServer.online ? String(displayServer.process_count || 0) : '---'}
+        />
+        {/* Swap 使用 */}
+        <MetricCard
+          label="Swap"
+          value={
+            displayServer.online
+              ? displayServer.swap_total > 0
+                ? `${((displayServer.swap_used / displayServer.swap_total) * 100).toFixed(1)}%`
+                : '无'
+              : '---'
+          }
+          subValue={
+            displayServer.online && displayServer.swap_total > 0
+              ? `${formatBytes(displayServer.swap_used)} / ${formatBytes(displayServer.swap_total)}`
+              : undefined
+          }
+        />
+        {/* 负载 (1/5/15 分钟) */}
+        <MetricCard
+          label="系统负载"
+          value={
+            displayServer.online
+              ? `${displayServer.load_1?.toFixed(2) || '0.00'} / ${displayServer.load_5?.toFixed(2) || '0.00'} / ${displayServer.load_15?.toFixed(2) || '0.00'}`
+              : '---'
+          }
+          subValue={displayServer.online ? '1分 / 5分 / 15分' : undefined}
+        />
+        {/* 1分钟负载（单独显示，便于快速查看） */}
+        <MetricCard
+          label="1分钟负载"
+          value={displayServer.online ? (displayServer.load_1?.toFixed(2) || '0.00') : '---'}
+        />
+      </div>
+
       {/* CPU 图表 */}
       <div className="rounded-xl border border-border bg-card p-4">
         <div className="mb-3 flex items-center justify-between">
@@ -375,8 +448,51 @@ export default function ServerDetail() {
             <InfoItem label="架构" value={displayServer.arch} />
             <InfoItem label="Agent 版本" value={displayServer.agent_version} />
             <InfoItem label="运行时间" value={displayServer.online ? formatUptime(displayServer.uptime) : '---'} />
+            <InfoItem label="进程数" value={displayServer.online ? String(displayServer.process_count || 0) : '---'} />
             <InfoItem label="负载(1分)" value={displayServer.load_1?.toFixed(2) || '---'} />
+            <InfoItem label="负载(5分)" value={displayServer.load_5?.toFixed(2) || '---'} />
+            <InfoItem label="负载(15分)" value={displayServer.load_15?.toFixed(2) || '---'} />
+            <InfoItem label="TCP 连接" value={displayServer.online ? String(displayServer.tcp_connections || 0) : '---'} />
+            <InfoItem label="UDP 连接" value={displayServer.online ? String(displayServer.udp_connections || 0) : '---'} />
+            <InfoItem
+              label="Swap"
+              value={
+                displayServer.online
+                  ? displayServer.swap_total > 0
+                    ? `${formatBytes(displayServer.swap_used)} / ${formatBytes(displayServer.swap_total)}`
+                    : '未启用'
+                  : '---'
+              }
+            />
           </div>
+
+          {/* 磁盘详情列表 */}
+          {displayServer.disks && displayServer.disks.length > 0 && (
+            <div className="mt-4 border-t border-border pt-3">
+              <h3 className="mb-2 text-xs font-medium text-muted-foreground">磁盘分区详情</h3>
+              <div className="space-y-2">
+                {displayServer.disks.map((disk, idx) => {
+                  const usage = disk.total > 0 ? (disk.used / disk.total) * 100 : 0
+                  return (
+                    <div key={idx} className="rounded-lg bg-secondary/50 px-3 py-2">
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="font-mono text-foreground">{disk.device}</span>
+                        <span className={`font-medium ${getUsageTextColor(usage)}`}>
+                          {usage.toFixed(1)}%
+                        </span>
+                      </div>
+                      <div className="mt-1 text-xs text-muted-foreground">
+                        {formatBytes(disk.used)} / {formatBytes(disk.total)}
+                      </div>
+                      <div className="mt-1.5">
+                        <ProgressBar value={usage} color={getUsageColor(usage)} />
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* 三网延迟详情 */}
@@ -448,6 +564,18 @@ function MetricCard({
       {subValue && (
         <div className="mt-0.5 text-xs text-muted-foreground">{subValue}</div>
       )}
+    </div>
+  )
+}
+
+/** 进度条组件 */
+function ProgressBar({ value, color }: { value: number; color: string }) {
+  return (
+    <div className="h-1.5 w-full overflow-hidden rounded-full bg-secondary">
+      <div
+        className={`h-full rounded-full transition-all duration-500 ${color}`}
+        style={{ width: `${Math.min(value, 100)}%` }}
+      />
     </div>
   )
 }
