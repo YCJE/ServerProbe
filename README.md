@@ -583,6 +583,46 @@ systemctl status probe-agent       # 状态
 journalctl -u probe-agent -f       # 实时日志
 ```
 
+### 卸载
+
+如需完全移除 Server Probe，可使用一键卸载脚本:
+
+**卸载 Server:**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/YCJE/ServerProbe/master/scripts/uninstall-server.sh | bash
+```
+
+清理内容:
+- 停止并禁用 systemd 服务
+- 删除二进制文件 `/usr/local/bin/probe-server`
+- 删除配置目录 `/etc/probe-server`
+- 删除数据目录 `/var/lib/probe-server`
+- 删除系统用户 `probe-server`
+- 可选清理 Go 环境
+
+如需保留数据，使用 `--keep-data` 参数:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/YCJE/ServerProbe/master/scripts/uninstall-server.sh | bash -s -- --keep-data
+```
+
+**卸载 Agent:**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/YCJE/ServerProbe/master/scripts/uninstall-agent.sh | bash
+```
+
+清理内容:
+- 停止并禁用 systemd 服务
+- 移除 setcap CAP_NET_RAW 权限
+- 删除二进制文件 `/usr/local/bin/probe-agent`
+- 删除配置目录 `/etc/probe-agent`
+- 删除系统用户 `probe`
+- 可选清理 Go 环境
+
+两个卸载脚本都有交互式确认 (`y/N`)，防止误操作。
+
 ### 升级 Agent
 
 ```bash
