@@ -48,7 +48,7 @@ func NewRouter(
 	agentHandler := NewAgentHandler(registry, monitor, configSync, validator)
 	agentAPIHandler := NewAgentAPIHandler(registry, agentRepo, monitor)
 	dashboardWSHandler := NewDashboardWSHandler(monitor, jwtManager)
-	pingTargetHandler := NewPingTargetHandler(pingTargetRepo, configSync)
+	pingTargetHandler := NewPingTargetHandler(pingTargetRepo, configSync, monitor)
 
 	// 健康检查
 	r.GET("/api/v1/health", func(c *gin.Context) {

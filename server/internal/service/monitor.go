@@ -29,10 +29,11 @@ func (ac *AgentConn) Send(msg sharedmodel.WSMessage) error {
 
 // MonitorService 实时数据管理服务
 type MonitorService struct {
-	agentRepo    *repository.AgentRepository
-	ringBuffers  map[int64]*repository.RingBuffer
-	connections  map[int64]*AgentConn
-	mu           sync.RWMutex
+	agentRepo   *repository.AgentRepository
+	ringBuffers map[int64]*repository.RingBuffer
+	connections map[int64]*AgentConn
+	mu          sync.RWMutex
+	onConfigPush func(agentID int64, config *sharedmodel.AgentConfig)
 }
 
 // NewMonitorService 创建监控服务
@@ -110,6 +111,29 @@ func (m *MonitorService) UnregisterAgent(agentID int64) {
 	log.Printf("Agent %d 已完全移除 (连接+ringBuffer)", agentID)
 }
 
+// BroadcastConfigUpdate 向所有在线 Agent 推送配置更新
+func (m *MonitorService) BroadcastConfigUpdate(config *sharedmodel.AgentConfig) {
+	m.mu.RLock()
+	// 收集所有在线 Agent ID (不持锁写入，避免阻塞监控服务)
+	agentIDs := make([]int64, 0, len(m.connections))
+	for agentID := range m.connections {
+		agentIDs = append(agentIDs, agentID)
+	}
+	m.mu.RUnlock()
+
+	// 通过 OnConfigPush 回调推送 (使用 handler_agent.go 中的 agentWSConn.mu 锁)
+	if m.onConfigPush != nil {
+		for _, agentID := range agentIDs {
+			m.onConfigPush(agentID, config)
+		}
+	}
+}
+
+// SetConfigPushCallback 设置配置推送回调 (由 handler_agent.go 注册)
+func (m *MonitorService) SetConfigPushCallback(cb func(agentID int64, config *sharedmodel.AgentConfig)) {
+	m.onConfigPush = cb
+}
+
 // UpdateHeartbeat 更新心跳时间
 func (m *MonitorService) UpdateHeartbeat(agentID int64) {
 	m.mu.Lock()
@@ -128,7 +152,7 @@ func (m *MonitorService) WriteMetricData(agentID int64, data *sharedmodel.Metric
 
 	if !ok {
 		m.mu.Lock()
-		rb = repository.NewRingBuffer(3600)
+		rb = repository.NewRingBuffer(7200) // 7200 点 × 3s = 6 小时
 		m.ringBuffers[agentID] = rb
 		m.mu.Unlock()
 	}

@@ -28,7 +28,7 @@ const TIME_RANGES: { value: TimeRange; label: string }[] = [
 
 /** 判断是否为实时范围（使用 WebSocket 数据） */
 function isRealtimeRange(range: TimeRange): boolean {
-  return range === '1h' || range === '6h'
+  return range === '1h'
 }
 
 /** 解析 ping_data，兼容 ringbuffer (数组) 和 sqlite (JSON 字符串) 两种格式 */

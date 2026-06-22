@@ -14,11 +14,24 @@ import (
 type PingTargetHandler struct {
 	repo       *repository.PingTargetRepository
 	configSync *service.ConfigSyncService
+	monitor    *service.MonitorService
 }
 
 // NewPingTargetHandler 创建探测目标处理器
-func NewPingTargetHandler(repo *repository.PingTargetRepository, configSync *service.ConfigSyncService) *PingTargetHandler {
-	return &PingTargetHandler{repo: repo, configSync: configSync}
+func NewPingTargetHandler(repo *repository.PingTargetRepository, configSync *service.ConfigSyncService, monitor *service.MonitorService) *PingTargetHandler {
+	return &PingTargetHandler{repo: repo, configSync: configSync, monitor: monitor}
+}
+
+// pushConfigUpdate 推送配置更新到所有在线 Agent
+func (h *PingTargetHandler) pushConfigUpdate() {
+	if h.monitor == nil || h.configSync == nil {
+		return
+	}
+	config, err := h.configSync.GetAgentConfig()
+	if err != nil {
+		return
+	}
+	h.monitor.BroadcastConfigUpdate(config)
 }
 
 // HandleListPingTargets 列出所有探测目标
@@ -97,6 +110,7 @@ func (h *PingTargetHandler) HandleCreatePingTarget(c *gin.Context) {
 		return
 	}
 
+	h.pushConfigUpdate()
 	c.JSON(http.StatusOK, gin.H{"target": target})
 }
 
@@ -135,6 +149,10 @@ func (h *PingTargetHandler) HandleUpdatePingTarget(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "名称不能为空"})
 			return
 		}
+		if len(*req.Name) > 100 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "名称过长"})
+			return
+		}
 		existing.Name = *req.Name
 	}
 	if req.Target != nil {
@@ -142,9 +160,18 @@ func (h *PingTargetHandler) HandleUpdatePingTarget(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "目标地址不能为空"})
 			return
 		}
+		if len(*req.Target) > 255 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "目标地址过长"})
+			return
+		}
 		existing.Target = *req.Target
 	}
 	if req.Method != nil {
+		validMethods := map[string]bool{"icmp": true, "tcp": true, "http": true, "": true}
+		if !validMethods[*req.Method] {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "探测方式无效，支持: icmp, tcp, http"})
+			return
+		}
 		existing.Method = *req.Method
 	}
 	if req.Enabled != nil {
@@ -159,6 +186,7 @@ func (h *PingTargetHandler) HandleUpdatePingTarget(c *gin.Context) {
 		return
 	}
 
+	h.pushConfigUpdate()
 	c.JSON(http.StatusOK, gin.H{"target": existing})
 }
 
@@ -176,6 +204,7 @@ func (h *PingTargetHandler) HandleDeletePingTarget(c *gin.Context) {
 		return
 	}
 
+	h.pushConfigUpdate()
 	c.JSON(http.StatusOK, gin.H{"success": true})
 }
 
@@ -216,5 +245,6 @@ func (h *PingTargetHandler) HandleSetPingInterval(c *gin.Context) {
 		return
 	}
 
+	h.pushConfigUpdate()
 	c.JSON(http.StatusOK, gin.H{"success": true, "interval": req.Interval})
 }

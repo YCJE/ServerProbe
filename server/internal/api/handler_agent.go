@@ -20,6 +20,8 @@ type AgentHandler struct {
 	configSync *service.ConfigSyncService
 	validator  *service.DataValidator
 	upgrader   websocket.Upgrader
+	wsConns    map[int64]*agentWSConn // Agent ID → WebSocket 连接
+	wsConnsMu  sync.RWMutex
 }
 
 // NewAgentHandler 创建 Agent 处理器
@@ -29,11 +31,12 @@ func NewAgentHandler(
 	configSync *service.ConfigSyncService,
 	validator *service.DataValidator,
 ) *AgentHandler {
-	return &AgentHandler{
+	h := &AgentHandler{
 		registry:   registry,
 		monitor:    monitor,
 		configSync: configSync,
 		validator:  validator,
+		wsConns:    make(map[int64]*agentWSConn),
 		upgrader: websocket.Upgrader{
 			CheckOrigin: func(r *http.Request) bool {
 				// Agent 连接不需要 Origin 检查（非浏览器客户端）
@@ -41,6 +44,31 @@ func NewAgentHandler(
 			},
 		},
 	}
+
+	// 注册配置推送回调，使用 agentWSConn.mu 锁保护写入
+	monitor.SetConfigPushCallback(func(agentID int64, config *sharedmodel.AgentConfig) {
+		h.wsConnsMu.RLock()
+		ws, ok := h.wsConns[agentID]
+		h.wsConnsMu.RUnlock()
+		if !ok {
+			return
+		}
+
+		msg := sharedmodel.WSMessage{
+			Type:         sharedmodel.MsgTypeConfigUpdate,
+			PingTargets:  config.PingTargets,
+			PingInterval: config.PingInterval,
+		}
+
+		if err := ws.writeJSON(msg); err != nil {
+			log.Printf("推送配置更新到 Agent %d 失败: %v", agentID, err)
+		} else {
+			log.Printf("已推送配置更新到 Agent %d (探测目标 %d 个, 间隔 %ds)",
+				agentID, len(config.PingTargets), config.PingInterval)
+		}
+	})
+
+	return h
 }
 
 // agentWSConn 封装 Agent WebSocket 连接，添加写锁
@@ -78,6 +106,9 @@ func (h *AgentHandler) HandleWebSocket(c *gin.Context) {
 	defer func() {
 		if registered && agentID > 0 {
 			h.monitor.UnregisterConnection(agentID)
+			h.wsConnsMu.Lock()
+			delete(h.wsConns, agentID)
+			h.wsConnsMu.Unlock()
 		}
 		conn.Close()
 	}()
@@ -163,6 +194,11 @@ func (h *AgentHandler) handleRegister(ws *agentWSConn, msg *sharedmodel.WSMessag
 
 	// 注册连接
 	h.monitor.RegisterConnection(result.AgentID, ws.conn)
+
+	// 保存 wsConn 引用用于配置推送
+	h.wsConnsMu.Lock()
+	h.wsConns[result.AgentID] = ws
+	h.wsConnsMu.Unlock()
 
 	// 发送注册成功响应
 	response := sharedmodel.WSMessage{

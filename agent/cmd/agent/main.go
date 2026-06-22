@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/goccy/go-yaml"
@@ -53,6 +54,7 @@ func main() {
 	var configSyncer *config.Syncer
 	var pingTargets []sharedmodel.PingTarget
 	var pingTargetsMu sync.Mutex
+	var pingInterval int64 = 60 // 默认 60 秒，会被配置更新覆盖
 
 	wsClient.SetCallbacks(
 		// 注册成功回调
@@ -69,10 +71,13 @@ func main() {
 		},
 		// 配置更新回调
 		func(config *sharedmodel.AgentConfig) {
-			log.Printf("收到配置更新，探测目标 %d 个", len(config.PingTargets))
+			log.Printf("收到配置更新，探测目标 %d 个，间隔 %ds", len(config.PingTargets), config.PingInterval)
 			pingTargetsMu.Lock()
 			pingTargets = config.PingTargets
 			pingTargetsMu.Unlock()
+			if config.PingInterval > 0 {
+				atomic.StoreInt64(&pingInterval, int64(config.PingInterval))
+			}
 		},
 		nil,
 	)
@@ -96,8 +101,8 @@ func main() {
 		return collectAllData(cpuCollector, memCollector, diskCollector, netCollector, sysCollector)
 	})
 
-	// 启动 Ping 探测
-	go startPingProbe(wsClient, pingCollector, &pingTargets, &pingTargetsMu, 60*time.Second)
+	// 启动 Ping 探测 (使用动态间隔)
+	go startPingProbe(wsClient, pingCollector, &pingTargets, &pingTargetsMu, &pingInterval)
 
 	// 启动配置拉取
 	configSyncer = config.NewSyncer(cfg.ServerURL, cfg.Token, time.Duration(cfg.ConfigSyncInterval)*time.Second, cfg.InsecureTLS)
@@ -232,32 +237,47 @@ func saveConfig(path string, cfg *AgentConfig) {
 }
 
 // startPingProbe 启动 Ping 探测
-func startPingProbe(client *reporter.WSClient, pinger *collector.PingCollector, targetsPtr *[]sharedmodel.PingTarget, mu *sync.Mutex, interval time.Duration) {
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
+func startPingProbe(client *reporter.WSClient, pinger *collector.PingCollector, targetsPtr *[]sharedmodel.PingTarget, mu *sync.Mutex, intervalPtr *int64) {
+	// 初始 ticker，使用当前间隔
+	currentInterval := atomic.LoadInt64(intervalPtr)
+	if currentInterval < 10 {
+		currentInterval = 60
+	}
+	ticker := time.NewTicker(time.Duration(currentInterval) * time.Second)
 
 	for {
-		select {
-		case <-ticker.C:
-			if !client.IsConnected() {
-				continue
-			}
+		<-ticker.C
 
-			// 加锁拷贝一份探测目标，避免长时间持锁
-			mu.Lock()
-			targets := make([]sharedmodel.PingTarget, len(*targetsPtr))
-			copy(targets, *targetsPtr)
-			mu.Unlock()
+		// 检查间隔是否变化，如变化则重建 ticker
+		newInterval := atomic.LoadInt64(intervalPtr)
+		if newInterval < 10 {
+			newInterval = 60
+		}
+		if newInterval != currentInterval {
+			ticker.Stop()
+			currentInterval = newInterval
+			ticker = time.NewTicker(time.Duration(currentInterval) * time.Second)
+			log.Printf("Ping 探测间隔已更新为 %ds", currentInterval)
+		}
 
-			if len(targets) == 0 {
-				continue
-			}
+		if !client.IsConnected() {
+			continue
+		}
 
-			results := pinger.PingTargets(targets)
-			if len(results) > 0 {
-				if err := client.SendPingResult(results); err != nil {
-					log.Printf("上报 Ping 结果失败: %v", err)
-				}
+		// 加锁拷贝一份探测目标，避免长时间持锁
+		mu.Lock()
+		targets := make([]sharedmodel.PingTarget, len(*targetsPtr))
+		copy(targets, *targetsPtr)
+		mu.Unlock()
+
+		if len(targets) == 0 {
+			continue
+		}
+
+		results := pinger.PingTargets(targets)
+		if len(results) > 0 {
+			if err := client.SendPingResult(results); err != nil {
+				log.Printf("上报 Ping 结果失败: %v", err)
 			}
 		}
 	}

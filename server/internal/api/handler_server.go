@@ -307,9 +307,41 @@ func (h *ServerHandler) HandleGetServerHistory(c *gin.Context) {
 		return
 	}
 
+	// 将 MetricRecord 转换为统一格式 (ping_data 从 string 解析为数组)
+	historyPoints := make([]historyPoint, 0, len(records))
+	for _, r := range records {
+		hp := historyPoint{
+			Timestamp:    r.Timestamp,
+			CPUUsage:     r.CPUUsage,
+			MemUsage:     r.MemUsage,
+			MemTotal:     r.MemTotal,
+			MemUsed:      r.MemUsed,
+			SwapTotal:    r.SwapTotal,
+			SwapUsed:     r.SwapUsed,
+			DiskUsage:    r.DiskUsage,
+			NetRx:        uint64(r.NetRx),
+			NetTx:        uint64(r.NetTx),
+			TCPConns:     r.TCPConns,
+			UDPConns:     r.UDPConns,
+			Load1:        r.Load1,
+			Load5:        r.Load5,
+			Load15:       r.Load15,
+			Uptime:       r.Uptime,
+			ProcessCount: r.ProcessCount,
+		}
+		// 解析 ping_data JSON 字符串为数组
+		if r.PingData != "" {
+			var pings []sharedmodel.PingResult
+			if err := json.Unmarshal([]byte(r.PingData), &pings); err == nil {
+				hp.PingData = pings
+			}
+		}
+		historyPoints = append(historyPoints, hp)
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"source": "sqlite",
-		"points": records,
+		"points": historyPoints,
 	})
 }
 
