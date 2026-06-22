@@ -623,6 +623,17 @@ curl -fsSL https://raw.githubusercontent.com/YCJE/ServerProbe/master/scripts/uni
 
 两个卸载脚本都有交互式确认 (`y/N`)，防止误操作。
 
+> 如果 `curl` 无法解析 `raw.githubusercontent.com`，可以先下载脚本再执行:
+> ```bash
+> # 方法一: 使用 ghproxy 加速
+> curl -fsSL https://ghproxy.com/https://raw.githubusercontent.com/YCJE/ServerProbe/master/scripts/uninstall-server.sh -o /tmp/uninstall.sh && bash /tmp/uninstall.sh
+>
+> # 方法二: 手动下载后上传
+> # 1. 在能访问 GitHub 的电脑上下载脚本
+> # 2. 上传到服务器
+> # 3. 执行: bash uninstall-server.sh
+> ```
+
 ### 升级 Agent
 
 ```bash

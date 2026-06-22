@@ -65,7 +65,8 @@ if [ "$KEEP_DATA" = false ]; then
     echo "  - 系统用户:     probe-server"
 fi
 echo ""
-read -p "确认卸载? (y/N): " confirm
+# 从 /dev/tty 读取用户输入，兼容 curl | bash 管道方式
+read -p "确认卸载? (y/N): " confirm < /dev/tty
 if [ "$confirm" != "y" ] && [ "$confirm" != "Y" ]; then
     info "已取消卸载"
     exit 0
@@ -158,7 +159,7 @@ rm -f /tmp/probe-server /tmp/probe-server.sha256 2>/dev/null || true
 # 8. 清理 Go 环境 (可选，仅当脚本安装的 Go 且无其他 Go 程序使用)
 if [ -f /etc/profile.d/go.sh ] && [ ! -f "${INSTALL_DIR}/probe-agent" ]; then
     info "检测到 Go 环境配置文件..."
-    read -p "是否删除脚本安装的 Go 环境? (y/N): " del_go
+    read -p "是否删除脚本安装的 Go 环境? (y/N): " del_go < /dev/tty
     if [ "$del_go" = "y" ] || [ "$del_go" = "Y" ]; then
         rm -rf /usr/local/go
         rm -f /etc/profile.d/go.sh
