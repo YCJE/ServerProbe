@@ -153,13 +153,13 @@ func (h *AgentHandler) HandleWebSocket(c *gin.Context) {
 			h.handleRegister(ws, &msg, &agentID, &registered)
 
 		case sharedmodel.MsgTypeReport:
-			h.handleReport(ws, &msg, agentID, registered)
+			h.handleReport(ws, &msg, &agentID, &registered)
 
 		case sharedmodel.MsgTypePingResult:
-			h.handlePingResult(ws, &msg, agentID, registered)
+			h.handlePingResult(ws, &msg, &agentID, &registered)
 
 		case sharedmodel.MsgTypeHeartbeat:
-			h.handleHeartbeat(ws, &msg, agentID, registered)
+			h.handleHeartbeat(ws, &msg, &agentID, &registered)
 
 		default:
 			log.Printf("未知消息类型: %s", msg.Type)
@@ -168,7 +168,62 @@ func (h *AgentHandler) HandleWebSocket(c *gin.Context) {
 }
 
 // handleRegister 处理注册消息
+// 两种场景:
+//   1. 新 Agent 注册: 消息携带 Code (注册码)，无 Token
+//   2. 已有 Agent 会话恢复: 消息携带 Token，无 Code (Server 重启后 Agent 重连)
 func (h *AgentHandler) handleRegister(ws *agentWSConn, msg *sharedmodel.WSMessage, agentID *int64, registered *bool) {
+	// 场景 2: Token-based 会话恢复（Agent 重连）
+	if msg.Token != "" {
+		agent, err := h.registry.ValidateToken(msg.Token)
+		if err != nil {
+			log.Printf("Agent 会话恢复失败，Token 无效: %v", err)
+			response := sharedmodel.WSMessage{
+				Type:   sharedmodel.MsgTypeRegisterFail,
+				Reason: "Token 无效，请重新注册",
+			}
+			_ = ws.writeJSON(response)
+			return
+		}
+
+		// 校验主机指纹
+		if agent.HostFingerprint != "" {
+			if msg.HostFingerprint == "" || agent.HostFingerprint != msg.HostFingerprint {
+				log.Printf("Agent %d 会话恢复指纹不匹配", agent.ID)
+				response := sharedmodel.WSMessage{
+					Type:   sharedmodel.MsgTypeRegisterFail,
+					Reason: "主机指纹不匹配",
+				}
+				_ = ws.writeJSON(response)
+				return
+			}
+		}
+
+		*agentID = agent.ID
+		*registered = true
+
+		// 注册连接
+		h.monitor.RegisterConnection(agent.ID, ws.conn)
+
+		// 保存 wsConn 引用用于配置推送
+		h.wsConnsMu.Lock()
+		h.wsConns[agent.ID] = ws
+		h.wsConnsMu.Unlock()
+
+		// 发送注册成功响应（回显 Token）
+		response := sharedmodel.WSMessage{
+			Type:  sharedmodel.MsgTypeRegisterOK,
+			Token: msg.Token,
+		}
+		_ = ws.writeJSON(response)
+
+		// 发送初始配置
+		h.sendConfigUpdate(ws, agent.ID)
+
+		log.Printf("Agent %d (%s) 会话恢复成功", agent.ID, agent.Hostname)
+		return
+	}
+
+	// 场景 1: 注册码注册新 Agent
 	req := service.RegisterAgentRequest{
 		Code:            msg.Code,
 		Hostname:        msg.Hostname,
@@ -209,12 +264,18 @@ func (h *AgentHandler) handleRegister(ws *agentWSConn, msg *sharedmodel.WSMessag
 
 	// 发送初始配置
 	h.sendConfigUpdate(ws, result.AgentID)
+
+	log.Printf("Agent %d (%s) 注册成功", result.AgentID, req.Hostname)
 }
 
 // handleReport 处理数据上报
-func (h *AgentHandler) handleReport(ws *agentWSConn, msg *sharedmodel.WSMessage, agentID int64, registered bool) {
-	if !registered || agentID == 0 {
-		return
+func (h *AgentHandler) handleReport(ws *agentWSConn, msg *sharedmodel.WSMessage, agentID *int64, registered *bool) {
+	if !*registered || *agentID == 0 {
+		// 向后兼容: 旧版 Agent 重连后不发送 register，直接上报数据
+		// 如果携带有效 Token，懒注册会话
+		if msg.Token == "" || !h.lazyRegister(ws, msg, agentID, registered) {
+			return
+		}
 	}
 
 	// 验证 Token
@@ -222,14 +283,14 @@ func (h *AgentHandler) handleReport(ws *agentWSConn, msg *sharedmodel.WSMessage,
 		return
 	}
 	agent, err := h.registry.ValidateToken(msg.Token)
-	if err != nil || agent.ID != agentID {
+	if err != nil || agent.ID != *agentID {
 		return
 	}
 
 	// 校验主机指纹 (存储的指纹非空时，消息指纹必须匹配)
 	if agent.HostFingerprint != "" {
 		if msg.HostFingerprint == "" || agent.HostFingerprint != msg.HostFingerprint {
-			log.Printf("Agent %d 主机指纹不匹配或缺失，拒绝上报", agentID)
+			log.Printf("Agent %d 主机指纹不匹配或缺失，拒绝上报", *agentID)
 			return
 		}
 	}
@@ -242,65 +303,70 @@ func (h *AgentHandler) handleReport(ws *agentWSConn, msg *sharedmodel.WSMessage,
 	// 校验数据大小 (≤10KB)
 	if rawData, err := json.Marshal(msg.Data); err == nil {
 		if err := h.validator.CheckDataSize(rawData); err != nil {
-			log.Printf("Agent %d 数据大小超限: %v", agentID, err)
+			log.Printf("Agent %d 数据大小超限: %v", *agentID, err)
 			return
 		}
 	} else {
-		log.Printf("Agent %d 数据序列化失败，拒绝上报", agentID)
+		log.Printf("Agent %d 数据序列化失败，拒绝上报", *agentID)
 		return
 	}
 
-	if err := h.validator.ValidateMetricData(agentID, msg.Data); err != nil {
-		log.Printf("Agent %d 数据校验失败: %v", agentID, err)
+	if err := h.validator.ValidateMetricData(*agentID, msg.Data); err != nil {
+		log.Printf("Agent %d 数据校验失败: %v", *agentID, err)
 		return
 	}
 
-	if err := h.validator.CheckReportFrequency(agentID); err != nil {
-		log.Printf("Agent %d 上报频率异常: %v", agentID, err)
+	if err := h.validator.CheckReportFrequency(*agentID); err != nil {
+		log.Printf("Agent %d 上报频率异常: %v", *agentID, err)
 		return
 	}
 
 	// 写入实时数据
-	if err := h.monitor.WriteMetricData(agentID, msg.Data); err != nil {
-		log.Printf("Agent %d 写入数据失败: %v", agentID, err)
+	if err := h.monitor.WriteMetricData(*agentID, msg.Data); err != nil {
+		log.Printf("Agent %d 写入数据失败: %v", *agentID, err)
 		return
 	}
 
 	// 更新心跳
-	h.monitor.UpdateHeartbeat(agentID)
+	h.monitor.UpdateHeartbeat(*agentID)
 }
 
 // handlePingResult 处理 Ping 结果
-func (h *AgentHandler) handlePingResult(ws *agentWSConn, msg *sharedmodel.WSMessage, agentID int64, registered bool) {
-	if !registered || agentID == 0 {
-		return
+func (h *AgentHandler) handlePingResult(ws *agentWSConn, msg *sharedmodel.WSMessage, agentID *int64, registered *bool) {
+	if !*registered || *agentID == 0 {
+		if msg.Token == "" || !h.lazyRegister(ws, msg, agentID, registered) {
+			return
+		}
 	}
 
 	// 验证 Token
 	agent, err := h.registry.ValidateToken(msg.Token)
-	if err != nil || agent.ID != agentID {
+	if err != nil || agent.ID != *agentID {
 		return
 	}
 
 	// 校验 Ping 数据
 	for i := range msg.PingData {
 		if err := h.validator.ValidatePingResult(&msg.PingData[i]); err != nil {
-			log.Printf("Agent %d Ping 数据校验失败: %v", agentID, err)
+			log.Printf("Agent %d Ping 数据校验失败: %v", *agentID, err)
 			return
 		}
 	}
 
 	// 写入 Ping 数据
-	if err := h.monitor.WritePingData(agentID, msg.PingData); err != nil {
-		log.Printf("Agent %d 写入 Ping 数据失败: %v", agentID, err)
+	if err := h.monitor.WritePingData(*agentID, msg.PingData); err != nil {
+		log.Printf("Agent %d 写入 Ping 数据失败: %v", *agentID, err)
 		return
 	}
 }
 
 // handleHeartbeat 处理心跳
-func (h *AgentHandler) handleHeartbeat(ws *agentWSConn, msg *sharedmodel.WSMessage, agentID int64, registered bool) {
-	if !registered || agentID == 0 {
-		return
+func (h *AgentHandler) handleHeartbeat(ws *agentWSConn, msg *sharedmodel.WSMessage, agentID *int64, registered *bool) {
+	if !*registered || *agentID == 0 {
+		// 向后兼容: 旧版 Agent 重连后不发送 register，直接发心跳
+		if msg.Token == "" || !h.lazyRegister(ws, msg, agentID, registered) {
+			return
+		}
 	}
 
 	// 校验 Token (心跳必须携带 Token)
@@ -308,24 +374,56 @@ func (h *AgentHandler) handleHeartbeat(ws *agentWSConn, msg *sharedmodel.WSMessa
 		return
 	}
 	agent, err := h.registry.ValidateToken(msg.Token)
-	if err != nil || agent.ID != agentID {
+	if err != nil || agent.ID != *agentID {
 		return
 	}
 	// 校验主机指纹 (存储的指纹非空时，消息指纹必须匹配)
 	if agent.HostFingerprint != "" {
 		if msg.HostFingerprint == "" || agent.HostFingerprint != msg.HostFingerprint {
-			log.Printf("Agent %d 心跳指纹不匹配或缺失，拒绝", agentID)
+			log.Printf("Agent %d 心跳指纹不匹配或缺失，拒绝", *agentID)
 			return
 		}
 	}
 
-	h.monitor.UpdateHeartbeat(agentID)
+	h.monitor.UpdateHeartbeat(*agentID)
 
 	// 发送心跳确认
 	response := sharedmodel.WSMessage{
 		Type: sharedmodel.MsgTypeHeartbeatAck,
 	}
 	_ = ws.writeJSON(response)
+}
+
+// lazyRegister 懒注册会话（向后兼容旧版 Agent）
+// 当 Agent 重连后未发送 register 消息而直接上报数据时，
+// 通过 Token 验证身份并建立会话
+func (h *AgentHandler) lazyRegister(ws *agentWSConn, msg *sharedmodel.WSMessage, agentID *int64, registered *bool) bool {
+	agent, err := h.registry.ValidateToken(msg.Token)
+	if err != nil {
+		return false
+	}
+
+	// 校验主机指纹
+	if agent.HostFingerprint != "" {
+		if msg.HostFingerprint == "" || agent.HostFingerprint != msg.HostFingerprint {
+			log.Printf("Agent %d 懒注册指纹不匹配", agent.ID)
+			return false
+		}
+	}
+
+	*agentID = agent.ID
+	*registered = true
+
+	// 注册连接
+	h.monitor.RegisterConnection(agent.ID, ws.conn)
+
+	// 保存 wsConn 引用用于配置推送
+	h.wsConnsMu.Lock()
+	h.wsConns[agent.ID] = ws
+	h.wsConnsMu.Unlock()
+
+	log.Printf("Agent %d (%s) 懒注册成功（向后兼容模式）", agent.ID, agent.Hostname)
+	return true
 }
 
 // sendConfigUpdate 发送配置更新

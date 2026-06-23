@@ -116,8 +116,19 @@ func (c *WSClient) Connect() error {
 	c.reconnectAttempts = 0
 	c.mu.Unlock()
 
-	// 如果有注册码，先注册
-	if c.registerCode != "" && c.token == "" {
+	// 连接建立后，必须进行会话初始化
+	if c.token != "" {
+		// 已有 Token，发送会话恢复请求
+		if err := c.resumeSession(); err != nil {
+			c.mu.Lock()
+			c.conn = nil
+			c.connected = false
+			c.mu.Unlock()
+			conn.Close()
+			return fmt.Errorf("会话恢复失败: %w", err)
+		}
+	} else if c.registerCode != "" {
+		// 有注册码，发送注册请求
 		if err := c.register(); err != nil {
 			c.mu.Lock()
 			c.conn = nil
@@ -185,6 +196,62 @@ func (c *WSClient) register() error {
 		c.registerCode = "" // 仅在收到 register_fail 时清除注册码，避免无效重试
 		c.mu.Unlock()
 		return fmt.Errorf("注册被拒绝: %s", response.Reason)
+
+	default:
+		return fmt.Errorf("未预期的响应类型: %s", response.Type)
+	}
+}
+
+// resumeSession 恢复会话（使用已有 Token 重新建立 WebSocket 会话）
+// Server 重启后 Agent 重连时调用，避免数据被静默丢弃
+func (c *WSClient) resumeSession() error {
+	hostname, _ := getHostname()
+
+	msg := sharedmodel.WSMessage{
+		Type:            sharedmodel.MsgTypeRegister,
+		Token:           c.token, // 携带 Token 表示会话恢复
+		Hostname:        hostname,
+		OS:              runtime.GOOS,
+		Arch:            runtime.GOARCH,
+		AgentVersion:    "1.0.0",
+		HostFingerprint: c.fingerprint,
+	}
+
+	c.mu.Lock()
+	err := c.conn.WriteJSON(msg)
+	c.mu.Unlock()
+
+	if err != nil {
+		return fmt.Errorf("发送会话恢复消息失败: %w", err)
+	}
+
+	// 等待响应
+	c.mu.Lock()
+	conn := c.conn
+	c.mu.Unlock()
+
+	conn.SetReadDeadline(time.Now().Add(30 * time.Second))
+	_, message, err := conn.ReadMessage()
+	if err != nil {
+		return fmt.Errorf("读取会话恢复响应失败: %w", err)
+	}
+
+	var response sharedmodel.WSMessage
+	if err := json.Unmarshal(message, &response); err != nil {
+		return fmt.Errorf("解析会话恢复响应失败: %w", err)
+	}
+
+	switch response.Type {
+	case sharedmodel.MsgTypeRegisterOK:
+		log.Printf("会话恢复成功")
+		return nil
+
+	case sharedmodel.MsgTypeRegisterFail:
+		// Token 失效，清除 Token 以便后续使用注册码重新注册
+		c.mu.Lock()
+		c.token = ""
+		c.mu.Unlock()
+		return fmt.Errorf("会话恢复被拒绝: %s", response.Reason)
 
 	default:
 		return fmt.Errorf("未预期的响应类型: %s", response.Type)
