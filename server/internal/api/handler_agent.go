@@ -122,6 +122,7 @@ func (h *AgentHandler) HandleWebSocket(c *gin.Context) {
 	}()
 
 	// 设置读超时和写超时
+	conn.SetReadLimit(1024 * 1024) // 1MB 读取限制，防止 OOM
 	conn.SetReadDeadline(time.Now().Add(120 * time.Second))
 	conn.SetPongHandler(func(string) error {
 		conn.SetReadDeadline(time.Now().Add(120 * time.Second))
@@ -442,6 +443,9 @@ func (h *AgentHandler) lazyRegister(ws *agentWSConn, msg *sharedmodel.WSMessage,
 	h.wsConnsMu.Lock()
 	h.wsConns[agent.ID] = ws
 	h.wsConnsMu.Unlock()
+
+	// 发送初始配置 (与正常注册流程一致)
+	h.sendConfigUpdate(ws, agent.ID)
 
 	log.Printf("Agent %d (%s) 懒注册成功（向后兼容模式）", agent.ID, agent.Hostname)
 	return true

@@ -2,6 +2,7 @@ package service
 
 import (
 	"fmt"
+	"strings"
 	"log"
 	"sync"
 	"time"
@@ -74,6 +75,30 @@ func (e *AlertEngine) Stop() {
 		e.ticker.Stop()
 	}
 	close(e.stopCh)
+}
+
+// CleanupStatesForAgent 清理指定 Agent 的所有告警状态 (删除 Agent 时调用)
+func (e *AlertEngine) CleanupStatesForAgent(agentID int64) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	prefix := fmt.Sprintf("%d:", agentID)
+	for key := range e.states {
+		if strings.HasPrefix(key, prefix) {
+			delete(e.states, key)
+		}
+	}
+}
+
+// CleanupStatesForRule 清理指定规则的所有告警状态 (删除规则时调用)
+func (e *AlertEngine) CleanupStatesForRule(ruleID int64) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	suffix := fmt.Sprintf(":%d", ruleID)
+	for key := range e.states {
+		if strings.HasSuffix(key, suffix) {
+			delete(e.states, key)
+		}
+	}
 }
 
 // checkAlerts 检查所有告警规则

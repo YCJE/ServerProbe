@@ -59,7 +59,7 @@ func NewRouter(
 	authHandler := NewAuthHandler(adminRepo, jwtManager)
 	serverHandler := NewServerHandler(agentRepo, monitor, recordRepo)
 	agentHandler := NewAgentHandler(registry, monitor, configSync, validator)
-	agentAPIHandler := NewAgentAPIHandler(registry, agentRepo, monitor)
+	agentAPIHandler := NewAgentAPIHandler(registry, agentRepo, monitor, alertEngine)
 	dashboardWSHandler := NewDashboardWSHandler(monitor, jwtManager)
 	pingTargetHandler := NewPingTargetHandler(pingTargetRepo, configSync, monitor)
 	alertHandler := NewAlertHandler(alertRepo, notifyRepo, alertEngine)

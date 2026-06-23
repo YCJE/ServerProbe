@@ -109,8 +109,9 @@ func main() {
 		return collectAllData(cpuCollector, memCollector, diskCollector, netCollector, sysCollector)
 	})
 
-	// 启动 Ping 探测 (使用动态间隔)
-	go startPingProbe(wsClient, pingCollector, &pingTargets, &pingTargetsMu, &pingInterval)
+	// 启动 Ping 探测 (使用动态间隔，支持优雅停止)
+	pingStopCh := make(chan struct{})
+	go startPingProbe(wsClient, pingCollector, &pingTargets, &pingTargetsMu, &pingInterval, pingStopCh)
 
 	// 启动配置拉取（无条件启动，sync() 内部会检查 Token 是否为空）
 	cfgMu.Lock()
@@ -127,6 +128,7 @@ func main() {
 	log.Printf("收到信号 %v，正在退出...", sig)
 
 	// 停止各组件
+	close(pingStopCh) // 通知 Ping 探测协程停止
 	heartbeat.Stop()
 	uploader.Stop()
 	configSyncer.Stop()
@@ -262,7 +264,7 @@ func saveConfig(path string, cfg *AgentConfig, mu *sync.Mutex) {
 }
 
 // startPingProbe 启动 Ping 探测
-func startPingProbe(client *reporter.WSClient, pinger *collector.PingCollector, targetsPtr *[]sharedmodel.PingTarget, mu *sync.Mutex, intervalPtr *int64) {
+func startPingProbe(client *reporter.WSClient, pinger *collector.PingCollector, targetsPtr *[]sharedmodel.PingTarget, mu *sync.Mutex, intervalPtr *int64, stopCh <-chan struct{}) {
 	// 初始 ticker，使用当前间隔
 	currentInterval := atomic.LoadInt64(intervalPtr)
 	if currentInterval < 1 {
@@ -271,7 +273,13 @@ func startPingProbe(client *reporter.WSClient, pinger *collector.PingCollector, 
 	ticker := time.NewTicker(time.Duration(currentInterval) * time.Second)
 
 	for {
-		<-ticker.C
+		select {
+		case <-stopCh:
+			ticker.Stop()
+			log.Printf("Ping 探测协程已停止")
+			return
+		case <-ticker.C:
+		}
 
 		// 检查间隔是否变化，如变化则重建 ticker
 		newInterval := atomic.LoadInt64(intervalPtr)

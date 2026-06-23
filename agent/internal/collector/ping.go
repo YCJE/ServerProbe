@@ -127,9 +127,9 @@ func (c *PingCollector) doICMPPing(result *sharedmodel.PingResult, target string
 		return
 	}
 
-	pinger.Count = 30
-	pinger.Interval = 500 * time.Millisecond
-	pinger.Timeout = 20 * time.Second
+	pinger.Count = 50
+	pinger.Interval = 200 * time.Millisecond
+	pinger.Timeout = 15 * time.Second
 
 	// 设置探测方式
 	if method == PingMethodICMPUnprivileged {
@@ -154,9 +154,9 @@ func (c *PingCollector) doICMPPing(result *sharedmodel.PingResult, target string
 			result.Method = string(method)
 			return
 		}
-		pinger.Count = 30
-		pinger.Interval = 500 * time.Millisecond
-		pinger.Timeout = 20 * time.Second
+		pinger.Count = 50
+		pinger.Interval = 200 * time.Millisecond
+		pinger.Timeout = 15 * time.Second
 		if method == PingMethodICMPUnprivileged {
 			pinger.SetPrivileged(false)
 		} else {
@@ -205,11 +205,15 @@ func (c *PingCollector) doTCPPing(result *sharedmodel.PingResult, target string)
 
 	addr := net.JoinHostPort(ips[0].String(), port)
 
-	count := 30
+	count := 50
 	successCount := 0
 	var latencies []float64
+	deadline := time.Now().Add(30 * time.Second) // 整体超时 30s，防止不可达目标阻塞太久
 
 	for i := 0; i < count; i++ {
+		if time.Now().After(deadline) {
+			break // 超时提前退出
+		}
 		start := time.Now()
 		conn, err := net.DialTimeout("tcp", addr, 1*time.Second)
 		elapsed := time.Since(start)
@@ -221,7 +225,7 @@ func (c *PingCollector) doTCPPing(result *sharedmodel.PingResult, target string)
 		}
 
 		if i < count-1 {
-			time.Sleep(500 * time.Millisecond)
+			time.Sleep(200 * time.Millisecond)
 		}
 	}
 
@@ -286,9 +290,10 @@ func (c *PingCollector) doHTTPPing(result *sharedmodel.PingResult, target string
 		scheme = "https"
 	}
 
-	count := 30
+	count := 50
 	successCount := 0
 	var latencies []float64
+	deadline := time.Now().Add(30 * time.Second) // 整体超时 30s
 
 	// 创建自定义 Transport，使用预解析的 IP 排除 DNS 时间
 	dialer := &net.Dialer{Timeout: 1 * time.Second}
@@ -313,6 +318,9 @@ func (c *PingCollector) doHTTPPing(result *sharedmodel.PingResult, target string
 	}
 
 	for i := 0; i < count; i++ {
+		if time.Now().After(deadline) {
+			break // 超时提前退出
+		}
 		reqURL := target
 		if !strings.Contains(target, "://") {
 			reqURL = fmt.Sprintf("%s://%s", scheme, target)
@@ -335,7 +343,7 @@ func (c *PingCollector) doHTTPPing(result *sharedmodel.PingResult, target string
 		}
 
 		if i < count-1 {
-			time.Sleep(500 * time.Millisecond)
+			time.Sleep(200 * time.Millisecond)
 		}
 	}
 

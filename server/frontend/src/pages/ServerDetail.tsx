@@ -235,21 +235,21 @@ export default function ServerDetail() {
   return (
     <div className="space-y-4">
       {/* 页面头部 */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
           <button
             onClick={() => navigate('/admin')}
-            className="flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-card text-foreground transition-colors hover:bg-accent"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border bg-card text-foreground transition-colors hover:bg-accent"
           >
             <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
             </svg>
           </button>
-          <div>
+          <div className="min-w-0">
             <div className="flex items-center gap-2">
-              <h1 className="text-xl font-bold text-foreground">{displayServer.hostname}</h1>
+              <h1 className="truncate text-lg font-bold text-foreground sm:text-xl">{displayServer.hostname}</h1>
               <span
-                className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${
+                className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${
                   displayServer.online
                     ? 'bg-success/10 text-success'
                     : 'bg-destructive/10 text-destructive'
@@ -263,19 +263,19 @@ export default function ServerDetail() {
                 {displayServer.online ? '在线' : '离线'}
               </span>
             </div>
-            <p className="mt-0.5 text-sm text-muted-foreground">
+            <p className="mt-0.5 truncate text-xs text-muted-foreground sm:text-sm">
               {displayServer.os} · {displayServer.arch} · Agent v{displayServer.agent_version}
             </p>
           </div>
         </div>
 
         {/* 时间范围切换 */}
-        <div className="flex items-center gap-1 rounded-lg border border-border bg-card p-1">
+        <div className="flex items-center gap-1 overflow-x-auto rounded-lg border border-border bg-card p-1 scrollbar-thin">
           {TIME_RANGES.map((range) => (
             <button
               key={range.value}
               onClick={() => setTimeRange(range.value)}
-              className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+              className={`shrink-0 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors sm:px-3 ${
                 timeRange === range.value
                   ? 'bg-primary text-primary-foreground'
                   : 'text-muted-foreground hover:bg-accent hover:text-foreground'

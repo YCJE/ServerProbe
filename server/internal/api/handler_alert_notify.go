@@ -230,6 +230,11 @@ func (h *AlertHandler) HandleDeleteAlert(c *gin.Context) {
 		return
 	}
 
+	// 清理告警引擎中的状态
+	if h.engine != nil {
+		h.engine.CleanupStatesForRule(id)
+	}
+
 	c.JSON(http.StatusOK, gin.H{"success": true})
 }
 

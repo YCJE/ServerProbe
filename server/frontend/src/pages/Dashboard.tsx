@@ -38,15 +38,15 @@ export default function Dashboard() {
       {/* 页面标题 */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold text-foreground">仪表盘</h1>
-          <p className="mt-0.5 text-sm text-muted-foreground">
+          <h1 className="text-lg font-bold text-foreground sm:text-xl">仪表盘</h1>
+          <p className="mt-0.5 text-xs text-muted-foreground sm:text-sm">
             实时监控所有服务器状态
           </p>
         </div>
         <div className="flex items-center gap-2">
           <button
             onClick={() => fetchServers()}
-            className="flex h-9 items-center gap-1.5 rounded-lg border border-border bg-card px-3 text-sm text-foreground transition-colors hover:bg-accent"
+            className="flex h-9 items-center gap-1.5 rounded-lg border border-border bg-card px-2.5 text-sm text-foreground transition-colors hover:bg-accent sm:px-3"
           >
             <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />

@@ -16,14 +16,16 @@ type AgentAPIHandler struct {
 	registry  *service.AgentRegistryService
 	agentRepo *repository.AgentRepository
 	monitor   *service.MonitorService
+	engine    *service.AlertEngine
 }
 
 // NewAgentAPIHandler 创建 Agent API 处理器
-func NewAgentAPIHandler(registry *service.AgentRegistryService, agentRepo *repository.AgentRepository, monitor *service.MonitorService) *AgentAPIHandler {
+func NewAgentAPIHandler(registry *service.AgentRegistryService, agentRepo *repository.AgentRepository, monitor *service.MonitorService, engine *service.AlertEngine) *AgentAPIHandler {
 	return &AgentAPIHandler{
 		registry:  registry,
 		agentRepo: agentRepo,
 		monitor:   monitor,
+		engine:    engine,
 	}
 }
 
@@ -131,6 +133,11 @@ func (h *AgentAPIHandler) HandleDeleteAgent(c *gin.Context) {
 
 	// 先清理 MonitorService 中的连接和 ringBuffer
 	h.monitor.UnregisterAgent(agentID)
+
+	// 清理告警引擎中的状态
+	if h.engine != nil {
+		h.engine.CleanupStatesForAgent(agentID)
+	}
 
 	if err := h.agentRepo.Delete(agentID); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "删除 Agent 失败"})

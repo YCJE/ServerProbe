@@ -81,16 +81,16 @@ export default function ServerCard({ server, basePath = '/admin' }: ServerCardPr
       className="group cursor-pointer rounded-xl border border-border bg-card p-4 shadow-sm transition-all hover:border-primary/50 hover:shadow-md animate-fade-in"
     >
       {/* 头部：主机名 + 状态 */}
-      <div className="mb-3 flex items-start justify-between">
+      <div className="mb-3 flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
-          <h3 className="truncate text-base font-semibold text-foreground">
+          <h3 className="truncate text-sm font-semibold text-foreground sm:text-base">
             {server.display_name || server.hostname}
           </h3>
           <p className="mt-0.5 truncate text-xs text-muted-foreground">
             {server.hostname} · {server.os} · {server.arch}
           </p>
         </div>
-        <div className="ml-2 flex shrink-0 items-center gap-1.5">
+        <div className="flex shrink-0 items-center gap-1.5">
           <span
             className={`inline-block h-2 w-2 rounded-full ${
               server.online ? 'bg-success animate-pulse' : 'bg-destructive'

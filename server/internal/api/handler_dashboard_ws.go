@@ -90,6 +90,7 @@ func (h *DashboardWSHandler) HandleDashboardWS(c *gin.Context) {
 	ws := &wsConn{conn: conn}
 
 	// 设置读超时和 pong 处理器
+	conn.SetReadLimit(1024 * 1024) // 1MB 读取限制
 	conn.SetReadDeadline(time.Now().Add(120 * time.Second))
 	conn.SetPongHandler(func(string) error {
 		conn.SetReadDeadline(time.Now().Add(120 * time.Second))
@@ -187,9 +188,14 @@ func (h *DashboardWSHandler) HandlePublicDashboardWS(c *gin.Context) {
 	}
 	defer conn.Close()
 
+	// 连接计数 (与认证 WS 一致)
+	h.monitor.IncDashboardWS()
+	defer h.monitor.DecDashboardWS()
+
 	ws := &wsConn{conn: conn}
 
 	// 设置读超时和 pong 处理器
+	conn.SetReadLimit(1024 * 1024) // 1MB 读取限制
 	conn.SetReadDeadline(time.Now().Add(120 * time.Second))
 	conn.SetPongHandler(func(string) error {
 		conn.SetReadDeadline(time.Now().Add(120 * time.Second))
