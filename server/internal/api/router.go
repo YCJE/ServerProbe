@@ -80,6 +80,7 @@ func NewRouter(
 		{
 			public.GET("/servers", serverHandler.HandlePublicServers)
 			public.GET("/dashboard", serverHandler.HandlePublicDashboard)
+			public.GET("/servers/:id/history", serverHandler.HandleGetServerHistory)
 		}
 
 		// 公开仪表盘 WebSocket（无需登录）

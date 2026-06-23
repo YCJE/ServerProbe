@@ -28,6 +28,8 @@ export default function AgentManagement() {
   const [editDisplayName, setEditDisplayName] = useState('')
   const [editError, setEditError] = useState('')
   const [editSaving, setEditSaving] = useState(false)
+  const [regenerating, setRegenerating] = useState(false)
+  const [regeneratedCode, setRegeneratedCode] = useState<string | null>(null)
 
   // 从 store 获取 fetchServers 和 deleteAgent，用于删除后刷新仪表盘
   const fetchServers = useServerStore((s) => s.fetchServers)
@@ -137,6 +139,26 @@ export default function AgentManagement() {
     setEditingAgent(null)
     setEditDisplayName('')
     setEditError('')
+    setRegeneratedCode(null)
+  }
+
+  // 重新生成安装命令（为已有 Agent 生成新注册码）
+  const handleRegenerateCode = async () => {
+    if (!editingAgent) return
+    setRegenerating(true)
+    setEditError('')
+    try {
+      const result = await generateRegisterCode(
+        editingAgent.display_name || editingAgent.hostname || `Agent-${editingAgent.id}`,
+        `重新生成 - ${editingAgent.hostname || ''}`,
+      )
+      setRegeneratedCode(result.code)
+      await loadData()
+    } catch (err) {
+      setEditError(err instanceof Error ? err.message : '生成注册码失败')
+    } finally {
+      setRegenerating(false)
+    }
   }
 
   // 保存编辑
@@ -528,6 +550,44 @@ export default function AgentManagement() {
                   <span>系统</span>
                   <span className="text-foreground">{editingAgent.os || '-'}</span>
                 </div>
+              </div>
+
+              {/* 重新生成安装命令 */}
+              <div className="rounded-lg border border-border p-3">
+                <div className="mb-2 flex items-center justify-between">
+                  <span className="text-xs font-medium text-muted-foreground">重新生成安装命令</span>
+                  <button
+                    onClick={handleRegenerateCode}
+                    disabled={regenerating}
+                    className="flex h-7 items-center gap-1 rounded-md border border-border px-2 text-xs text-primary transition-colors hover:bg-accent disabled:opacity-50"
+                  >
+                    {regenerating ? '生成中...' : '生成新命令'}
+                  </button>
+                </div>
+                {regeneratedCode ? (
+                  <div>
+                    <div className="flex items-start gap-2">
+                      <div className="flex-1 overflow-x-auto rounded-lg bg-secondary/50 p-2">
+                        <code className="text-xs font-mono text-foreground break-all whitespace-pre-wrap">
+                          {getInstallCommand(regeneratedCode)}
+                        </code>
+                      </div>
+                      <button
+                        onClick={() => handleCopy(getInstallCommand(regeneratedCode), `regen-${regeneratedCode}`)}
+                        className="flex h-8 shrink-0 items-center gap-1 rounded-lg bg-primary px-2 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+                      >
+                        {copied === `regen-${regeneratedCode}` ? '已复制' : '复制'}
+                      </button>
+                    </div>
+                    <p className="mt-1.5 text-xs text-muted-foreground">
+                      注册码有效 15 分钟，在被监控服务器上执行即可重新安装 Agent
+                    </p>
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground/70">
+                    如果 Agent 离线或信息变更，可重新生成安装命令
+                  </p>
+                )}
               </div>
 
               {editError && (

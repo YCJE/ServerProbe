@@ -128,8 +128,8 @@ func (c *PingCollector) doICMPPing(result *sharedmodel.PingResult, target string
 	}
 
 	pinger.Count = 10
-	pinger.Interval = 500 * time.Millisecond
-	pinger.Timeout = 15 * time.Second
+	pinger.Interval = 1000 * time.Millisecond
+	pinger.Timeout = 12 * time.Second
 
 	// 设置探测方式
 	if method == PingMethodICMPUnprivileged {
@@ -155,8 +155,8 @@ func (c *PingCollector) doICMPPing(result *sharedmodel.PingResult, target string
 			return
 		}
 		pinger.Count = 10
-		pinger.Interval = 500 * time.Millisecond
-		pinger.Timeout = 15 * time.Second
+		pinger.Interval = 1000 * time.Millisecond
+		pinger.Timeout = 12 * time.Second
 		if method == PingMethodICMPUnprivileged {
 			pinger.SetPrivileged(false)
 		} else {
@@ -211,7 +211,7 @@ func (c *PingCollector) doTCPPing(result *sharedmodel.PingResult, target string)
 
 	for i := 0; i < count; i++ {
 		start := time.Now()
-		conn, err := net.DialTimeout("tcp", addr, 3*time.Second)
+		conn, err := net.DialTimeout("tcp", addr, 1*time.Second)
 		elapsed := time.Since(start)
 
 		if err == nil {
@@ -221,7 +221,7 @@ func (c *PingCollector) doTCPPing(result *sharedmodel.PingResult, target string)
 		}
 
 		if i < count-1 {
-			time.Sleep(500 * time.Millisecond)
+			time.Sleep(1000 * time.Millisecond)
 		}
 	}
 
@@ -291,7 +291,7 @@ func (c *PingCollector) doHTTPPing(result *sharedmodel.PingResult, target string
 	var latencies []float64
 
 	// 创建自定义 Transport，使用预解析的 IP 排除 DNS 时间
-	dialer := &net.Dialer{Timeout: 3 * time.Second}
+	dialer := &net.Dialer{Timeout: 1 * time.Second}
 	transport := &http.Transport{
 		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
 			// 替换 addr 中的域名为预解析的 IP
@@ -301,11 +301,11 @@ func (c *PingCollector) doHTTPPing(result *sharedmodel.PingResult, target string
 			}
 			return dialer.DialContext(ctx, network, net.JoinHostPort(ips[0].String(), port))
 		},
-		TLSHandshakeTimeout: 3 * time.Second,
+		TLSHandshakeTimeout: 1 * time.Second,
 	}
 
 	client := &http.Client{
-		Timeout: 5 * time.Second,
+		Timeout: 2 * time.Second,
 		Transport: transport,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			return http.ErrUseLastResponse
@@ -335,7 +335,7 @@ func (c *PingCollector) doHTTPPing(result *sharedmodel.PingResult, target string
 		}
 
 		if i < count-1 {
-			time.Sleep(500 * time.Millisecond)
+			time.Sleep(1000 * time.Millisecond)
 		}
 	}
 

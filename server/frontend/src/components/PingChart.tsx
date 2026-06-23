@@ -80,13 +80,18 @@ export default function PingChart({
 
       return {
         name: `${name} 丢包率`,
-        type: 'bar',
+        type: 'line',
+        xAxisIndex: 1,
+        yAxisIndex: 1,
         data,
-        barMaxWidth: 12,
-        itemStyle: {
-          color,
-          opacity: 0.7,
-        },
+        smooth: true,
+        symbol: 'circle',
+        symbolSize: 3,
+        showSymbol: false,
+        lineStyle: { width: 1.5, color },
+        itemStyle: { color },
+        areaStyle: { color, opacity: 0.15 },
+        connectNulls: true,
       }
     })
 
@@ -134,7 +139,7 @@ export default function PingChart({
         },
       },
       legend: {
-        data: networkNames.map((name) => `${name} 延迟`),
+        data: [...networkNames.map((name) => `${name} 延迟`), ...networkNames.map((name) => `${name} 丢包率`)],
         top: 0,
         textStyle: { color: axisLabelColor, fontSize: 11 },
         itemWidth: 16,

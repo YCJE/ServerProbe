@@ -250,6 +250,14 @@ export async function getPublicDashboard(): Promise<{ servers: DashboardItem[] }
   return request<{ servers: DashboardItem[] }>('/public/dashboard')
 }
 
+/** 获取公开服务器历史数据 (无需登录) */
+export async function getPublicServerHistory(
+  id: number,
+  range: TimeRange,
+): Promise<HistoryData> {
+  return request<HistoryData>(`/public/servers/${id}/history?range=${range}`)
+}
+
 // ==================== Ping Targets API ====================
 
 export interface PingTarget {
