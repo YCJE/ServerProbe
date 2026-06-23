@@ -10,6 +10,9 @@ import type {
   TimeRange,
   RegisterCode,
   AgentInfo,
+  SystemStatus,
+  AlertRule,
+  NotifyChannel,
 } from '@/types'
 
 /** API 基础路径 */
@@ -283,4 +286,65 @@ export async function getPingInterval(): Promise<{ interval: number }> {
 /** 设置 Ping 探测间隔 */
 export async function setPingInterval(interval: number): Promise<{ success: boolean }> {
   return request('/ping-targets/interval', { method: 'PUT', body: JSON.stringify({ interval }) })
+}
+
+// ==================== 系统状态 API ====================
+
+/** 获取系统状态 */
+export async function getSystemStatus(): Promise<SystemStatus> {
+  return request('/system/status')
+}
+
+// ==================== 告警规则 API ====================
+
+/** 获取告警规则列表 */
+export async function getAlertRules(): Promise<{ rules: AlertRule[] }> {
+  return request('/alerts')
+}
+
+/** 创建告警规则 */
+export async function createAlertRule(data: Omit<AlertRule, 'id' | 'created_at'>): Promise<{ rule: AlertRule }> {
+  return request('/alerts', { method: 'POST', body: JSON.stringify(data) })
+}
+
+/** 更新告警规则 */
+export async function updateAlertRule(id: number, data: Partial<AlertRule>): Promise<{ rule: AlertRule }> {
+  return request(`/alerts/${id}`, { method: 'PUT', body: JSON.stringify(data) })
+}
+
+/** 删除告警规则 */
+export async function deleteAlertRule(id: number): Promise<{ success: boolean }> {
+  return request(`/alerts/${id}`, { method: 'DELETE' })
+}
+
+/** 测试告警规则 */
+export async function testAlertRule(id: number): Promise<{ success: boolean }> {
+  return request(`/alerts/${id}/test`, { method: 'POST' })
+}
+
+// ==================== 通知渠道 API ====================
+
+/** 获取通知渠道列表 */
+export async function getNotifyChannels(): Promise<{ channels: NotifyChannel[] }> {
+  return request('/notify/channels')
+}
+
+/** 创建通知渠道 */
+export async function createNotifyChannel(data: { name: string; type: string; config: string }): Promise<{ channel: NotifyChannel }> {
+  return request('/notify/channels', { method: 'POST', body: JSON.stringify(data) })
+}
+
+/** 更新通知渠道 */
+export async function updateNotifyChannel(id: number, data: Partial<{ name: string; type: string; config: string }>): Promise<{ channel: NotifyChannel }> {
+  return request(`/notify/channels/${id}`, { method: 'PUT', body: JSON.stringify(data) })
+}
+
+/** 删除通知渠道 */
+export async function deleteNotifyChannel(id: number): Promise<{ success: boolean }> {
+  return request(`/notify/channels/${id}`, { method: 'DELETE' })
+}
+
+/** 测试通知渠道 */
+export async function testNotifyChannel(id: number): Promise<{ success: boolean }> {
+  return request(`/notify/channels/${id}/test`, { method: 'POST' })
 }

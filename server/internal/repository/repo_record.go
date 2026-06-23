@@ -63,6 +63,15 @@ func (r *RecordRepository) CleanupExpired(retentionDays int) (int64, error) {
 	return deleted, nil
 }
 
+// GetDBSize 获取数据库文件大小 (字节)
+func (r *RecordRepository) GetDBSize() int64 {
+	var page_count int64
+	r.db.Raw("PRAGMA page_count").Scan(&page_count)
+	var page_size int64
+	r.db.Raw("PRAGMA page_size").Scan(&page_size)
+	return page_count * page_size
+}
+
 // AdminRepository 管理员账户 CRUD
 type AdminRepository struct {
 	db *gorm.DB

@@ -212,3 +212,46 @@ export interface AgentInfo {
   last_seen: string
   created_at: string
 }
+
+// ==================== 系统状态相关类型 ====================
+
+/** 系统状态 */
+export interface SystemStatus {
+  uptime: number
+  mem_alloc: number
+  mem_sys: number
+  mem_num_gc: number
+  db_size: number
+  online_agents: number
+  ws_connections: number
+  goroutines: number
+  disk_total: number
+  disk_free: number
+  version: string
+}
+
+// ==================== 告警规则相关类型 ====================
+
+/** 告警规则 */
+export interface AlertRule {
+  id: number
+  name: string
+  metric: string
+  operator: string
+  threshold: number
+  duration: number
+  enabled: boolean
+  notify_channel_id: number
+  created_at: string
+}
+
+// ==================== 通知渠道相关类型 ====================
+
+/** 通知渠道 */
+export interface NotifyChannel {
+  id: number
+  name: string
+  type: string
+  config: Record<string, unknown>
+  created_at: string
+}

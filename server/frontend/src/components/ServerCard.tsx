@@ -141,38 +141,17 @@ export default function ServerCard({ server, basePath = '/admin' }: ServerCardPr
         {/* 磁盘 */}
         <div>
           <div className="mb-1 flex items-center justify-between text-xs">
-            <span className="text-muted-foreground">
-              磁盘
-              {disks.length > 0 && (
-                <span className="ml-1 text-muted-foreground/60">
-                  ({disks.length} 个分区)
-                </span>
-              )}
-            </span>
+            <span className="text-muted-foreground">磁盘使用</span>
             <span className={`font-medium ${getUsageTextColor(diskUsage)}`}>
               {diskUsage.toFixed(1)}%
             </span>
           </div>
           <ProgressBar value={diskUsage} color={getUsageColor(diskUsage)} />
-          {/* 磁盘详情 */}
+          {/* 磁盘总量信息 */}
           {disks.length > 0 && (
-            <div className="mt-1.5 space-y-0.5">
-              {disks.slice(0, 3).map((disk, idx) => {
-                const usage = disk.total > 0 ? (disk.used / disk.total) * 100 : 0
-                return (
-                  <div key={idx} className="flex items-center justify-between text-xs text-muted-foreground/70">
-                    <span className="truncate font-mono">{disk.device}</span>
-                    <span className="ml-2 shrink-0">
-                      {formatBytes(disk.used)} / {formatBytes(disk.total)} ({usage.toFixed(0)}%)
-                    </span>
-                  </div>
-                )
-              })}
-              {disks.length > 3 && (
-                <div className="text-xs text-muted-foreground/50">
-                  还有 {disks.length - 3} 个分区...
-                </div>
-              )}
+            <div className="mt-1.5 text-xs text-muted-foreground/70">
+              已用 {formatBytes(disks.reduce((sum, d) => sum + d.used, 0))} / 总{' '}
+              {formatBytes(disks.reduce((sum, d) => sum + d.total, 0))}
             </div>
           )}
         </div>

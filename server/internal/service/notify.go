@@ -1,11 +1,14 @@
 package service
 
 import (
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"log"
+	"net"
 	"net/smtp"
 	"strings"
+	"time"
 
 	"github.com/server-probe/server/internal/model"
 	"github.com/server-probe/server/internal/pkg"
@@ -129,13 +132,74 @@ func (s *NotifyService) sendEmail(channel *model.NotifyChannel, title, content s
 
 	addr := fmt.Sprintf("%s:%d", config.SMTPHost, config.SMTPPort)
 
-	// 发送邮件
+	// UseTLS 为 true 时使用隐式 TLS (SMTPS, 通常端口 465)
+	// UseTLS 为 false 时使用标准 SMTP (支持 STARTTLS, 通常端口 25/587)
+	if config.UseTLS {
+		return s.sendEmailWithTLS(addr, auth, config, body)
+	}
+
+	// 标准模式: smtp.SendMail 内部会尝试 STARTTLS
 	err := smtp.SendMail(addr, auth, config.From, []string{config.To}, []byte(body))
 	if err != nil {
 		return fmt.Errorf("邮件发送失败: %w", err)
 	}
 
 	log.Printf("邮件通知发送成功: %s -> %s", config.From, config.To)
+	return nil
+}
+
+// sendEmailWithTLS 使用隐式 TLS (SMTPS) 发送邮件
+func (s *NotifyService) sendEmailWithTLS(addr string, auth smtp.Auth, config model.EmailConfig, body string) error {
+	// 建立 TLS 连接
+	conn, err := tls.DialWithDialer(
+		&net.Dialer{Timeout: 10 * time.Second},
+		"tcp",
+		addr,
+		&tls.Config{ServerName: config.SMTPHost},
+	)
+	if err != nil {
+		return fmt.Errorf("TLS 连接 SMTP 服务器失败: %w", err)
+	}
+	defer conn.Close()
+
+	// 创建 SMTP 客户端
+	client, err := smtp.NewClient(conn, config.SMTPHost)
+	if err != nil {
+		return fmt.Errorf("创建 SMTP 客户端失败: %w", err)
+	}
+	defer client.Close()
+
+	// 认证
+	if err := client.Auth(auth); err != nil {
+		return fmt.Errorf("SMTP 认证失败: %w", err)
+	}
+
+	// 设置发件人
+	if err := client.Mail(config.From); err != nil {
+		return fmt.Errorf("设置发件人失败: %w", err)
+	}
+
+	// 设置收件人
+	if err := client.Rcpt(config.To); err != nil {
+		return fmt.Errorf("设置收件人失败: %w", err)
+	}
+
+	// 发送邮件内容
+	w, err := client.Data()
+	if err != nil {
+		return fmt.Errorf("打开数据通道失败: %w", err)
+	}
+	if _, err := w.Write([]byte(body)); err != nil {
+		return fmt.Errorf("写入邮件内容失败: %w", err)
+	}
+	if err := w.Close(); err != nil {
+		return fmt.Errorf("关闭数据通道失败: %w", err)
+	}
+
+	// 退出
+	client.Quit()
+
+	log.Printf("邮件通知发送成功 (TLS): %s -> %s", config.From, config.To)
 	return nil
 }
 

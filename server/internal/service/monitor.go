@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -29,20 +30,66 @@ func (ac *AgentConn) Send(msg sharedmodel.WSMessage) error {
 
 // MonitorService 实时数据管理服务
 type MonitorService struct {
-	agentRepo   *repository.AgentRepository
-	ringBuffers map[int64]*repository.RingBuffer
-	connections map[int64]*AgentConn
-	mu          sync.RWMutex
+	agentRepo    *repository.AgentRepository
+	ringBuffers  map[int64]*repository.RingBuffer
+	connections  map[int64]*AgentConn
+	mu           sync.RWMutex
 	onConfigPush func(agentID int64, config *sharedmodel.AgentConfig)
+	dataDir      string
+	dashWSCount  int32 // 面板 WebSocket 连接数 (atomic)
 }
 
 // NewMonitorService 创建监控服务
-func NewMonitorService(agentRepo *repository.AgentRepository) *MonitorService {
+func NewMonitorService(agentRepo *repository.AgentRepository, dataDir string) *MonitorService {
 	return &MonitorService{
 		agentRepo:   agentRepo,
 		ringBuffers: make(map[int64]*repository.RingBuffer),
 		connections: make(map[int64]*AgentConn),
+		dataDir:     dataDir,
 	}
+}
+
+// GetOnlineAgentCount 获取在线 Agent 数量
+func (m *MonitorService) GetOnlineAgentCount() int {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return len(m.connections)
+}
+
+// IsAgentOnline 检查 Agent 是否在线
+func (m *MonitorService) IsAgentOnline(agentID int64) bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	_, ok := m.connections[agentID]
+	return ok
+}
+
+// GetDashboardWSCount 获取面板 WebSocket 连接数
+func (m *MonitorService) GetDashboardWSCount() int {
+	return int(atomic.LoadInt32(&m.dashWSCount))
+}
+
+// IncDashboardWS 面板 WS 连接数 +1
+func (m *MonitorService) IncDashboardWS() {
+	atomic.AddInt32(&m.dashWSCount, 1)
+}
+
+// DecDashboardWS 面板 WS 连接数 -1 (防止下溢)
+func (m *MonitorService) DecDashboardWS() {
+	for {
+		old := atomic.LoadInt32(&m.dashWSCount)
+		if old <= 0 {
+			return
+		}
+		if atomic.CompareAndSwapInt32(&m.dashWSCount, old, old-1) {
+			return
+		}
+	}
+}
+
+// GetDataDir 获取数据目录
+func (m *MonitorService) GetDataDir() string {
+	return m.dataDir
 }
 
 // RegisterConnection 注册 Agent 连接
@@ -331,22 +378,15 @@ func calcDiskUsage(disks []sharedmodel.DiskInfo) float64 {
 	if len(disks) == 0 {
 		return 0
 	}
+	// Agent 现在返回单个汇总磁盘 (Device="total")
+	// 直接计算总使用率
+	var totalUsed, totalTotal uint64
 	for _, d := range disks {
-		if d.Device == "/" && d.Total > 0 {
-			return float64(d.Used) / float64(d.Total) * 100
-		}
+		totalUsed += d.Used
+		totalTotal += d.Total
 	}
-	var maxDisk *sharedmodel.DiskInfo
-	for i := range disks {
-		if disks[i].Total == 0 {
-			continue
-		}
-		if maxDisk == nil || disks[i].Total > maxDisk.Total {
-			maxDisk = &disks[i]
-		}
-	}
-	if maxDisk != nil {
-		return float64(maxDisk.Used) / float64(maxDisk.Total) * 100
+	if totalTotal > 0 {
+		return float64(totalUsed) / float64(totalTotal) * 100
 	}
 	return 0
 }

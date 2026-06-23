@@ -52,35 +52,23 @@ func TestDiskCollector_Collect(t *testing.T) {
 		t.Fatalf("返回类型错误，期望 []model.DiskInfo，得到 %T", result)
 	}
 
-	if len(disks) != 2 {
-		t.Fatalf("磁盘数量错误: 期望 2, 得到 %d", len(disks))
+	// 现在返回单个汇总磁盘
+	if len(disks) != 1 {
+		t.Fatalf("磁盘数量错误: 期望 1 (汇总), 得到 %d", len(disks))
 	}
 
-	// 验证根分区
-	// total = 53687091200, free = 16106127360, used = 53687091200 - 16106127360 = 37580963840
-	rootDisk := disks[0]
-	if rootDisk.Device != "/" {
-		t.Errorf("根分区设备错误: 期望 /, 得到 %s", rootDisk.Device)
+	// 验证汇总磁盘
+	disk := disks[0]
+	if disk.Device != "total" {
+		t.Errorf("设备名错误: 期望 total, 得到 %s", disk.Device)
 	}
-	if rootDisk.Total != 53687091200 {
-		t.Errorf("根分区总量错误: 期望 53687091200, 得到 %d", rootDisk.Total)
+	expectedTotal := uint64(53687091200 + 107374182400)
+	if disk.Total != expectedTotal {
+		t.Errorf("总量错误: 期望 %d, 得到 %d", expectedTotal, disk.Total)
 	}
-	expectedUsed := uint64(53687091200 - 16106127360)
-	if rootDisk.Used != expectedUsed {
-		t.Errorf("根分区已用错误: 期望 %d, 得到 %d", expectedUsed, rootDisk.Used)
-	}
-
-	// 验证 /data 分区
-	dataDisk := disks[1]
-	if dataDisk.Device != "/data" {
-		t.Errorf("/data 分区设备错误: 期望 /data, 得到 %s", dataDisk.Device)
-	}
-	if dataDisk.Total != 107374182400 {
-		t.Errorf("/data 分区总量错误: 期望 107374182400, 得到 %d", dataDisk.Total)
-	}
-	expectedDataUsed := uint64(107374182400 - 53687091200)
-	if dataDisk.Used != expectedDataUsed {
-		t.Errorf("/data 分区已用错误: 期望 %d, 得到 %d", expectedDataUsed, dataDisk.Used)
+	expectedUsed := uint64((53687091200 - 16106127360) + (107374182400 - 53687091200))
+	if disk.Used != expectedUsed {
+		t.Errorf("已用错误: 期望 %d, 得到 %d", expectedUsed, disk.Used)
 	}
 }
 
@@ -117,8 +105,8 @@ func TestDiskCollector_FilterSpecialFS(t *testing.T) {
 		t.Fatalf("返回类型错误，期望 []model.DiskInfo，得到 %T", result)
 	}
 
-	// 应该只返回 ext4 文件系统的挂载点
-	if len(disks) != 2 {
-		t.Errorf("磁盘数量错误: 期望 2（过滤特殊文件系统后）, 得到 %d", len(disks))
+	// 过滤特殊文件系统后，应返回 1 个汇总磁盘
+	if len(disks) != 1 {
+		t.Errorf("磁盘数量错误: 期望 1 (汇总), 得到 %d", len(disks))
 	}
 }

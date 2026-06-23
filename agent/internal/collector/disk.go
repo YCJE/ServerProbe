@@ -37,13 +37,16 @@ func (c *DiskCollector) Name() string {
 }
 
 // Collect 采集磁盘数据
+// 只返回一个汇总磁盘 (总容量和已用)，不显示所有分区
 func (c *DiskCollector) Collect() (interface{}, error) {
 	mounts, err := c.mounter.GetMountPoints()
 	if err != nil {
 		return nil, fmt.Errorf("获取挂载点失败: %w", err)
 	}
 
-	var disks []model.DiskInfo
+	seenDevices := make(map[string]bool)
+	var totalTotal uint64
+	var totalUsed uint64
 
 	for _, mount := range mounts {
 		// 过滤特殊文件系统
@@ -56,6 +59,12 @@ func (c *DiskCollector) Collect() (interface{}, error) {
 			continue
 		}
 
+		// 跳过已处理的设备 (同一设备可能挂载在多处)
+		if seenDevices[mount.Device] {
+			continue
+		}
+		seenDevices[mount.Device] = true
+
 		total, free, err := c.mounter.StatFS(mount.MountPoint)
 		if err != nil {
 			continue
@@ -65,16 +74,22 @@ func (c *DiskCollector) Collect() (interface{}, error) {
 			continue
 		}
 
-		used := total - free
-
-		disks = append(disks, model.DiskInfo{
-			Device: mount.MountPoint,
-			Total:  total,
-			Used:   used,
-		})
+		totalTotal += total
+		totalUsed += (total - free)
 	}
 
-	return disks, nil
+	if totalTotal == 0 {
+		return []model.DiskInfo{}, nil
+	}
+
+	// 只返回一个汇总磁盘
+	return []model.DiskInfo{
+		{
+			Device: "total",
+			Total:  totalTotal,
+			Used:   totalUsed,
+		},
+	}, nil
 }
 
 // isRealDisk 判断是否为真实磁盘文件系统

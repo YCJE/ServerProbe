@@ -84,6 +84,9 @@ func (h *DashboardWSHandler) HandleDashboardWS(c *gin.Context) {
 	}
 	defer conn.Close()
 
+	h.monitor.IncDashboardWS()
+	defer h.monitor.DecDashboardWS()
+
 	ws := &wsConn{conn: conn}
 
 	// 设置读超时和 pong 处理器

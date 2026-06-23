@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"runtime"
 	"strconv"
 	"time"
 
@@ -11,6 +12,8 @@ import (
 	"github.com/server-probe/server/internal/service"
 	sharedmodel "github.com/server-probe/shared/model"
 )
+
+var startTime = time.Now()
 
 // historyPoint 历史数据点（统一响应格式，字段名与 model.MetricRecord 的 JSON tag 一致）
 type historyPoint struct {
@@ -165,33 +168,17 @@ func (h *ServerHandler) HandleListServers(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"servers": items, "total": len(items)})
 }
 
-// calcDiskUsage 从磁盘分区列表计算使用率
-// 优先取根分区（/），否则取最大分区的使用率
+// calcDiskUsage 从磁盘信息计算使用率
+// Agent 上报的是聚合后的总磁盘信息 (Device="total")
 func calcDiskUsage(disks []sharedmodel.DiskInfo) float64 {
 	if len(disks) == 0 {
 		return 0
 	}
 
-	// 优先查找根分区
-	for _, d := range disks {
-		if d.Device == "/" && d.Total > 0 {
-			return float64(d.Used) / float64(d.Total) * 100
-		}
-	}
-
-	// 否则取最大分区
-	var maxDisk *sharedmodel.DiskInfo
-	for i := range disks {
-		if disks[i].Total == 0 {
-			continue
-		}
-		if maxDisk == nil || disks[i].Total > maxDisk.Total {
-			maxDisk = &disks[i]
-		}
-	}
-
-	if maxDisk != nil && maxDisk.Total > 0 {
-		return float64(maxDisk.Used) / float64(maxDisk.Total) * 100
+	// 使用第一个磁盘条目 (Agent 聚合后的总磁盘)
+	d := disks[0]
+	if d.Total > 0 {
+		return float64(d.Used) / float64(d.Total) * 100
 	}
 
 	return 0
@@ -453,4 +440,42 @@ func (h *ServerHandler) HandlePublicDashboard(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"servers": publicItems})
+}
+
+// HandleSystemStatus 获取系统状态
+// 路由: GET /api/v1/system/status
+func (h *ServerHandler) HandleSystemStatus(c *gin.Context) {
+	var memStats runtime.MemStats
+	runtime.ReadMemStats(&memStats)
+
+	// 在线 Agent 数
+	onlineCount := h.monitor.GetOnlineAgentCount()
+
+	// WebSocket 面板连接数
+	wsConnCount := h.monitor.GetDashboardWSCount()
+
+	// 数据库文件大小
+	var dbSize int64
+	if h.recordRepo != nil {
+		dbSize = h.recordRepo.GetDBSize()
+	}
+
+	// 磁盘剩余空间 (数据目录)
+	var diskFree uint64
+	var diskTotal uint64
+	diskFree, diskTotal = getDiskSpace(h.monitor.GetDataDir())
+
+	c.JSON(http.StatusOK, gin.H{
+		"uptime":           int64(time.Since(startTime).Seconds()),
+		"mem_alloc":        memStats.Alloc,
+		"mem_sys":          memStats.Sys,
+		"mem_num_gc":       memStats.NumGC,
+		"db_size":          dbSize,
+		"online_agents":    onlineCount,
+		"ws_connections":   wsConnCount,
+		"goroutines":       runtime.NumGoroutine(),
+		"disk_total":       diskTotal,
+		"disk_free":        diskFree,
+		"version":          "1.0.0",
+	})
 }

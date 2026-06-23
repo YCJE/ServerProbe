@@ -92,7 +92,7 @@ func main() {
 	ssrfProtector := pkg.NewSSRFProtector()
 
 	// 创建 services
-	monitor := service.NewMonitorService(agentRepo)
+	monitor := service.NewMonitorService(agentRepo, *dataDir)
 	registry := service.NewAgentRegistryService(agentRepo, registerCodeRepo)
 	configSync := service.NewConfigSyncService(pingTargetRepo, db.DB())
 	validator := service.NewDataValidator()
@@ -125,6 +125,10 @@ func main() {
 		configSync,
 		validator,
 		pingTargetRepo,
+		alertRepo,
+		notifyRepo,
+		alertEngine,
+		notifySvc,
 	)
 
 	// 注册前端静态文件处理器

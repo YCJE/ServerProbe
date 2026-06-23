@@ -22,6 +22,7 @@ type WSClient struct {
 	token        string
 	registerCode string
 	insecureTLS  bool
+	fingerprint  string // 主机指纹 (缓存)
 
 	conn      *websocket.Conn
 	mu        sync.Mutex
@@ -44,6 +45,7 @@ func NewWSClient(serverURL, token, registerCode string, insecureTLS bool) *WSCli
 		token:                token,
 		registerCode:         registerCode,
 		insecureTLS:          insecureTLS,
+		fingerprint:          getHostFingerprint(),
 		maxReconnectInterval: 60 * time.Second,
 	}
 }
@@ -140,7 +142,7 @@ func (c *WSClient) register() error {
 		OS:              runtime.GOOS,
 		Arch:            runtime.GOARCH,
 		AgentVersion:    "1.0.0",
-		HostFingerprint: getHostFingerprint(),
+		HostFingerprint: c.fingerprint,
 	}
 
 	c.mu.Lock()
@@ -276,8 +278,9 @@ func (c *WSClient) SendMessage(msg *sharedmodel.WSMessage) error {
 // SendHeartbeat 发送心跳
 func (c *WSClient) SendHeartbeat() error {
 	msg := &sharedmodel.WSMessage{
-		Type:      sharedmodel.MsgTypeHeartbeat,
-		Timestamp: time.Now().Unix(),
+		Type:            sharedmodel.MsgTypeHeartbeat,
+		Timestamp:       time.Now().Unix(),
+		HostFingerprint: c.fingerprint,
 	}
 	return c.SendMessage(msg)
 }
@@ -285,9 +288,10 @@ func (c *WSClient) SendHeartbeat() error {
 // SendReport 发送监控数据
 func (c *WSClient) SendReport(data *sharedmodel.MetricData) error {
 	msg := &sharedmodel.WSMessage{
-		Type:      sharedmodel.MsgTypeReport,
-		Timestamp: time.Now().Unix(),
-		Data:      data,
+		Type:            sharedmodel.MsgTypeReport,
+		Timestamp:       time.Now().Unix(),
+		Data:            data,
+		HostFingerprint: c.fingerprint,
 	}
 	return c.SendMessage(msg)
 }

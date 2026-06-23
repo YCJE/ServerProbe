@@ -161,6 +161,14 @@ func (e *AlertEngine) checkRuleForAgent(rule model.AlertRule, agentID int64) {
 
 // getMetricValue 获取指标值
 func (e *AlertEngine) getMetricValue(agentID int64, metric string) float64 {
+	// agent_offline 特殊处理: 在线返回 0，离线返回 1
+	if metric == model.MetricAgentOffline {
+		if e.monitor.IsAgentOnline(agentID) {
+			return 0
+		}
+		return 1
+	}
+
 	rb := e.monitor.GetRingBuffer(agentID)
 	if rb == nil {
 		return -1
@@ -176,6 +184,14 @@ func (e *AlertEngine) getMetricValue(agentID int64, metric string) float64 {
 		return points[0].CPU
 	case model.MetricMemUsage:
 		return points[0].Mem
+	case model.MetricDiskUsage:
+		if len(points[0].Disks) > 0 {
+			d := points[0].Disks[0]
+			if d.Total > 0 {
+				return float64(d.Used) / float64(d.Total) * 100
+			}
+		}
+		return -1
 	default:
 		return -1
 	}
@@ -220,4 +236,20 @@ func (e *AlertEngine) sendAlertNotification(rule model.AlertRule, agentID int64,
 	if err != nil {
 		log.Printf("发送告警通知失败: %v", err)
 	}
+}
+
+// SendTestNotification 发送测试通知
+func (e *AlertEngine) SendTestNotification(rule *model.AlertRule) error {
+	if e.notifySvc == nil {
+		return fmt.Errorf("通知服务不可用")
+	}
+	if rule.NotifyChannelID == 0 {
+		return fmt.Errorf("该规则未绑定通知渠道")
+	}
+
+	title := fmt.Sprintf("[测试] %s", rule.Name)
+	content := fmt.Sprintf("这是一条测试通知。规则: %s, 指标: %s, 阈值: %.2f %s %.2f",
+		rule.Name, rule.Metric, rule.Threshold, rule.Operator, rule.Threshold)
+
+	return e.notifySvc.SendNotification(rule.NotifyChannelID, title, content)
 }

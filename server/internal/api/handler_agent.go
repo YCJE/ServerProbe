@@ -226,8 +226,27 @@ func (h *AgentHandler) handleReport(ws *agentWSConn, msg *sharedmodel.WSMessage,
 		return
 	}
 
+	// 校验主机指纹 (存储的指纹非空时，消息指纹必须匹配)
+	if agent.HostFingerprint != "" {
+		if msg.HostFingerprint == "" || agent.HostFingerprint != msg.HostFingerprint {
+			log.Printf("Agent %d 主机指纹不匹配或缺失，拒绝上报", agentID)
+			return
+		}
+	}
+
 	// 校验数据
 	if msg.Data == nil {
+		return
+	}
+
+	// 校验数据大小 (≤10KB)
+	if rawData, err := json.Marshal(msg.Data); err == nil {
+		if err := h.validator.CheckDataSize(rawData); err != nil {
+			log.Printf("Agent %d 数据大小超限: %v", agentID, err)
+			return
+		}
+	} else {
+		log.Printf("Agent %d 数据序列化失败，拒绝上报", agentID)
 		return
 	}
 
@@ -282,6 +301,22 @@ func (h *AgentHandler) handlePingResult(ws *agentWSConn, msg *sharedmodel.WSMess
 func (h *AgentHandler) handleHeartbeat(ws *agentWSConn, msg *sharedmodel.WSMessage, agentID int64, registered bool) {
 	if !registered || agentID == 0 {
 		return
+	}
+
+	// 校验 Token (心跳必须携带 Token)
+	if msg.Token == "" {
+		return
+	}
+	agent, err := h.registry.ValidateToken(msg.Token)
+	if err != nil || agent.ID != agentID {
+		return
+	}
+	// 校验主机指纹 (存储的指纹非空时，消息指纹必须匹配)
+	if agent.HostFingerprint != "" {
+		if msg.HostFingerprint == "" || agent.HostFingerprint != msg.HostFingerprint {
+			log.Printf("Agent %d 心跳指纹不匹配或缺失，拒绝", agentID)
+			return
+		}
 	}
 
 	h.monitor.UpdateHeartbeat(agentID)

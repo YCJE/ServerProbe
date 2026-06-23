@@ -12,7 +12,6 @@ import {
   formatUptime,
   formatLatency,
   formatLoss,
-  getUsageColor,
   getUsageTextColor,
   getLossColor,
 } from '@/lib/utils'
@@ -465,30 +464,21 @@ export default function ServerDetail() {
             />
           </div>
 
-          {/* 磁盘详情列表 */}
+          {/* 磁盘总使用率 */}
           {displayServer.disks && displayServer.disks.length > 0 && (
             <div className="mt-4 border-t border-border pt-3">
-              <h3 className="mb-2 text-xs font-medium text-muted-foreground">磁盘分区详情</h3>
-              <div className="space-y-2">
-                {displayServer.disks.map((disk, idx) => {
-                  const usage = disk.total > 0 ? (disk.used / disk.total) * 100 : 0
-                  return (
-                    <div key={idx} className="rounded-lg bg-secondary/50 px-3 py-2">
-                      <div className="flex items-center justify-between text-sm">
-                        <span className="font-mono text-foreground">{disk.device}</span>
-                        <span className={`font-medium ${getUsageTextColor(usage)}`}>
-                          {usage.toFixed(1)}%
-                        </span>
-                      </div>
-                      <div className="mt-1 text-xs text-muted-foreground">
-                        {formatBytes(disk.used)} / {formatBytes(disk.total)}
-                      </div>
-                      <div className="mt-1.5">
-                        <ProgressBar value={usage} color={getUsageColor(usage)} />
-                      </div>
-                    </div>
-                  )
-                })}
+              <h3 className="mb-2 text-xs font-medium text-muted-foreground">磁盘使用</h3>
+              <div className="rounded-lg bg-secondary/50 px-3 py-2">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-foreground">总使用率</span>
+                  <span className={`font-medium ${getUsageTextColor(displayServer.disk_usage || 0)}`}>
+                    {(displayServer.disk_usage || 0).toFixed(1)}%
+                  </span>
+                </div>
+                <div className="mt-1 text-xs text-muted-foreground">
+                  已用 {formatBytes(displayServer.disks.reduce((sum, d) => sum + d.used, 0))} / 总{' '}
+                  {formatBytes(displayServer.disks.reduce((sum, d) => sum + d.total, 0))}
+                </div>
               </div>
             </div>
           )}
@@ -563,18 +553,6 @@ function MetricCard({
       {subValue && (
         <div className="mt-0.5 text-xs text-muted-foreground">{subValue}</div>
       )}
-    </div>
-  )
-}
-
-/** 进度条组件 */
-function ProgressBar({ value, color }: { value: number; color: string }) {
-  return (
-    <div className="h-1.5 w-full overflow-hidden rounded-full bg-secondary">
-      <div
-        className={`h-full rounded-full transition-all duration-500 ${color}`}
-        style={{ width: `${Math.min(value, 100)}%` }}
-      />
     </div>
   )
 }

@@ -20,6 +20,8 @@ type Router struct {
 	agentAPIHandler    *AgentAPIHandler
 	dashboardWSHandler *DashboardWSHandler
 	pingTargetHandler  *PingTargetHandler
+	alertHandler       *AlertHandler
+	notifyHandler      *NotifyHandler
 }
 
 // NewRouter 创建路由
@@ -33,6 +35,10 @@ func NewRouter(
 	configSync *service.ConfigSyncService,
 	validator *service.DataValidator,
 	pingTargetRepo *repository.PingTargetRepository,
+	alertRepo *repository.AlertRepository,
+	notifyRepo *repository.NotifyRepository,
+	alertEngine *service.AlertEngine,
+	notifySvc *service.NotifyService,
 ) *Router {
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
@@ -49,6 +55,8 @@ func NewRouter(
 	agentAPIHandler := NewAgentAPIHandler(registry, agentRepo, monitor)
 	dashboardWSHandler := NewDashboardWSHandler(monitor, jwtManager)
 	pingTargetHandler := NewPingTargetHandler(pingTargetRepo, configSync, monitor)
+	alertHandler := NewAlertHandler(alertRepo, notifyRepo, alertEngine)
+	notifyHandler := NewNotifyHandler(notifyRepo, notifySvc)
 
 	// 健康检查
 	r.GET("/api/v1/health", func(c *gin.Context) {
@@ -114,6 +122,23 @@ func NewRouter(
 			protected.DELETE("/ping-targets/:id", pingTargetHandler.HandleDeletePingTarget)
 			protected.GET("/ping-targets/interval", pingTargetHandler.HandleGetPingInterval)
 			protected.PUT("/ping-targets/interval", pingTargetHandler.HandleSetPingInterval)
+
+			// 系统状态
+			protected.GET("/system/status", serverHandler.HandleSystemStatus)
+
+			// 告警规则管理
+			protected.GET("/alerts", alertHandler.HandleListAlerts)
+			protected.POST("/alerts", alertHandler.HandleCreateAlert)
+			protected.PUT("/alerts/:id", alertHandler.HandleUpdateAlert)
+			protected.DELETE("/alerts/:id", alertHandler.HandleDeleteAlert)
+			protected.POST("/alerts/:id/test", alertHandler.HandleTestAlert)
+
+			// 通知渠道管理
+			protected.GET("/notify/channels", notifyHandler.HandleListChannels)
+			protected.POST("/notify/channels", notifyHandler.HandleCreateChannel)
+			protected.PUT("/notify/channels/:id", notifyHandler.HandleUpdateChannel)
+			protected.DELETE("/notify/channels/:id", notifyHandler.HandleDeleteChannel)
+			protected.POST("/notify/channels/:id/test", notifyHandler.HandleTestChannel)
 		}
 	}
 
@@ -126,6 +151,8 @@ func NewRouter(
 		agentAPIHandler:    agentAPIHandler,
 		dashboardWSHandler: dashboardWSHandler,
 		pingTargetHandler:  pingTargetHandler,
+		alertHandler:       alertHandler,
+		notifyHandler:      notifyHandler,
 	}
 }
 
