@@ -38,14 +38,16 @@ export default function AgentManagement() {
   // 跟踪复制按钮的定时器，卸载时清理
   const timeoutRefs = useRef<ReturnType<typeof setTimeout>[]>([])
 
-  // 每秒触发一次重渲染，用于更新倒计时
+  // 每秒触发一次重渲染，用于更新注册码倒计时（仅在有活跃注册码时运行）
   const [, setTick] = useState(0)
+  const hasActiveCodes = codes.some((c) => !c.used && new Date(c.expires_at).getTime() > Date.now())
   useEffect(() => {
+    if (!hasActiveCodes) return
     const interval = setInterval(() => {
       setTick((t) => t + 1)
     }, 1000)
     return () => clearInterval(interval)
-  }, [])
+  }, [hasActiveCodes])
 
   // 卸载时清理所有复制按钮的定时器
   useEffect(() => {
@@ -503,9 +505,9 @@ export default function AgentManagement() {
 
       {/* 编辑 Agent 弹窗 */}
       {editingAgent && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={handleCloseEdit}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={handleCloseEdit}>
           <div
-            className="w-full max-w-md rounded-xl border border-border bg-card p-6 shadow-lg"
+            className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-xl border border-border bg-card p-4 shadow-lg sm:p-6"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="mb-4 flex items-center justify-between">

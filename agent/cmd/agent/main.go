@@ -129,6 +129,7 @@ func main() {
 
 	// 停止各组件
 	close(pingStopCh) // 通知 Ping 探测协程停止
+	wsClient.Stop()   // 停止 WebSocket 客户端
 	heartbeat.Stop()
 	uploader.Stop()
 	configSyncer.Stop()

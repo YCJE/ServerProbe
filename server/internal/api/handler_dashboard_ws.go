@@ -49,12 +49,14 @@ type wsConn struct {
 func (w *wsConn) writeMessage(messageType int, data []byte) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	w.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
 	return w.conn.WriteMessage(messageType, data)
 }
 
 func (w *wsConn) writeJSON(v interface{}) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	w.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
 	return w.conn.WriteJSON(v)
 }
 

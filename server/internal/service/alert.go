@@ -220,11 +220,14 @@ func (e *AlertEngine) getMetricValue(agentID int64, metric string) float64 {
 	case model.MetricMemUsage:
 		return points[0].Mem
 	case model.MetricDiskUsage:
-		if len(points[0].Disks) > 0 {
-			d := points[0].Disks[0]
-			if d.Total > 0 {
-				return float64(d.Used) / float64(d.Total) * 100
-			}
+		// 聚合所有磁盘计算总使用率，与 monitor.go/handler_server.go 保持一致
+		var totalTotal, totalUsed uint64
+		for _, d := range points[0].Disks {
+			totalTotal += d.Total
+			totalUsed += d.Used
+		}
+		if totalTotal > 0 {
+			return float64(totalUsed) / float64(totalTotal) * 100
 		}
 		return -1
 	default:

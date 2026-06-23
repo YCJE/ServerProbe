@@ -346,7 +346,7 @@ type publicHistoryPoint struct {
 	MemUsed   uint64                   `json:"mem_used"`
 	SwapTotal uint64                   `json:"swap_total"`
 	SwapUsed  uint64                   `json:"swap_used"`
-	DiskUsage string                   `json:"disk_usage"`
+	DiskUsage float64                  `json:"disk_usage"` // 仅百分比，不暴露磁盘设备信息
 	NetRx     uint64                   `json:"net_rx"`
 	NetTx     uint64                   `json:"net_tx"`
 	Load1     float64                  `json:"load_1"`
@@ -357,7 +357,7 @@ type publicHistoryPoint struct {
 }
 
 // toPublicHistoryPoint 将 historyPoint 转换为公开版本，过滤敏感字段
-// 过滤: tcp_connections, udp_connections, process_count, ping_data 中的 target 字段
+// 过滤: tcp_connections, udp_connections, process_count, disk设备信息, ping_data 中的 target 字段
 func toPublicHistoryPoint(hp historyPoint) publicHistoryPoint {
 	php := publicHistoryPoint{
 		Timestamp: hp.Timestamp,
@@ -367,13 +367,21 @@ func toPublicHistoryPoint(hp historyPoint) publicHistoryPoint {
 		MemUsed:   hp.MemUsed,
 		SwapTotal: hp.SwapTotal,
 		SwapUsed:  hp.SwapUsed,
-		DiskUsage: hp.DiskUsage,
+		DiskUsage: 0, // 从原始磁盘数据计算聚合百分比
 		NetRx:     hp.NetRx,
 		NetTx:     hp.NetTx,
 		Load1:     hp.Load1,
 		Load5:     hp.Load5,
 		Load15:    hp.Load15,
 		Uptime:    hp.Uptime,
+	}
+
+	// 从原始磁盘 JSON 计算聚合使用率百分比（不暴露磁盘设备信息）
+	if hp.DiskUsage != "" {
+		var disks []sharedmodel.DiskInfo
+		if err := json.Unmarshal([]byte(hp.DiskUsage), &disks); err == nil {
+			php.DiskUsage = calcDiskUsage(disks)
+		}
 	}
 
 	// 过滤 PingData 中的 Target 字段（敏感信息）

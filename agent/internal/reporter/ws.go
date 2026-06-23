@@ -27,6 +27,7 @@ type WSClient struct {
 	conn      *websocket.Conn
 	mu        sync.Mutex
 	connected bool
+	stopCh    chan struct{} // 通知 Run() 退出
 
 	// 回调函数
 	onRegisterOK   func(token string)
@@ -47,7 +48,25 @@ func NewWSClient(serverURL, token, registerCode string, insecureTLS bool) *WSCli
 		insecureTLS:          insecureTLS,
 		fingerprint:          getHostFingerprint(),
 		maxReconnectInterval: 60 * time.Second,
+		stopCh:               make(chan struct{}),
 	}
+}
+
+// Stop 停止 WebSocket 客户端，优雅关闭连接
+func (c *WSClient) Stop() {
+	select {
+	case <-c.stopCh:
+		// 已经关闭
+	default:
+		close(c.stopCh)
+	}
+	c.mu.Lock()
+	c.connected = false
+	if c.conn != nil {
+		c.conn.Close()
+		c.conn = nil
+	}
+	c.mu.Unlock()
 }
 
 // SetCallbacks 设置回调函数
@@ -276,6 +295,13 @@ func (c *WSClient) resumeSession() error {
 // Run 运行消息循环
 func (c *WSClient) Run() {
 	for {
+		select {
+		case <-c.stopCh:
+			log.Printf("WebSocket 客户端已停止")
+			return
+		default:
+		}
+
 		c.mu.Lock()
 		conn := c.conn
 		c.mu.Unlock()
@@ -284,7 +310,11 @@ func (c *WSClient) Run() {
 			// 重连
 			if err := c.reconnect(); err != nil {
 				log.Printf("重连失败: %v", err)
-				time.Sleep(c.getReconnectInterval())
+				select {
+				case <-c.stopCh:
+					return
+				case <-time.After(c.getReconnectInterval()):
+				}
 				continue
 			}
 			continue
