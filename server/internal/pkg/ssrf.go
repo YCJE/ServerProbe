@@ -128,6 +128,10 @@ func (p *SSRFProtector) SendWebhook(targetURL string, body []byte) (int, []byte,
 
 // isPrivateIP 检查是否是内网 IP
 func isPrivateIP(ip net.IP) bool {
+	// 未指定地址 (0.0.0.0, ::) - 某些系统上等同于 localhost
+	if ip.IsUnspecified() {
+		return true
+	}
 	// IPv4 内网地址段
 	if ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
 		return true

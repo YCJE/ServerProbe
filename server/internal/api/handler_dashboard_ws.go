@@ -196,13 +196,19 @@ func (h *DashboardWSHandler) HandlePublicDashboardWS(c *gin.Context) {
 		return nil
 	})
 
-	// 启动 ping 协程
+	// 启动 ping 协程 (使用 donePing channel 避免泄漏)
 	pingTicker := time.NewTicker(30 * time.Second)
 	defer pingTicker.Stop()
 
+	donePing := make(chan struct{})
 	go func() {
-		for range pingTicker.C {
-			if err := ws.writeMessage(websocket.PingMessage, nil); err != nil {
+		for {
+			select {
+			case <-pingTicker.C:
+				if err := ws.writeMessage(websocket.PingMessage, nil); err != nil {
+					return
+				}
+			case <-donePing:
 				return
 			}
 		}
@@ -225,15 +231,18 @@ func (h *DashboardWSHandler) HandlePublicDashboardWS(c *gin.Context) {
 
 	// 立即推送一次
 	if !h.pushPublicDashboardData(ws) {
+		close(donePing)
 		return
 	}
 
 	for {
 		select {
 		case <-done:
+			close(donePing)
 			return
 		case <-ticker.C:
 			if !h.pushPublicDashboardData(ws) {
+				close(donePing)
 				return
 			}
 		}

@@ -127,9 +127,9 @@ func (c *PingCollector) doICMPPing(result *sharedmodel.PingResult, target string
 		return
 	}
 
-	pinger.Count = 10
-	pinger.Interval = 1000 * time.Millisecond
-	pinger.Timeout = 12 * time.Second
+	pinger.Count = 30
+	pinger.Interval = 500 * time.Millisecond
+	pinger.Timeout = 20 * time.Second
 
 	// 设置探测方式
 	if method == PingMethodICMPUnprivileged {
@@ -154,9 +154,9 @@ func (c *PingCollector) doICMPPing(result *sharedmodel.PingResult, target string
 			result.Method = string(method)
 			return
 		}
-		pinger.Count = 10
-		pinger.Interval = 1000 * time.Millisecond
-		pinger.Timeout = 12 * time.Second
+		pinger.Count = 30
+		pinger.Interval = 500 * time.Millisecond
+		pinger.Timeout = 20 * time.Second
 		if method == PingMethodICMPUnprivileged {
 			pinger.SetPrivileged(false)
 		} else {
@@ -205,7 +205,7 @@ func (c *PingCollector) doTCPPing(result *sharedmodel.PingResult, target string)
 
 	addr := net.JoinHostPort(ips[0].String(), port)
 
-	count := 10
+	count := 30
 	successCount := 0
 	var latencies []float64
 
@@ -221,7 +221,7 @@ func (c *PingCollector) doTCPPing(result *sharedmodel.PingResult, target string)
 		}
 
 		if i < count-1 {
-			time.Sleep(1000 * time.Millisecond)
+			time.Sleep(500 * time.Millisecond)
 		}
 	}
 
@@ -286,7 +286,7 @@ func (c *PingCollector) doHTTPPing(result *sharedmodel.PingResult, target string
 		scheme = "https"
 	}
 
-	count := 10
+	count := 30
 	successCount := 0
 	var latencies []float64
 
@@ -335,7 +335,7 @@ func (c *PingCollector) doHTTPPing(result *sharedmodel.PingResult, target string
 		}
 
 		if i < count-1 {
-			time.Sleep(1000 * time.Millisecond)
+			time.Sleep(500 * time.Millisecond)
 		}
 	}
 

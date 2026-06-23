@@ -148,12 +148,12 @@ func (s *AggregationService) aggregate() {
 	udpConnsAvg := udpConnsSum / count
 	processCountAvg := processCountSum / count
 
-		// 序列化磁盘数据
-		diskData := ""
-		if len(points) > 0 && len(points[0].Disks) > 0 {
-			diskBytes, _ := json.Marshal(points[0].Disks)
-			diskData = string(diskBytes)
-		}
+		// 序列化磁盘数据 (使用最新数据点)
+	diskData := ""
+	if len(points) > 0 && len(points[len(points)-1].Disks) > 0 {
+		diskBytes, _ := json.Marshal(points[len(points)-1].Disks)
+		diskData = string(diskBytes)
+	}
 
 		// 序列化 Ping 数据
 		pingStr := ""

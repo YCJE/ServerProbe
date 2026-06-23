@@ -358,6 +358,14 @@ func (h *AgentHandler) handlePingResult(ws *agentWSConn, msg *sharedmodel.WSMess
 		return
 	}
 
+	// 校验主机指纹 (与其他 handler 保持一致)
+	if agent.HostFingerprint != "" {
+		if msg.HostFingerprint == "" || agent.HostFingerprint != msg.HostFingerprint {
+			log.Printf("Agent %d Ping 结果指纹不匹配或缺失，拒绝", *agentID)
+			return
+		}
+	}
+
 	// 校验 Ping 数据
 	for i := range msg.PingData {
 		if err := h.validator.ValidatePingResult(&msg.PingData[i]); err != nil {

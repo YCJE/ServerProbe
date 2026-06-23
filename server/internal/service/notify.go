@@ -122,10 +122,14 @@ func (s *NotifyService) sendEmail(channel *model.NotifyChannel, title, content s
 		return fmt.Errorf("解析邮件配置失败: %w", err)
 	}
 
+	// 过滤 CRLF 防止邮件头注入
+	safeTitle := strings.NewReplacer("\r", " ", "\n", " ").Replace(title)
+	safeContent := strings.ReplaceAll(content, "\r\n", "\n")
+
 	// 构建邮件内容
-	subject := fmt.Sprintf("Subject: %s\r\n", title)
+	subject := fmt.Sprintf("Subject: %s\r\n", safeTitle)
 	contentType := "Content-Type: text/plain; charset=UTF-8\r\n"
-	body := fmt.Sprintf("%s%s\r\n\r\n%s", subject, contentType, content)
+	body := fmt.Sprintf("%s%s\r\n\r\n%s", subject, contentType, safeContent)
 
 	// SMTP 认证
 	auth := smtp.PlainAuth("", config.Username, config.Password, config.SMTPHost)

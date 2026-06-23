@@ -381,9 +381,10 @@ func (c *WSClient) SendReport(data *sharedmodel.MetricData) error {
 // SendPingResult 发送 Ping 结果
 func (c *WSClient) SendPingResult(results []sharedmodel.PingResult) error {
 	msg := &sharedmodel.WSMessage{
-		Type:      sharedmodel.MsgTypePingResult,
-		Timestamp: time.Now().Unix(),
-		PingData:  results,
+		Type:            sharedmodel.MsgTypePingResult,
+		Timestamp:       time.Now().Unix(),
+		PingData:        results,
+		HostFingerprint: c.fingerprint,
 	}
 	return c.SendMessage(msg)
 }

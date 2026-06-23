@@ -170,15 +170,20 @@ func (h *ServerHandler) HandleListServers(c *gin.Context) {
 
 // calcDiskUsage 从磁盘信息计算使用率
 // Agent 上报的是聚合后的总磁盘信息 (Device="total")
+// 与 monitor.go 中的 calcDiskUsage 保持一致: 汇总所有磁盘
 func calcDiskUsage(disks []sharedmodel.DiskInfo) float64 {
 	if len(disks) == 0 {
 		return 0
 	}
 
-	// 使用第一个磁盘条目 (Agent 聚合后的总磁盘)
-	d := disks[0]
-	if d.Total > 0 {
-		return float64(d.Used) / float64(d.Total) * 100
+	var totalTotal, totalUsed uint64
+	for _, d := range disks {
+		totalTotal += d.Total
+		totalUsed += d.Used
+	}
+
+	if totalTotal > 0 {
+		return float64(totalUsed) / float64(totalTotal) * 100
 	}
 
 	return 0
@@ -568,6 +573,23 @@ func (h *ServerHandler) HandlePublicDashboard(c *gin.Context) {
 
 	publicItems := make([]PublicDashboardItem, 0, len(items))
 	for _, item := range items {
+		// 过滤 PingData 中的 Target 字段，防止泄露探测目标地址
+		safePingData := make([]sharedmodel.PingResult, 0, len(item.PingData))
+		for _, p := range item.PingData {
+			safePingData = append(safePingData, sharedmodel.PingResult{
+				Name:        p.Name,
+				Method:      p.Method,
+				AvgLatency:  p.AvgLatency,
+				MinLatency:  p.MinLatency,
+				MaxLatency:  p.MaxLatency,
+				Jitter:      p.Jitter,
+				Loss:        p.Loss,
+				PacketsSent: p.PacketsSent,
+				PacketsRecv: p.PacketsRecv,
+				// Target 字段不包含
+			})
+		}
+
 		publicItems = append(publicItems, PublicDashboardItem{
 			AgentID:     item.AgentID,
 			Hostname:    item.Hostname,
@@ -581,7 +603,7 @@ func (h *ServerHandler) HandlePublicDashboard(c *gin.Context) {
 			NetTx:       item.NetTx,
 			Load1:       item.Load1,
 			Uptime:      item.Uptime,
-			PingData:    item.PingData,
+			PingData:    safePingData,
 			Timestamp:   item.Timestamp,
 		})
 	}

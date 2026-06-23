@@ -61,7 +61,7 @@ export default function PingChart({
     }
 
     // 为每个网络构建延迟数据序列
-    // nezha 风格：直线段连接(smooth:false)，无数据点符号，null 创建间隙
+    // smooth 曲线 + 小圆点标记，参考 nezha/komari 风格
     const latencySeries = networkNames.map((name, idx) => {
       const color = NETWORK_COLORS[name] || DEFAULT_COLORS[idx % DEFAULT_COLORS.length]
       const data = timestamps.map((_, tsIdx) => {
@@ -75,12 +75,14 @@ export default function PingChart({
         name: `${name} 延迟`,
         type: 'line',
         data,
-        smooth: false,       // 直线段连接，保留折角细节
-        symbol: 'none',      // 不显示数据点
-        lineStyle: { width: 1.5, color },
+        smooth: true,        // 平滑曲线，避免短时间范围内方方的问题
+        symbol: 'circle',    // 显示数据点
+        symbolSize: 4,       // 小圆点
+        showSymbol: true,    // 始终显示符号
+        lineStyle: { width: 2, color },
         itemStyle: { color },
         connectNulls: false, // null 创建间隙，更真实
-        // 渐变面积填充（参考 CPU 图风格）
+        // 渐变面积填充
         areaStyle: {
           color: {
             type: 'linear',
@@ -94,7 +96,7 @@ export default function PingChart({
       }
     })
 
-    // 丢包率数据序列（直线段，带面积填充）
+    // 丢包率数据序列（平滑曲线，带面积填充）
     const lossSeries = networkNames.map((name, idx) => {
       const color = NETWORK_COLORS[name] || DEFAULT_COLORS[idx % DEFAULT_COLORS.length]
       const data = timestamps.map((_, tsIdx) => {
@@ -110,9 +112,11 @@ export default function PingChart({
         xAxisIndex: 1,
         yAxisIndex: 1,
         data,
-        smooth: false,       // 直线段
-        symbol: 'none',
-        lineStyle: { width: 1.5, color },
+        smooth: true,        // 平滑曲线
+        symbol: 'circle',
+        symbolSize: 4,
+        showSymbol: true,
+        lineStyle: { width: 2, color },
         itemStyle: { color },
         areaStyle: {
           color: {
