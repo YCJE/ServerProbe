@@ -1,10 +1,15 @@
 package main
 
 import (
+	"context"
+	"crypto/tls"
 	"flag"
 	"log"
+	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"syscall"
 	"time"
 
 	"github.com/goccy/go-yaml"
@@ -64,7 +69,6 @@ func main() {
 	if err != nil {
 		log.Fatalf("数据库初始化失败: %v", err)
 	}
-	defer db.Close()
 
 	// 创建 repositories
 	agentRepo := repository.NewAgentRepository(db.DB())
@@ -93,7 +97,7 @@ func main() {
 
 	// 创建 services
 	monitor := service.NewMonitorService(agentRepo, *dataDir)
-	registry := service.NewAgentRegistryService(agentRepo, registerCodeRepo)
+	registry := service.NewAgentRegistryService(agentRepo, registerCodeRepo, db.DB())
 	configSync := service.NewConfigSyncService(pingTargetRepo, db.DB())
 	validator := service.NewDataValidator()
 	aggregation := service.NewAggregationService(monitor, recordRepo, agentRepo)
@@ -113,6 +117,9 @@ func main() {
 
 	// 启动告警引擎
 	alertEngine.Start()
+
+	// 启动数据校验器清理任务
+	validator.StartCleanupTask()
 
 	// 创建路由
 	router := api.NewRouter(
@@ -153,10 +160,56 @@ func main() {
 	log.Printf("WebSocket 端点: wss://<host>%s/api/v1/agent/report", *listen)
 	log.Printf("数据目录: %s", *dataDir)
 
-	// 启动 HTTPS 服务
-	if err := router.GetRouter().RunTLS(*listen, certPath, keyPath); err != nil {
-		log.Fatalf("服务启动失败: %v", err)
+	// 创建 HTTP Server
+	httpServer := &http.Server{
+		Addr:    *listen,
+		Handler: router.GetRouter(),
+		TLSConfig: &tls.Config{
+			MinVersion: tls.VersionTLS12,
+		},
 	}
+
+	// 使用 signal.NotifyContext 监听中断信号，实现优雅关闭
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	// 在 goroutine 中启动 HTTPS 服务
+	serverErr := make(chan error, 1)
+	go func() {
+		if err := httpServer.ListenAndServeTLS(certPath, keyPath); err != nil && err != http.ErrServerClosed {
+			serverErr <- err
+		}
+	}()
+
+	// 等待中断信号或服务器错误
+	select {
+	case err := <-serverErr:
+		log.Fatalf("服务启动失败: %v", err)
+	case <-ctx.Done():
+		log.Println("收到关闭信号，正在优雅关闭服务...")
+		stop() // 停止接收信号，恢复默认行为
+	}
+
+	// 给正在处理的请求 30 秒的时间完成
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	if err := httpServer.Shutdown(shutdownCtx); err != nil {
+		log.Printf("HTTP 服务关闭失败: %v", err)
+	}
+
+	// 停止各后台服务
+	monitor.Stop()
+	aggregation.Stop()
+	alertEngine.Stop()
+	validator.Stop()
+
+	log.Println("正在关闭数据库连接...")
+	if err := db.Close(); err != nil {
+		log.Printf("数据库关闭失败: %v", err)
+	}
+
+	log.Println("服务已关闭")
 }
 
 // loadConfig 加载 YAML 配置文件

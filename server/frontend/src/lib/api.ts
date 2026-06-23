@@ -82,8 +82,9 @@ async function request<T>(
 
   if (response.status === 401) {
     clearToken()
-    // 不在 setup-status 和公开 API 请求中跳转
-    if (!path.includes('/auth/setup-status') && !path.startsWith('/public/')) {
+    // 不在 setup-status、登录和公开 API 请求中跳转
+    // 登录接口返回 401 时不应跳转，否则错误信息会丢失
+    if (!path.includes('/auth/setup-status') && !path.includes('/auth/login') && !path.startsWith('/public/')) {
       // 使用防重定向标志，避免多次 401 触发多次跳转
       if (!isRedirecting) {
         isRedirecting = true
@@ -104,7 +105,7 @@ async function request<T>(
     } catch {
       // 忽略 JSON 解析错误
     }
-    throw new Error(message)
+    throw new ApiError(response.status, message)
   }
 
   // 处理空响应

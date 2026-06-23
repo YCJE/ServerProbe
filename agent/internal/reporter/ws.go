@@ -110,19 +110,21 @@ func (c *WSClient) Connect() error {
 		return fmt.Errorf("WebSocket 连接失败: %w", err)
 	}
 
+	// 设置读取大小限制，防止恶意 Server 发送超大消息导致内存耗尽
+	conn.SetReadLimit(1024 * 1024) // 1MB
+
 	c.mu.Lock()
 	c.conn = conn
-	c.connected = true
 	c.reconnectAttempts = 0
 	c.mu.Unlock()
 
-	// 连接建立后，必须进行会话初始化
+	// 连接建立后，必须进行会话初始化（认证完成前不标记 connected，
+	// 避免心跳/上报 goroutine 在会话恢复期间写入数据）
 	if c.token != "" {
 		// 已有 Token，发送会话恢复请求
 		if err := c.resumeSession(); err != nil {
 			c.mu.Lock()
 			c.conn = nil
-			c.connected = false
 			c.mu.Unlock()
 			conn.Close()
 			return fmt.Errorf("会话恢复失败: %w", err)
@@ -132,12 +134,23 @@ func (c *WSClient) Connect() error {
 		if err := c.register(); err != nil {
 			c.mu.Lock()
 			c.conn = nil
-			c.connected = false
 			c.mu.Unlock()
 			conn.Close()
 			return fmt.Errorf("注册失败: %w", err)
 		}
+	} else {
+		// Token 和注册码都为空，无法建立认证连接
+		c.mu.Lock()
+		c.conn = nil
+		c.mu.Unlock()
+		conn.Close()
+		return fmt.Errorf("安全错误：缺少 Token 和注册码，无法建立认证连接")
 	}
+
+	// 会话初始化成功后才标记为已连接
+	c.mu.Lock()
+	c.connected = true
+	c.mu.Unlock()
 
 	return nil
 }
@@ -157,6 +170,7 @@ func (c *WSClient) register() error {
 	}
 
 	c.mu.Lock()
+	c.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
 	err := c.conn.WriteJSON(msg)
 	c.mu.Unlock()
 
@@ -218,6 +232,7 @@ func (c *WSClient) resumeSession() error {
 	}
 
 	c.mu.Lock()
+	c.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
 	err := c.conn.WriteJSON(msg)
 	c.mu.Unlock()
 
@@ -391,6 +406,11 @@ func (c *WSClient) getReconnectInterval() time.Duration {
 	c.reconnectAttempts++
 	attempts := c.reconnectAttempts
 	c.mu.Unlock()
+
+	// 限制移位次数，防止整数溢出导致 time.Sleep 收到负值而 CPU 空转
+	if attempts > 10 {
+		attempts = 10
+	}
 
 	interval := time.Duration(5*(1<<(attempts-1))) * time.Second
 	if interval > c.maxReconnectInterval {

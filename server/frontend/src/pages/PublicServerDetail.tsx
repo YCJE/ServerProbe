@@ -98,13 +98,20 @@ export default function PublicServerDetail() {
       setLoading(true)
       getPublicServers()
         .then((res) => {
+          if (!mountedRef.current) return
           if (res.servers.length === 0) {
             setLoading(false)
           }
         })
-        .catch(() => { setLoading(false) })
+        .catch(() => {
+          if (mountedRef.current) setLoading(false)
+        })
         .finally(() => {
-          setTimeout(() => setLoading(false), 5000)
+          if (mountedRef.current) {
+            setTimeout(() => {
+              if (mountedRef.current) setLoading(false)
+            }, 5000)
+          }
         })
     } else {
       setLoading(false)
@@ -179,6 +186,7 @@ export default function PublicServerDetail() {
   // 收集实时数据
   useEffect(() => {
     if (liveData) {
+      if (!mountedRef.current) return
       setLoading(false)
       const point: LocalRealtimePoint = {
         timestamp: liveData.timestamp || Date.now() / 1000,
@@ -444,8 +452,8 @@ export default function PublicServerDetail() {
           <h2 className="mb-3 text-sm font-semibold text-foreground">三网延迟详情</h2>
           {displayServer.ping_data && displayServer.ping_data.length > 0 ? (
             <div className="space-y-2">
-              {displayServer.ping_data.map((ping: PingResult, idx: number) => (
-                <div key={idx} className="flex items-center justify-between rounded-lg bg-secondary/50 px-3 py-2">
+              {displayServer.ping_data.map((ping: PingResult) => (
+                <div key={ping.name} className="flex items-center justify-between rounded-lg bg-secondary/50 px-3 py-2">
                   <div className="flex items-center gap-2">
                     <span className="text-sm font-medium text-foreground">{ping.name}</span>
                     <span className="text-xs text-muted-foreground">{ping.method}</span>

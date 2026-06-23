@@ -37,6 +37,8 @@ type MonitorService struct {
 	onConfigPush func(agentID int64, config *sharedmodel.AgentConfig)
 	dataDir      string
 	dashWSCount  int32 // 面板 WebSocket 连接数 (atomic)
+	ticker       *time.Ticker
+	stopCh       chan struct{}
 }
 
 // NewMonitorService 创建监控服务
@@ -46,6 +48,7 @@ func NewMonitorService(agentRepo *repository.AgentRepository, dataDir string) *M
 		ringBuffers: make(map[int64]*repository.RingBuffer),
 		connections: make(map[int64]*AgentConn),
 		dataDir:     dataDir,
+		stopCh:      make(chan struct{}),
 	}
 }
 
@@ -111,7 +114,7 @@ func (m *MonitorService) RegisterConnection(agentID int64, conn *websocket.Conn)
 
 	// 确保有环形缓冲
 	if _, ok := m.ringBuffers[agentID]; !ok {
-		m.ringBuffers[agentID] = repository.NewRingBuffer(3600)
+		m.ringBuffers[agentID] = repository.NewRingBuffer(7200) // 7200 点 × 3s = 6 小时
 	}
 
 	// 更新数据库在线状态
@@ -133,8 +136,25 @@ func (m *MonitorService) UnregisterConnection(agentID int64) {
 
 	// 更新数据库在线状态
 	_ = m.agentRepo.UpdateOnlineStatus(agentID, false)
+}
 
-	log.Printf("Agent %d 已断开", agentID)
+// UnregisterConnectionIfMatch 条件注销: 仅当注册的连接与传入连接相同时才注销
+// 解决 Agent 重连竞态: 旧连接的 defer 不应关闭新连接
+func (m *MonitorService) UnregisterConnectionIfMatch(agentID int64, conn *websocket.Conn) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if ac, ok := m.connections[agentID]; ok {
+		if ac.Conn == conn {
+			ac.Conn.Close()
+			delete(m.connections, agentID)
+			_ = m.agentRepo.UpdateOnlineStatus(agentID, false)
+			return true
+		}
+		// 连接已被新连接替换，不执行注销
+		return false
+	}
+	return false
 }
 
 // UnregisterAgent 完全移除 Agent (删除 Agent 时调用)
@@ -198,9 +218,12 @@ func (m *MonitorService) WriteMetricData(agentID int64, data *sharedmodel.Metric
 	m.mu.RUnlock()
 
 	if !ok {
+		// double-check: 获取写锁后再次检查，避免并发创建多个 RingBuffer
 		m.mu.Lock()
-		rb = repository.NewRingBuffer(7200) // 7200 点 × 3s = 6 小时
-		m.ringBuffers[agentID] = rb
+		if rb, ok = m.ringBuffers[agentID]; !ok {
+			rb = repository.NewRingBuffer(7200) // 7200 点 × 3s = 6 小时
+			m.ringBuffers[agentID] = rb
+		}
 		m.mu.Unlock()
 	}
 
@@ -284,6 +307,20 @@ func (m *MonitorService) GetOnlineAgentIDs() []int64 {
 	return ids
 }
 
+// GetAllAgentIDs 获取所有 Agent ID（包括离线的），从数据库读取
+func (m *MonitorService) GetAllAgentIDs() []int64 {
+	agents, err := m.agentRepo.List()
+	if err != nil {
+		log.Printf("获取所有 Agent 列表失败: %v", err)
+		return nil
+	}
+	ids := make([]int64, 0, len(agents))
+	for _, agent := range agents {
+		ids = append(ids, agent.ID)
+	}
+	return ids
+}
+
 // CheckHeartbeatTimeout 检查心跳超时
 func (m *MonitorService) CheckHeartbeatTimeout(timeout time.Duration) {
 	m.mu.Lock()
@@ -302,12 +339,25 @@ func (m *MonitorService) CheckHeartbeatTimeout(timeout time.Duration) {
 
 // StartHeartbeatChecker 启动心跳检查器
 func (m *MonitorService) StartHeartbeatChecker(timeout time.Duration) {
-	ticker := time.NewTicker(30 * time.Second)
+	m.ticker = time.NewTicker(30 * time.Second)
 	go func() {
-		for range ticker.C {
-			m.CheckHeartbeatTimeout(timeout)
+		for {
+			select {
+			case <-m.ticker.C:
+				m.CheckHeartbeatTimeout(timeout)
+			case <-m.stopCh:
+				return
+			}
 		}
 	}()
+}
+
+// Stop 停止监控服务（停止心跳检查器）
+func (m *MonitorService) Stop() {
+	if m.ticker != nil {
+		m.ticker.Stop()
+	}
+	close(m.stopCh)
 }
 
 // GetDashboardData 获取仪表盘数据

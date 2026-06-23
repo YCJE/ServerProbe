@@ -214,6 +214,11 @@ export const useServerStore = create<ServerStoreState>((set, get) => ({
     await deleteAgentAPI(id)
     // 刷新服务器列表，从仪表盘移除已删除的 Agent
     await get().fetchServers()
+    // 同时从 dashboardData 中删除对应条目，
+    // 防止 WebSocket 推送的实时数据导致已删除的服务器重新出现
+    const newMap = new Map(get().dashboardData)
+    newMap.delete(id)
+    set({ dashboardData: newMap })
   },
 
   // 连接 WebSocket

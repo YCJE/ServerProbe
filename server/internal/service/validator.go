@@ -2,6 +2,7 @@ package service
 
 import (
 	"fmt"
+	"log"
 	"sync"
 	"time"
 
@@ -12,12 +13,53 @@ import (
 type DataValidator struct {
 	mu             sync.Mutex
 	lastReportTime map[int64]time.Time // Agent ID -> 上次上报时间
+	ticker         *time.Ticker
+	stopCh         chan struct{}
 }
 
 // NewDataValidator 创建数据校验器
 func NewDataValidator() *DataValidator {
 	return &DataValidator{
 		lastReportTime: make(map[int64]time.Time),
+		stopCh:         make(chan struct{}),
+	}
+}
+
+// StartCleanupTask 启动定期清理任务，清理过期的 lastReportTime 条目
+// 防止已断开连接的 Agent 条目导致内存泄漏
+func (v *DataValidator) StartCleanupTask() {
+	v.ticker = time.NewTicker(10 * time.Minute)
+	go func() {
+		for {
+			select {
+			case <-v.ticker.C:
+				v.cleanupStaleEntries()
+			case <-v.stopCh:
+				return
+			}
+		}
+	}()
+	log.Println("数据校验器清理任务已启动（每 10 分钟清理一次）")
+}
+
+// Stop 停止数据校验器
+func (v *DataValidator) Stop() {
+	if v.ticker != nil {
+		v.ticker.Stop()
+	}
+	close(v.stopCh)
+}
+
+// cleanupStaleEntries 清理超过 30 分钟未上报的 Agent 条目
+func (v *DataValidator) cleanupStaleEntries() {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+
+	cutoff := time.Now().Add(-30 * time.Minute)
+	for agentID, lastTime := range v.lastReportTime {
+		if lastTime.Before(cutoff) {
+			delete(v.lastReportTime, agentID)
+		}
 	}
 }
 

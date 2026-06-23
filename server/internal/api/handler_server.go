@@ -332,6 +332,153 @@ func (h *ServerHandler) HandleGetServerHistory(c *gin.Context) {
 	})
 }
 
+// publicHistoryPoint 公开历史数据点（过滤敏感字段）
+type publicHistoryPoint struct {
+	Timestamp int64                    `json:"timestamp"`
+	CPUUsage  float64                  `json:"cpu_usage"`
+	MemUsage  float64                  `json:"mem_usage"`
+	MemTotal  uint64                   `json:"mem_total"`
+	MemUsed   uint64                   `json:"mem_used"`
+	SwapTotal uint64                   `json:"swap_total"`
+	SwapUsed  uint64                   `json:"swap_used"`
+	DiskUsage string                   `json:"disk_usage"`
+	NetRx     uint64                   `json:"net_rx"`
+	NetTx     uint64                   `json:"net_tx"`
+	Load1     float64                  `json:"load_1"`
+	Load5     float64                  `json:"load_5"`
+	Load15    float64                  `json:"load_15"`
+	Uptime    uint64                   `json:"uptime"`
+	PingData  []sharedmodel.PingResult `json:"ping_data"`
+}
+
+// toPublicHistoryPoint 将 historyPoint 转换为公开版本，过滤敏感字段
+// 过滤: tcp_connections, udp_connections, process_count, ping_data 中的 target 字段
+func toPublicHistoryPoint(hp historyPoint) publicHistoryPoint {
+	php := publicHistoryPoint{
+		Timestamp: hp.Timestamp,
+		CPUUsage:  hp.CPUUsage,
+		MemUsage:  hp.MemUsage,
+		MemTotal:  hp.MemTotal,
+		MemUsed:   hp.MemUsed,
+		SwapTotal: hp.SwapTotal,
+		SwapUsed:  hp.SwapUsed,
+		DiskUsage: hp.DiskUsage,
+		NetRx:     hp.NetRx,
+		NetTx:     hp.NetTx,
+		Load1:     hp.Load1,
+		Load5:     hp.Load5,
+		Load15:    hp.Load15,
+		Uptime:    hp.Uptime,
+	}
+
+	// 过滤 PingData 中的 Target 字段（敏感信息）
+	if len(hp.PingData) > 0 {
+		php.PingData = make([]sharedmodel.PingResult, 0, len(hp.PingData))
+		for _, p := range hp.PingData {
+			php.PingData = append(php.PingData, sharedmodel.PingResult{
+				Name:        p.Name,
+				Method:      p.Method,
+				AvgLatency:  p.AvgLatency,
+				MinLatency:  p.MinLatency,
+				MaxLatency:  p.MaxLatency,
+				Jitter:      p.Jitter,
+				Loss:        p.Loss,
+				PacketsSent: p.PacketsSent,
+				PacketsRecv: p.PacketsRecv,
+				// Target 字段不包含，防止泄露探测目标地址
+			})
+		}
+	}
+
+	return php
+}
+
+// HandlePublicServerHistory 公开历史数据 (无需登录，过滤敏感字段)
+// 路由: GET /api/v1/public/servers/:id/history?range=1h|6h|12h|1d|2d
+func (h *ServerHandler) HandlePublicServerHistory(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 ID"})
+		return
+	}
+
+	rangeStr := c.DefaultQuery("range", "1h")
+
+	var startTime int64
+	now := time.Now().Unix()
+
+	switch rangeStr {
+	case "1h":
+		startTime = now - 3600
+	case "6h":
+		startTime = now - 6*3600
+	case "12h":
+		startTime = now - 12*3600
+	case "1d":
+		startTime = now - 24*3600
+	case "2d":
+		startTime = now - 2*24*3600
+	default:
+		startTime = now - 3600
+	}
+
+	// 1h 和 6h 从环形缓冲读取
+	if rangeStr == "1h" || rangeStr == "6h" {
+		if rb := h.monitor.GetRingBuffer(id); rb != nil {
+			points := rb.GetByTimeRange(startTime, now)
+			publicPoints := make([]publicHistoryPoint, 0, len(points))
+			for _, p := range points {
+				publicPoints = append(publicPoints, toPublicHistoryPoint(metricPointToHistoryPoint(p)))
+			}
+			c.JSON(http.StatusOK, gin.H{
+				"source": "ringbuffer",
+				"points": publicPoints,
+			})
+			return
+		}
+	}
+
+	// 12h+ 从 SQLite 读取
+	records, err := h.recordRepo.GetByAgentAndTimeRange(id, startTime, now)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取历史数据失败"})
+		return
+	}
+
+	publicPoints := make([]publicHistoryPoint, 0, len(records))
+	for _, r := range records {
+		hp := historyPoint{
+			Timestamp: r.Timestamp,
+			CPUUsage:  r.CPUUsage,
+			MemUsage:  r.MemUsage,
+			MemTotal:  r.MemTotal,
+			MemUsed:   r.MemUsed,
+			SwapTotal: r.SwapTotal,
+			SwapUsed:  r.SwapUsed,
+			DiskUsage: r.DiskUsage,
+			NetRx:     uint64(r.NetRx),
+			NetTx:     uint64(r.NetTx),
+			Load1:     r.Load1,
+			Load5:     r.Load5,
+			Load15:    r.Load15,
+			Uptime:    r.Uptime,
+		}
+		// 解析 ping_data JSON 字符串为数组
+		if r.PingData != "" {
+			var pings []sharedmodel.PingResult
+			if err := json.Unmarshal([]byte(r.PingData), &pings); err == nil {
+				hp.PingData = pings
+			}
+		}
+		publicPoints = append(publicPoints, toPublicHistoryPoint(hp))
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"source": "sqlite",
+		"points": publicPoints,
+	})
+}
+
 // HandleDashboard 获取仪表盘数据
 // 路由: GET /api/v1/dashboard
 func (h *ServerHandler) HandleDashboard(c *gin.Context) {

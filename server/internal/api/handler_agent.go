@@ -103,11 +103,19 @@ func (h *AgentHandler) HandleWebSocket(c *gin.Context) {
 	var agentID int64
 	var registered bool
 
+	// 使用 done channel 通知 ping 协程退出，避免 goroutine 泄漏
+	done := make(chan struct{})
+
 	defer func() {
+		close(done) // 通知 ping 协程退出
 		if registered && agentID > 0 {
-			h.monitor.UnregisterConnection(agentID)
+			// 条件注销: 仅当注册的连接仍是自己时才注销
+			// 防止旧连接的 defer 关闭新连接
+			h.monitor.UnregisterConnectionIfMatch(agentID, conn)
 			h.wsConnsMu.Lock()
-			delete(h.wsConns, agentID)
+			if existing, ok := h.wsConns[agentID]; ok && existing == ws {
+				delete(h.wsConns, agentID)
+			}
 			h.wsConnsMu.Unlock()
 		}
 		conn.Close()
@@ -123,10 +131,15 @@ func (h *AgentHandler) HandleWebSocket(c *gin.Context) {
 	pingTicker := time.NewTicker(30 * time.Second)
 	defer pingTicker.Stop()
 
-	// 启动 ping 协程
+	// 启动 ping 协程 (使用 select + done channel 避免泄漏)
 	go func() {
-		for range pingTicker.C {
-			if err := ws.writeMessage(websocket.PingMessage, nil); err != nil {
+		for {
+			select {
+			case <-pingTicker.C:
+				if err := ws.writeMessage(websocket.PingMessage, nil); err != nil {
+					return
+				}
+			case <-done:
 				return
 			}
 		}

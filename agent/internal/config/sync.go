@@ -122,7 +122,7 @@ func (s *Syncer) sync() {
 		return
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1024*1024)) // 限制 1MB
 	if err != nil {
 		log.Printf("读取配置响应失败: %v", err)
 		return

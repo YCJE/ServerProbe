@@ -87,9 +87,19 @@ func (e *AlertEngine) checkAlerts() {
 
 	// 获取所有在线 Agent
 	onlineAgents := e.monitor.GetOnlineAgentIDs()
+	// 获取所有 Agent（包括离线的），用于 agent_offline 指标检查
+	allAgents := e.monitor.GetAllAgentIDs()
 
 	for _, rule := range rules {
-		for _, agentID := range onlineAgents {
+		// agent_offline 指标需要检查所有 Agent（包括离线的），
+		// 其他指标只需检查在线 Agent
+		var agentIDs []int64
+		if rule.Metric == model.MetricAgentOffline {
+			agentIDs = allAgents
+		} else {
+			agentIDs = onlineAgents
+		}
+		for _, agentID := range agentIDs {
 			e.checkRuleForAgent(rule, agentID)
 		}
 	}

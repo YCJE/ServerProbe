@@ -58,6 +58,13 @@ func (r *AlertRepository) Delete(id int64) error {
 	return r.db.Delete(&model.AlertRule{}, id).Error
 }
 
+// CountByNotifyChannelID 统计引用指定通知渠道的告警规则数量
+func (r *AlertRepository) CountByNotifyChannelID(channelID int64) (int64, error) {
+	var count int64
+	err := r.db.Model(&model.AlertRule{}).Where("notify_channel_id = ?", channelID).Count(&count).Error
+	return count, err
+}
+
 // NotifyRepository 通知渠道 CRUD
 type NotifyRepository struct {
 	db *gorm.DB

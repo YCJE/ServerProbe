@@ -9,20 +9,23 @@ import (
 
 	"github.com/server-probe/server/internal/model"
 	"github.com/server-probe/server/internal/repository"
+	"gorm.io/gorm"
 )
 
 // AgentRegistryService Agent 注册管理服务
 type AgentRegistryService struct {
 	agentRepo      *repository.AgentRepository
 	registerRepo   *repository.RegisterCodeRepository
+	db             *gorm.DB
 	maxUnusedCodes int
 }
 
 // NewAgentRegistryService 创建 Agent 注册服务
-func NewAgentRegistryService(agentRepo *repository.AgentRepository, registerRepo *repository.RegisterCodeRepository) *AgentRegistryService {
+func NewAgentRegistryService(agentRepo *repository.AgentRepository, registerRepo *repository.RegisterCodeRepository, db *gorm.DB) *AgentRegistryService {
 	return &AgentRegistryService{
 		agentRepo:      agentRepo,
 		registerRepo:   registerRepo,
+		db:             db,
 		maxUnusedCodes: 5,
 	}
 }
@@ -60,16 +63,13 @@ func (s *AgentRegistryService) GenerateRegisterCode(displayName, remark string) 
 }
 
 // RegisterAgent 注册 Agent
+// 使用数据库事务解决注册码竞态条件: 在事务内先原子标记注册码已使用 (WHERE used = false)，
+// 成功后再创建/更新 Agent，确保并发请求不会重复使用同一注册码
 func (s *AgentRegistryService) RegisterAgent(req RegisterAgentRequest) (*RegisterAgentResult, error) {
-	// 验证注册码
+	// 先在事务外验证注册码是否存在并获取信息（用于过期检查和显示名称）
 	rc, err := s.registerRepo.GetByCode(req.Code)
 	if err != nil {
 		return nil, fmt.Errorf("注册码不存在")
-	}
-
-	// 检查是否已使用
-	if rc.Used {
-		return nil, fmt.Errorf("注册码已被使用")
 	}
 
 	// 检查是否过期
@@ -77,33 +77,8 @@ func (s *AgentRegistryService) RegisterAgent(req RegisterAgentRequest) (*Registe
 		return nil, fmt.Errorf("注册码已过期")
 	}
 
-	// 检查主机指纹是否已注册
-	existingAgent, err := s.agentRepo.GetByFingerprint(req.HostFingerprint)
-	if err == nil && existingAgent != nil {
-		// 同一台机器重新注册，更新 Token
-		newToken, _ := generateRandomToken(32)
-		existingAgent.Token = newToken
-		existingAgent.Hostname = req.Hostname
-		existingAgent.OS = req.OS
-		existingAgent.Arch = req.Arch
-		existingAgent.AgentVersion = req.AgentVersion
-		existingAgent.Online = false
-		// 如果注册码有显示名称且 Agent 没有显示名称，则设置
-		if rc.DisplayName != "" && existingAgent.DisplayName == "" {
-			existingAgent.DisplayName = rc.DisplayName
-		}
-		if err := s.agentRepo.Update(existingAgent); err != nil {
-			return nil, fmt.Errorf("更新 Agent 失败: %w", err)
-		}
-
-		// 标记注册码已使用
-		_ = s.registerRepo.MarkUsed(req.Code, existingAgent.ID)
-
-		return &RegisterAgentResult{
-			AgentID: existingAgent.ID,
-			Token:   newToken,
-		}, nil
-	}
+	// 检查主机指纹是否已注册（同一台机器重新注册）
+	existingAgent, fpErr := s.agentRepo.GetByFingerprint(req.HostFingerprint)
 
 	// 生成持久 Token
 	token, err := generateRandomToken(32)
@@ -111,33 +86,74 @@ func (s *AgentRegistryService) RegisterAgent(req RegisterAgentRequest) (*Registe
 		return nil, fmt.Errorf("生成 Token 失败: %w", err)
 	}
 
-	// 创建 Agent
-	agent := &model.Agent{
-		Token:            token,
-		Hostname:         req.Hostname,
-		DisplayName:      rc.DisplayName, // 使用注册码中的显示名称
-		OS:               req.OS,
-		Arch:             req.Arch,
-		AgentVersion:     req.AgentVersion,
-		HostFingerprint:  req.HostFingerprint,
-		Online:           false,
+	// 使用事务原子标记注册码已使用并创建/更新 Agent
+	var result *RegisterAgentResult
+	txErr := s.db.Transaction(func(tx *gorm.DB) error {
+		// 在事务内原子标记注册码已使用 (WHERE used = false)
+		// 并发请求中只有一个能成功通过此检查
+		if err := s.registerRepo.MarkUsedTx(tx, req.Code, 0); err != nil {
+			return fmt.Errorf("注册码已被使用")
+		}
+
+		if fpErr == nil && existingAgent != nil {
+			// 同一台机器重新注册，更新 Token
+			existingAgent.Token = token
+			existingAgent.Hostname = req.Hostname
+			existingAgent.OS = req.OS
+			existingAgent.Arch = req.Arch
+			existingAgent.AgentVersion = req.AgentVersion
+			existingAgent.Online = false
+			// 如果注册码有显示名称且 Agent 没有显示名称，则设置
+			if rc.DisplayName != "" && existingAgent.DisplayName == "" {
+				existingAgent.DisplayName = rc.DisplayName
+			}
+			if err := s.agentRepo.UpdateTx(tx, existingAgent); err != nil {
+				return fmt.Errorf("更新 Agent 失败: %w", err)
+			}
+
+			// 回填注册码的 used_by_agent_id
+			_ = s.registerRepo.UpdateUsedByAgentIDTx(tx, req.Code, existingAgent.ID)
+
+			result = &RegisterAgentResult{
+				AgentID: existingAgent.ID,
+				Token:   token,
+			}
+			return nil
+		}
+
+		// 创建新 Agent
+		agent := &model.Agent{
+			Token:            token,
+			Hostname:         req.Hostname,
+			DisplayName:      rc.DisplayName, // 使用注册码中的显示名称
+			OS:               req.OS,
+			Arch:             req.Arch,
+			AgentVersion:     req.AgentVersion,
+			HostFingerprint:  req.HostFingerprint,
+			Online:           false,
+		}
+
+		if err := s.agentRepo.CreateTx(tx, agent); err != nil {
+			return fmt.Errorf("创建 Agent 失败: %w", err)
+		}
+
+		// 回填注册码的 used_by_agent_id
+		_ = s.registerRepo.UpdateUsedByAgentIDTx(tx, req.Code, agent.ID)
+
+		log.Printf("Agent 注册成功: ID=%d, Hostname=%s", agent.ID, agent.Hostname)
+
+		result = &RegisterAgentResult{
+			AgentID: agent.ID,
+			Token:   token,
+		}
+		return nil
+	})
+
+	if txErr != nil {
+		return nil, txErr
 	}
 
-	if err := s.agentRepo.Create(agent); err != nil {
-		return nil, fmt.Errorf("创建 Agent 失败: %w", err)
-	}
-
-	// 标记注册码已使用
-	if err := s.registerRepo.MarkUsed(req.Code, agent.ID); err != nil {
-		return nil, fmt.Errorf("标记注册码失败: %w", err)
-	}
-
-	log.Printf("Agent 注册成功: ID=%d, Hostname=%s", agent.ID, agent.Hostname)
-
-	return &RegisterAgentResult{
-		AgentID: agent.ID,
-		Token:   token,
-	}, nil
+	return result, nil
 }
 
 // ValidateToken 验证 Agent Token

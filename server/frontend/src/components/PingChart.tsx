@@ -23,7 +23,22 @@ const NETWORK_COLORS: Record<string, string> = {
 /** 默认颜色池 */
 const DEFAULT_COLORS = ['#3b82f6', '#22c55e', '#f59e0b', '#8b5cf6', '#ec4899']
 
-/** 延迟与丢包率融合图（上半部分延迟折线图三网三条线，下半部分丢包率柱状图，共享 X 轴） */
+/** 转义 HTML 特殊字符，防止 XSS 注入 */
+function escapeHtml(str: string): string {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+/**
+ * 延迟与丢包率融合图
+ * 上半部分：延迟折线图（三网三条线，直线段连接，参考 nezha/komari 风格）
+ * 下半部分：丢包率折线图（带面积填充）
+ * 共享 X 轴
+ */
 export default function PingChart({
   timestamps,
   pingData,
@@ -45,7 +60,8 @@ export default function PingChart({
       }
     }
 
-    // 为每个网络构建延迟和丢包率数据序列
+    // 为每个网络构建延迟数据序列
+    // nezha 风格：直线段连接(smooth:false)，无数据点符号，null 创建间隙
     const latencySeries = networkNames.map((name, idx) => {
       const color = NETWORK_COLORS[name] || DEFAULT_COLORS[idx % DEFAULT_COLORS.length]
       const data = timestamps.map((_, tsIdx) => {
@@ -59,23 +75,33 @@ export default function PingChart({
         name: `${name} 延迟`,
         type: 'line',
         data,
-        smooth: true,
-        symbol: 'circle',
-        symbolSize: 4,
-        showSymbol: false,
-        lineStyle: { width: 2, color },
+        smooth: false,       // 直线段连接，保留折角细节
+        symbol: 'none',      // 不显示数据点
+        lineStyle: { width: 1.5, color },
         itemStyle: { color },
-        connectNulls: true,
+        connectNulls: false, // null 创建间隙，更真实
+        // 渐变面积填充（参考 CPU 图风格）
+        areaStyle: {
+          color: {
+            type: 'linear',
+            x: 0, y: 0, x2: 0, y2: 1,
+            colorStops: [
+              { offset: 0, color: color + '20' },
+              { offset: 1, color: color + '02' },
+            ],
+          },
+        },
       }
     })
 
+    // 丢包率数据序列（直线段，带面积填充）
     const lossSeries = networkNames.map((name, idx) => {
       const color = NETWORK_COLORS[name] || DEFAULT_COLORS[idx % DEFAULT_COLORS.length]
       const data = timestamps.map((_, tsIdx) => {
         const pings = pingData[tsIdx]
-        if (!pings) return 0
+        if (!pings) return null
         const ping = pings.find((p) => p.name === name)
-        return ping ? ping.loss : 0
+        return ping ? ping.loss : null
       })
 
       return {
@@ -84,14 +110,21 @@ export default function PingChart({
         xAxisIndex: 1,
         yAxisIndex: 1,
         data,
-        smooth: true,
-        symbol: 'circle',
-        symbolSize: 3,
-        showSymbol: false,
+        smooth: false,       // 直线段
+        symbol: 'none',
         lineStyle: { width: 1.5, color },
         itemStyle: { color },
-        areaStyle: { color, opacity: 0.15 },
-        connectNulls: true,
+        areaStyle: {
+          color: {
+            type: 'linear',
+            x: 0, y: 0, x2: 0, y2: 1,
+            colorStops: [
+              { offset: 0, color: color + '30' },
+              { offset: 1, color: color + '05' },
+            ],
+          },
+        },
+        connectNulls: false,
       }
     })
 
@@ -118,7 +151,7 @@ export default function PingChart({
             html += '<div style="margin-bottom:4px">延迟 (ms):</div>'
             for (const p of latencyParams) {
               if (p.value !== null && p.value !== undefined) {
-                html += `<div style="display:flex;align-items:center;gap:6px">${p.marker} ${p.seriesName.replace(' 延迟', '')}: <strong>${p.value.toFixed(1)} ms</strong></div>`
+                html += `<div style="display:flex;align-items:center;gap:6px">${p.marker} ${escapeHtml(p.seriesName.replace(' 延迟', ''))}: <strong>${p.value.toFixed(1)} ms</strong></div>`
               }
             }
           }
@@ -130,7 +163,7 @@ export default function PingChart({
             for (const p of lossParams) {
               if (p.value !== null && p.value !== undefined) {
                 const lossColor = p.value > 20 ? '#ef4444' : p.value > 0 ? '#f59e0b' : '#22c55e'
-                html += `<div style="display:flex;align-items:center;gap:6px">${p.marker} ${p.seriesName.replace(' 丢包率', '')}: <strong style="color:${lossColor}">${p.value.toFixed(1)}%</strong></div>`
+                html += `<div style="display:flex;align-items:center;gap:6px">${p.marker} ${escapeHtml(p.seriesName.replace(' 丢包率', ''))}: <strong style="color:${lossColor}">${p.value.toFixed(1)}%</strong></div>`
               }
             }
           }
@@ -156,7 +189,7 @@ export default function PingChart({
           top: '12%',
           height: '45%',
         },
-        // 下半部分：丢包率柱状图
+        // 下半部分：丢包率折线图
         {
           left: '8%',
           right: '5%',
@@ -174,6 +207,7 @@ export default function PingChart({
           axisLabel: { show: false },
           axisTick: { show: false },
           splitLine: { show: false },
+          boundaryGap: false,
         },
         // 丢包率图 X 轴（显示标签）
         {
@@ -193,6 +227,7 @@ export default function PingChart({
           },
           axisTick: { show: false },
           splitLine: { show: false },
+          boundaryGap: false,
         },
       ],
       yAxis: [
@@ -210,6 +245,7 @@ export default function PingChart({
             formatter: '{value}',
           },
           splitLine: { lineStyle: { color: splitLineColor } },
+          minInterval: 1,
         },
         // 丢包率图 Y 轴
         {

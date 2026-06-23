@@ -188,8 +188,8 @@ export default function ServerCard({ server, basePath = '/admin' }: ServerCardPr
         <div className="mb-1.5 text-xs font-medium text-muted-foreground">三网延迟 / 丢包率</div>
         {pingData.length > 0 ? (
           <div className="grid grid-cols-3 gap-1">
-            {pingData.slice(0, 3).map((ping, idx) => (
-              <PingInfo key={idx} ping={ping} online={server.online} />
+            {pingData.slice(0, 3).map((ping) => (
+              <PingInfo key={ping.name} ping={ping} online={server.online} />
             ))}
           </div>
         ) : (

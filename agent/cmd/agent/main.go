@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/signal"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/goccy/go-yaml"
@@ -33,6 +35,7 @@ func main() {
 
 	// 加载配置
 	cfg := loadConfig(*configFile)
+	var cfgMu sync.Mutex
 
 	log.Printf("Server 探针 Agent 启动")
 	log.Printf("Server: %s", cfg.ServerURL)
@@ -60,9 +63,11 @@ func main() {
 		// 注册成功回调
 		func(token string) {
 			log.Printf("注册成功，保存 Token")
+			cfgMu.Lock()
 			cfg.Token = token
 			cfg.RegisterCode = "" // 清除注册码
-			saveConfig(*configFile, cfg)
+			cfgMu.Unlock()
+			saveConfig(*configFile, cfg, &cfgMu)
 
 			// 启动配置拉取
 			if configSyncer != nil {
@@ -96,7 +101,10 @@ func main() {
 	heartbeat.Start()
 
 	// 启动数据上报
-	uploader := reporter.NewUploader(wsClient, time.Duration(cfg.ReportInterval)*time.Second)
+	cfgMu.Lock()
+	reportInterval := time.Duration(cfg.ReportInterval) * time.Second
+	cfgMu.Unlock()
+	uploader := reporter.NewUploader(wsClient, reportInterval)
 	uploader.Start(func() (*sharedmodel.MetricData, error) {
 		return collectAllData(cpuCollector, memCollector, diskCollector, netCollector, sysCollector)
 	})
@@ -104,16 +112,24 @@ func main() {
 	// 启动 Ping 探测 (使用动态间隔)
 	go startPingProbe(wsClient, pingCollector, &pingTargets, &pingTargetsMu, &pingInterval)
 
-	// 启动配置拉取
+	// 启动配置拉取（无条件启动，sync() 内部会检查 Token 是否为空）
+	cfgMu.Lock()
 	configSyncer = config.NewSyncer(cfg.ServerURL, cfg.Token, time.Duration(cfg.ConfigSyncInterval)*time.Second, cfg.InsecureTLS)
-	if cfg.Token != "" {
-		configSyncer.Start()
-	}
+	cfgMu.Unlock()
+	configSyncer.Start()
 
 	log.Printf("Agent 已启动，开始监控")
 
-	// 阻塞主 goroutine
-	select {}
+	// 等待退出信号，优雅关闭
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	sig := <-sigCh
+	log.Printf("收到信号 %v，正在退出...", sig)
+
+	// 停止各组件
+	heartbeat.Stop()
+	uploader.Stop()
+	configSyncer.Stop()
 }
 
 // collectAllData 采集所有监控数据
@@ -222,17 +238,26 @@ func loadConfig(path string) *AgentConfig {
 	return cfg
 }
 
-// saveConfig 保存 YAML 配置文件
-func saveConfig(path string, cfg *AgentConfig) {
+// saveConfig 保存 YAML 配置文件（原子操作：先写临时文件再 rename）
+func saveConfig(path string, cfg *AgentConfig, mu *sync.Mutex) {
+	mu.Lock()
+	defer mu.Unlock()
+
 	data, err := yaml.Marshal(cfg)
 	if err != nil {
 		log.Printf("序列化配置失败: %v", err)
 		return
 	}
 
-	// 保持文件权限 600
-	if err := os.WriteFile(path, data, 0600); err != nil {
+	// 先写入临时文件，再原子替换，避免写入过程中崩溃导致配置文件损坏
+	tmpPath := path + ".tmp"
+	if err := os.WriteFile(tmpPath, data, 0600); err != nil {
 		log.Printf("保存配置文件失败: %v", err)
+		return
+	}
+	if err := os.Rename(tmpPath, path); err != nil {
+		log.Printf("替换配置文件失败: %v", err)
+		os.Remove(tmpPath)
 	}
 }
 

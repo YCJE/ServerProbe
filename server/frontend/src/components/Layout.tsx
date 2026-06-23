@@ -94,7 +94,7 @@ export default function Layout() {
 
       <div className="flex flex-1 overflow-hidden">
         {/* 侧边栏 */}
-        <aside className="hidden w-56 shrink-0 border-r border-border bg-card md:block">
+        <aside className="relative hidden w-56 shrink-0 border-r border-border bg-card md:block">
           <nav className="flex flex-col gap-4 p-3">
             {navGroups.map((group) => (
               <div key={group.title} className="flex flex-col gap-1">

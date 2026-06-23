@@ -311,11 +311,12 @@ func (h *AlertHandler) HandleTestAlert(c *gin.Context) {
 type NotifyHandler struct {
 	repo      *repository.NotifyRepository
 	notifySvc *service.NotifyService
+	alertRepo *repository.AlertRepository
 }
 
 // NewNotifyHandler 创建通知渠道处理器
-func NewNotifyHandler(repo *repository.NotifyRepository, notifySvc *service.NotifyService) *NotifyHandler {
-	return &NotifyHandler{repo: repo, notifySvc: notifySvc}
+func NewNotifyHandler(repo *repository.NotifyRepository, notifySvc *service.NotifyService, alertRepo *repository.AlertRepository) *NotifyHandler {
+	return &NotifyHandler{repo: repo, notifySvc: notifySvc, alertRepo: alertRepo}
 }
 
 // HandleListChannels 获取通知渠道列表
@@ -513,6 +514,19 @@ func (h *NotifyHandler) HandleDeleteChannel(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的渠道 ID"})
 		return
+	}
+
+	// 引用完整性检查: 检查是否有告警规则引用该通知渠道
+	if h.alertRepo != nil {
+		count, err := h.alertRepo.CountByNotifyChannelID(id)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "检查引用关系失败"})
+			return
+		}
+		if count > 0 {
+			c.JSON(http.StatusConflict, gin.H{"error": fmt.Sprintf("该通知渠道被 %d 条告警规则引用，请先解除关联后再删除", count)})
+			return
+		}
 	}
 
 	if err := h.repo.Delete(id); err != nil {

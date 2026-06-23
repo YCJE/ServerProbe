@@ -1,6 +1,7 @@
 package api
 
 import (
+	"log"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -43,6 +44,12 @@ func NewRouter(
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
 
+	// 不信任任何代理，防止通过 X-Forwarded-For 等 header 伪造 IP 绕过登录限速
+	// ClientIP() 将始终返回直接连接的 RemoteAddr
+	if err := r.SetTrustedProxies(nil); err != nil {
+		log.Printf("警告: 设置信任代理失败: %v", err)
+	}
+
 	middleware := NewMiddleware(jwtManager)
 	r.Use(middleware.SecurityHeaders())
 	r.Use(middleware.CORS())
@@ -56,7 +63,7 @@ func NewRouter(
 	dashboardWSHandler := NewDashboardWSHandler(monitor, jwtManager)
 	pingTargetHandler := NewPingTargetHandler(pingTargetRepo, configSync, monitor)
 	alertHandler := NewAlertHandler(alertRepo, notifyRepo, alertEngine)
-	notifyHandler := NewNotifyHandler(notifyRepo, notifySvc)
+	notifyHandler := NewNotifyHandler(notifyRepo, notifySvc, alertRepo)
 
 	// 健康检查
 	r.GET("/api/v1/health", func(c *gin.Context) {
@@ -80,7 +87,7 @@ func NewRouter(
 		{
 			public.GET("/servers", serverHandler.HandlePublicServers)
 			public.GET("/dashboard", serverHandler.HandlePublicDashboard)
-			public.GET("/servers/:id/history", serverHandler.HandleGetServerHistory)
+			public.GET("/servers/:id/history", serverHandler.HandlePublicServerHistory)
 		}
 
 		// 公开仪表盘 WebSocket（无需登录）

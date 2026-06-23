@@ -96,13 +96,21 @@ func (h *DashboardWSHandler) HandleDashboardWS(c *gin.Context) {
 		return nil
 	})
 
-	// 启动 ping 协程，保持连接活跃
+	// 启动 ping 协程，保持连接活跃 (使用 done channel 避免泄漏)
 	pingTicker := time.NewTicker(30 * time.Second)
 	defer pingTicker.Stop()
 
+	// doneRead 由读取协程控制，donePing 由 ping 协程使用
+	donePing := make(chan struct{})
+
 	go func() {
-		for range pingTicker.C {
-			if err := ws.writeMessage(websocket.PingMessage, nil); err != nil {
+		for {
+			select {
+			case <-pingTicker.C:
+				if err := ws.writeMessage(websocket.PingMessage, nil); err != nil {
+					return
+				}
+			case <-donePing:
 				return
 			}
 		}
@@ -125,6 +133,7 @@ func (h *DashboardWSHandler) HandleDashboardWS(c *gin.Context) {
 
 	// 立即推送一次数据
 	if !h.pushDashboardData(ws) {
+		close(donePing)
 		return
 	}
 
@@ -132,9 +141,11 @@ func (h *DashboardWSHandler) HandleDashboardWS(c *gin.Context) {
 		select {
 		case <-done:
 			// 客户端已断开
+			close(donePing)
 			return
 		case <-ticker.C:
 			if !h.pushDashboardData(ws) {
+				close(donePing)
 				return
 			}
 		}

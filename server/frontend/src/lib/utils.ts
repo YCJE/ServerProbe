@@ -66,12 +66,12 @@ export function getLossColor(loss: number): string {
 
 /** 格式化延迟 */
 export function formatLatency(latency: number): string {
-  if (latency == null || latency < 0) return '---'
+  if (latency == null || isNaN(latency) || latency < 0) return '---'
   return `${latency.toFixed(1)} ms`
 }
 
 /** 格式化丢包率 */
 export function formatLoss(loss: number): string {
-  if (loss == null || loss < 0) return '---'
+  if (loss == null || isNaN(loss) || loss < 0) return '---'
   return `${loss.toFixed(1)}%`
 }

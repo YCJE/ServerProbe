@@ -24,6 +24,16 @@ func (r *AgentRepository) Create(agent *model.Agent) error {
 	return r.db.Create(agent).Error
 }
 
+// CreateTx 在事务内创建 Agent
+func (r *AgentRepository) CreateTx(tx *gorm.DB, agent *model.Agent) error {
+	return tx.Create(agent).Error
+}
+
+// UpdateTx 在事务内更新 Agent 信息
+func (r *AgentRepository) UpdateTx(tx *gorm.DB, agent *model.Agent) error {
+	return tx.Save(agent).Error
+}
+
 // GetByID 根据 ID 获取 Agent
 func (r *AgentRepository) GetByID(id int64) (*model.Agent, error) {
 	var agent model.Agent
@@ -149,6 +159,41 @@ func (r *RegisterCodeRepository) MarkUsed(code string, agentID int64) error {
 		return fmt.Errorf("注册码不存在或已被使用")
 	}
 	return nil
+}
+
+// MarkUsedTx 在事务内原子标记注册码已使用 (WHERE used = false)
+// 成功返回 nil 表示当前请求赢得了竞争；返回错误表示注册码不存在或已被使用
+func (r *RegisterCodeRepository) MarkUsedTx(tx *gorm.DB, code string, agentID int64) error {
+	result := tx.Model(&model.RegisterCode{}).
+		Where("code = ? AND used = ?", code, false).
+		Updates(map[string]interface{}{
+			"used":            true,
+			"used_by_agent_id": agentID,
+		})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return fmt.Errorf("注册码不存在或已被使用")
+	}
+	return nil
+}
+
+// UpdateUsedByAgentIDTx 在事务内更新注册码的 used_by_agent_id 字段
+// 用于在创建 Agent 后回填 agent ID（注册码此时已标记为 used）
+func (r *RegisterCodeRepository) UpdateUsedByAgentIDTx(tx *gorm.DB, code string, agentID int64) error {
+	return tx.Model(&model.RegisterCode{}).
+		Where("code = ?", code).
+		Update("used_by_agent_id", agentID).Error
+}
+
+// GetByCodeTx 在事务内根据注册码获取
+func (r *RegisterCodeRepository) GetByCodeTx(tx *gorm.DB, code string) (*model.RegisterCode, error) {
+	var rc model.RegisterCode
+	if err := tx.Where("code = ?", code).First(&rc).Error; err != nil {
+		return nil, err
+	}
+	return &rc, nil
 }
 
 // DeleteExpired 删除过期的注册码

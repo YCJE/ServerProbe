@@ -138,6 +138,6 @@ function formatSpeedShort(bytesPerSec: number): string {
   if (bytesPerSec === 0 || bytesPerSec == null) return '0 B/s'
   const k = 1024
   const sizes = ['B/s', 'KB/s', 'MB/s', 'GB/s']
-  const i = Math.floor(Math.log(bytesPerSec) / Math.log(k))
+  const i = Math.min(Math.floor(Math.log(bytesPerSec) / Math.log(k)), sizes.length - 1)
   return `${parseFloat((bytesPerSec / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`
 }

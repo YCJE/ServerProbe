@@ -489,9 +489,9 @@ export default function ServerDetail() {
           <h2 className="mb-3 text-sm font-semibold text-foreground">三网延迟详情</h2>
           {displayServer.ping_data && displayServer.ping_data.length > 0 ? (
             <div className="space-y-2">
-              {displayServer.ping_data.map((ping: PingResult, idx: number) => (
+              {displayServer.ping_data.map((ping: PingResult) => (
                 <div
-                  key={idx}
+                  key={ping.name}
                   className="flex items-center justify-between rounded-lg bg-secondary/50 px-3 py-2"
                 >
                   <div className="flex items-center gap-2">
