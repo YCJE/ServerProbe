@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -188,6 +189,13 @@ func (h *AgentHandler) HandleWebSocket(c *gin.Context) {
 //   1. 新 Agent 注册: 消息携带 Code (注册码)，无 Token
 //   2. 已有 Agent 会话恢复: 消息携带 Token，无 Code (Server 重启后 Agent 重连)
 func (h *AgentHandler) handleRegister(ws *agentWSConn, msg *sharedmodel.WSMessage, agentID *int64, registered *bool) {
+	// 忽略重复注册消息: Agent 已注册后再次发送 Register 时，
+	// 直接忽略，避免 RegisterConnection 检测到旧连接(自身)并关闭
+	if *registered {
+		log.Printf("Agent %d 重复发送注册消息，已忽略", *agentID)
+		return
+	}
+
 	// 场景 2: Token-based 会话恢复（Agent 重连）
 	if msg.Token != "" {
 		agent, err := h.registry.ValidateToken(msg.Token)
@@ -475,8 +483,8 @@ func (h *AgentHandler) HandleGetAgentConfig(c *gin.Context) {
 	// 优先从 Authorization header 获取 Token，兼容 query 参数
 	token := ""
 	authHeader := c.GetHeader("Authorization")
-	if len(authHeader) > 7 && authHeader[:7] == "Bearer " {
-		token = authHeader[7:]
+	if strings.HasPrefix(authHeader, "Bearer ") {
+		token = strings.TrimPrefix(authHeader, "Bearer ")
 	}
 	if token == "" {
 		token = c.Query("token")

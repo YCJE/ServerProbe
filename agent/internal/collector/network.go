@@ -169,6 +169,11 @@ func countConnections(data string) int {
 
 // parseUint 解析无符号整数
 func parseUint(s string) (uint64, error) {
+	// 空字符串不进入下方循环，会直接返回 (0, nil)，掩盖格式错误，
+	// 因此在此显式拦截
+	if s == "" {
+		return 0, fmt.Errorf("空字符串不是有效的无符号整数")
+	}
 	var result uint64
 	for _, c := range s {
 		if c < '0' || c > '9' {

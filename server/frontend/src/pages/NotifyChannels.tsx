@@ -197,6 +197,13 @@ export default function NotifyChannels() {
         return '发件人邮箱格式无效'
       }
       if (!form.email.to.trim()) return '请输入收件人邮箱'
+      // 收件人支持多个邮箱（逗号分隔），逐个校验格式
+      const toEmails = form.email.to.split(',').map((e) => e.trim()).filter(Boolean)
+      for (const email of toEmails) {
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+          return `收件人邮箱格式无效: ${email}`
+        }
+      }
       if (editingId === null && !form.email.password.trim()) return '请输入邮箱密码'
     }
     return ''

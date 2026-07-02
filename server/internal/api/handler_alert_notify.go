@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 
@@ -305,7 +306,8 @@ func (h *AlertHandler) HandleTestAlert(c *gin.Context) {
 	}
 
 	if err := h.engine.SendTestNotification(rule); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "测试通知发送失败: " + err.Error()})
+		log.Printf("测试通知发送失败: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "测试通知发送失败"})
 		return
 	}
 
@@ -558,7 +560,8 @@ func (h *NotifyHandler) HandleTestChannel(c *gin.Context) {
 	}
 
 	if err := h.notifySvc.TestChannel(id); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "测试通知发送失败: " + err.Error()})
+		log.Printf("测试通知发送失败: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "测试通知发送失败"})
 		return
 	}
 

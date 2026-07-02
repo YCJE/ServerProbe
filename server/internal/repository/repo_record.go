@@ -2,6 +2,7 @@ package repository
 
 import (
 	"fmt"
+	"log"
 	"time"
 
 	"gorm.io/gorm"
@@ -69,11 +70,18 @@ func (r *RecordRepository) CleanupExpired(retentionDays int) (int64, error) {
 }
 
 // GetDBSize 获取数据库文件大小 (字节)
+// 查询失败时返回 -1 并记录日志
 func (r *RecordRepository) GetDBSize() int64 {
 	var page_count int64
-	r.db.Raw("PRAGMA page_count").Scan(&page_count)
+	if err := r.db.Raw("PRAGMA page_count").Scan(&page_count).Error; err != nil {
+		log.Printf("查询 page_count 失败: %v", err)
+		return -1
+	}
 	var page_size int64
-	r.db.Raw("PRAGMA page_size").Scan(&page_size)
+	if err := r.db.Raw("PRAGMA page_size").Scan(&page_size).Error; err != nil {
+		log.Printf("查询 page_size 失败: %v", err)
+		return -1
+	}
 	return page_count * page_size
 }
 
@@ -90,6 +98,24 @@ func NewAdminRepository(db *gorm.DB) *AdminRepository {
 // Create 创建管理员
 func (r *AdminRepository) Create(admin *model.Admin) error {
 	return r.db.Create(admin).Error
+}
+
+// ErrAdminAlreadyExists 管理员账户已存在
+var ErrAdminAlreadyExists = fmt.Errorf("管理员账户已存在")
+
+// CreateFirstAdmin 在事务内检查是否已有管理员，若无则创建
+// 防止 TOCTOU 竞态条件导致创建多个管理员
+func (r *AdminRepository) CreateFirstAdmin(admin *model.Admin) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		var count int64
+		if err := tx.Model(&model.Admin{}).Count(&count).Error; err != nil {
+			return err
+		}
+		if count > 0 {
+			return ErrAdminAlreadyExists
+		}
+		return tx.Create(admin).Error
+	})
 }
 
 // GetByUsername 根据用户名获取管理员

@@ -71,6 +71,7 @@ export default function PublicServerDetail() {
 
   const [history, setHistory] = useState<LocalRealtimePoint[]>([])
   const [loading, setLoading] = useState(true)
+  const [fetchError, setFetchError] = useState('')
   const [timeRange, setTimeRange] = useState<TimeRange>('1h')
   const [historyData, setHistoryData] = useState<HistoryData | null>(null)
   const [historyLoading, setHistoryLoading] = useState(false)
@@ -83,14 +84,6 @@ export default function PublicServerDetail() {
 
   // 跟踪历史数据请求 ID，防止快速切换时间范围时旧请求覆盖新数据
   const historyRequestIdRef = useRef(0)
-
-  // 跟踪 loading 超时定时器，组件卸载时清理
-  const loadingTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
-  useEffect(() => {
-    return () => {
-      if (loadingTimeoutRef.current) clearTimeout(loadingTimeoutRef.current)
-    }
-  }, [])
 
   // 切换服务器时清除历史数据，防止图表数据混合
   useEffect(() => {
@@ -113,6 +106,7 @@ export default function PublicServerDetail() {
   useEffect(() => {
     if (servers.length === 0) {
       setLoading(true)
+      setFetchError('')
       getPublicServers()
         .then((res) => {
           if (!mountedRef.current) return
@@ -150,13 +144,9 @@ export default function PublicServerDetail() {
           }
         })
         .catch(() => {
-          if (mountedRef.current) setLoading(false)
-        })
-        .finally(() => {
           if (mountedRef.current) {
-            loadingTimeoutRef.current = setTimeout(() => {
-              if (mountedRef.current) setLoading(false)
-            }, 5000)
+            setFetchError('加载服务器数据失败，请稍后重试')
+            setLoading(false)
           }
         })
     } else {
@@ -317,7 +307,9 @@ export default function PublicServerDetail() {
   if (!displayServer) {
     return (
       <div className="flex flex-col items-center justify-center py-16">
-        <p className="text-sm text-muted-foreground">服务器不存在或未上线</p>
+        <p className="text-sm text-muted-foreground">
+          {fetchError || '服务器不存在或未上线'}
+        </p>
         <button
           onClick={() => navigate('/')}
           className="mt-3 rounded-lg bg-primary px-4 py-2 text-sm text-primary-foreground hover:bg-primary/90"

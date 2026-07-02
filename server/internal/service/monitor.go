@@ -180,6 +180,9 @@ func (m *MonitorService) UnregisterAgent(agentID int64) {
 	// 删除 ringBuffer
 	delete(m.ringBuffers, agentID)
 
+	// 清理 lastDBUpdate 记录，防止内存泄漏
+	delete(m.lastDBUpdate, agentID)
+
 	// 更新数据库在线状态
 	_ = m.agentRepo.UpdateOnlineStatus(agentID, false)
 
@@ -343,18 +346,28 @@ func (m *MonitorService) GetAllAgentIDs() []int64 {
 // CheckHeartbeatTimeout 检查心跳超时
 func (m *MonitorService) CheckHeartbeatTimeout(timeout time.Duration) {
 	m.mu.Lock()
-	defer m.mu.Unlock()
 
 	now := time.Now()
+	// 先在锁内收集超时 Agent ID 列表、关闭连接并清理 map 条目
+	var timedOut []int64
 	for agentID, conn := range m.connections {
 		if now.Sub(conn.LastSeen) > timeout {
 			log.Printf("Agent %d 心跳超时，断开连接", agentID)
 			conn.Conn.Close()
 			delete(m.connections, agentID)
-			_ = m.agentRepo.UpdateOnlineStatus(agentID, false)
-			// 更新 last_seen 时间戳（标记离线）
-			_ = m.agentRepo.UpdateLastSeen(agentID, false)
+			// 清理 lastDBUpdate 记录，防止内存泄漏
+			delete(m.lastDBUpdate, agentID)
+			timedOut = append(timedOut, agentID)
 		}
+	}
+
+	m.mu.Unlock()
+
+	// 在锁外执行数据库写入，避免持锁阻塞监控服务
+	for _, agentID := range timedOut {
+		_ = m.agentRepo.UpdateOnlineStatus(agentID, false)
+		// 更新 last_seen 时间戳（标记离线）
+		_ = m.agentRepo.UpdateLastSeen(agentID, false)
 	}
 }
 

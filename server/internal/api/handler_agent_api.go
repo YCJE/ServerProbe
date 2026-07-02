@@ -141,14 +141,9 @@ func (h *AgentAPIHandler) HandleDeleteAgent(c *gin.Context) {
 		h.engine.CleanupStatesForAgent(agentID)
 	}
 
-	// 删除关联的历史聚合数据 (metric_records)
-	if h.recordRepo != nil {
-		if err := h.recordRepo.DeleteByAgentID(agentID); err != nil {
-			log.Printf("删除 Agent %d 历史数据失败: %v", agentID, err)
-		}
-	}
-
-	if err := h.agentRepo.Delete(agentID); err != nil {
+	// 删除关联的历史聚合数据和 Agent 记录 (使用事务确保原子性)
+	if err := h.agentRepo.DeleteWithRecordsTx(agentID); err != nil {
+		log.Printf("删除 Agent %d 及其历史数据失败: %v", agentID, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "删除 Agent 失败"})
 		return
 	}

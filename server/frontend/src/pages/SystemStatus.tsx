@@ -78,7 +78,6 @@ export default function SystemStatus() {
 
   const loadStatus = useCallback(async () => {
     if (!mountedRef.current) return
-    if (document.hidden) return
     setLoading(true)
     try {
       const data = await getSystemStatus()
@@ -100,11 +99,14 @@ export default function SystemStatus() {
 
   useEffect(() => {
     loadStatus()
-    const interval = setInterval(loadStatus, 5000)
-    // 标签页重新可见时立即刷新一次
+    let interval = setInterval(loadStatus, 5000)
+    // 标签页隐藏时暂停轮询定时器，恢复可见时立即刷新并恢复轮询
     const handleVisibilityChange = () => {
-      if (!document.hidden && mountedRef.current) {
+      if (document.hidden) {
+        clearInterval(interval)
+      } else if (mountedRef.current) {
         loadStatus()
+        interval = setInterval(loadStatus, 5000)
       }
     }
     document.addEventListener('visibilitychange', handleVisibilityChange)

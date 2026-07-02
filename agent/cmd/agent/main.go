@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -138,6 +139,7 @@ func main() {
 }
 
 // collectAllData 采集所有监控数据
+// 各采集器独立采集：单个采集器失败不影响其他指标，只要有一项成功就上报数据
 func collectAllData(
 	cpu *collector.CPUCollector,
 	mem *collector.MemoryCollector,
@@ -145,71 +147,82 @@ func collectAllData(
 	net *collector.NetworkCollector,
 	sys *collector.SystemCollector,
 ) (*sharedmodel.MetricData, error) {
+	var (
+		data    sharedmodel.MetricData
+		errs    []string
+		success int
+	)
+
 	// 采集 CPU
-	cpuResult, err := cpu.Collect()
-	if err != nil {
-		return nil, err
-	}
-	cpuInfo, ok := cpuResult.(sharedmodel.CPUInfo)
-	if !ok {
-		return nil, fmt.Errorf("CPU 采集器返回类型错误: %T", cpuResult)
+	if cpuResult, err := cpu.Collect(); err != nil {
+		errs = append(errs, fmt.Sprintf("CPU: %v", err))
+	} else if cpuInfo, ok := cpuResult.(sharedmodel.CPUInfo); !ok {
+		errs = append(errs, fmt.Sprintf("CPU 采集器返回类型错误: %T", cpuResult))
+	} else {
+		data.CPU = cpuInfo
+		success++
 	}
 
 	// 采集内存
-	memResult, err := mem.Collect()
-	if err != nil {
-		return nil, err
-	}
-	memInfo, ok := memResult.(sharedmodel.MemoryInfo)
-	if !ok {
-		return nil, fmt.Errorf("Memory 采集器返回类型错误: %T", memResult)
+	if memResult, err := mem.Collect(); err != nil {
+		errs = append(errs, fmt.Sprintf("Memory: %v", err))
+	} else if memInfo, ok := memResult.(sharedmodel.MemoryInfo); !ok {
+		errs = append(errs, fmt.Sprintf("Memory 采集器返回类型错误: %T", memResult))
+	} else {
+		data.Memory = memInfo
+		success++
 	}
 
 	// 采集磁盘
-	diskResult, err := disk.Collect()
-	if err != nil {
-		return nil, err
-	}
-	diskInfo, ok := diskResult.([]sharedmodel.DiskInfo)
-	if !ok {
-		return nil, fmt.Errorf("Disk 采集器返回类型错误: %T", diskResult)
+	if diskResult, err := disk.Collect(); err != nil {
+		errs = append(errs, fmt.Sprintf("Disk: %v", err))
+	} else if diskInfo, ok := diskResult.([]sharedmodel.DiskInfo); !ok {
+		errs = append(errs, fmt.Sprintf("Disk 采集器返回类型错误: %T", diskResult))
+	} else {
+		data.Disks = diskInfo
+		success++
 	}
 
 	// 采集网络
-	netResult, err := net.Collect()
-	if err != nil {
-		return nil, err
-	}
-	netInfo, ok := netResult.(sharedmodel.NetworkInfo)
-	if !ok {
-		return nil, fmt.Errorf("Network 采集器返回类型错误: %T", netResult)
+	if netResult, err := net.Collect(); err != nil {
+		errs = append(errs, fmt.Sprintf("Network: %v", err))
+	} else if netInfo, ok := netResult.(sharedmodel.NetworkInfo); !ok {
+		errs = append(errs, fmt.Sprintf("Network 采集器返回类型错误: %T", netResult))
+	} else {
+		data.Network = netInfo
+		success++
 	}
 
 	// 采集系统信息
-	sysResult, err := sys.Collect()
-	if err != nil {
-		return nil, err
+	if sysResult, err := sys.Collect(); err != nil {
+		errs = append(errs, fmt.Sprintf("System: %v", err))
+	} else if sysInfo, ok := sysResult.(sharedmodel.SystemInfo); !ok {
+		errs = append(errs, fmt.Sprintf("System 采集器返回类型错误: %T", sysResult))
+	} else {
+		data.System = sysInfo
+		success++
 	}
-	sysInfo, ok := sysResult.(sharedmodel.SystemInfo)
-	if !ok {
-		return nil, fmt.Errorf("System 采集器返回类型错误: %T", sysResult)
+
+	// 采集运行时间（失败不影响整体上报）
+	if uptime, err := sys.CollectUptime(); err == nil {
+		data.Uptime = uptime
 	}
 
-	// 采集运行时间
-	uptime, _ := sys.CollectUptime()
+	// 采集进程数（失败不影响整体上报）
+	if processCount, err := sys.CollectProcessCount(); err == nil {
+		data.ProcessCount = processCount
+	}
 
-	// 采集进程数
-	processCount, _ := sys.CollectProcessCount()
+	// 所有采集器均失败才放弃本轮上报
+	if success == 0 {
+		return nil, fmt.Errorf("所有采集器均失败: %s", strings.Join(errs, "; "))
+	}
 
-	return &sharedmodel.MetricData{
-		CPU:          cpuInfo,
-		Memory:       memInfo,
-		Disks:        diskInfo,
-		Network:      netInfo,
-		Uptime:       uptime,
-		ProcessCount: processCount,
-		System:       sysInfo,
-	}, nil
+	if len(errs) > 0 {
+		log.Printf("部分采集器失败（仍上报已成功的数据）: %s", strings.Join(errs, "; "))
+	}
+
+	return &data, nil
 }
 
 // loadConfig 加载 YAML 配置文件

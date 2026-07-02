@@ -157,8 +157,8 @@ export default function AlertManagement() {
       setFormError('阈值必须在 0-100 之间')
       return
     }
-    if (form.duration < 1) {
-      setFormError('持续时间必须大于等于 1 秒')
+    if (form.duration < 1 || form.duration > 86400) {
+      setFormError('持续时间必须在 1-86400 秒之间（最长 1 天）')
       return
     }
 

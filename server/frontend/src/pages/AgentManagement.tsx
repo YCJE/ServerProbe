@@ -190,7 +190,11 @@ export default function AgentManagement() {
     try {
       await navigator.clipboard.writeText(text)
       setCopied(id)
-      const t = setTimeout(() => setCopied(null), 2000)
+      const t = setTimeout(() => {
+        setCopied(null)
+        // 超时执行后从数组中移除自身，避免过期 ID 无限累积
+        timeoutRefs.current = timeoutRefs.current.filter((ref) => ref !== t)
+      }, 2000)
       timeoutRefs.current.push(t)
     } catch {
       // 降级方案
@@ -201,7 +205,11 @@ export default function AgentManagement() {
       document.execCommand('copy')
       document.body.removeChild(textarea)
       setCopied(id)
-      const t = setTimeout(() => setCopied(null), 2000)
+      const t = setTimeout(() => {
+        setCopied(null)
+        // 超时执行后从数组中移除自身，避免过期 ID 无限累积
+        timeoutRefs.current = timeoutRefs.current.filter((ref) => ref !== t)
+      }, 2000)
       timeoutRefs.current.push(t)
     }
   }

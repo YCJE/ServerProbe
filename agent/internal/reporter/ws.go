@@ -25,9 +25,11 @@ type WSClient struct {
 	fingerprint  string // 主机指纹 (缓存)
 
 	conn      *websocket.Conn
-	mu        sync.Mutex
+	mu        sync.Mutex    // 连接状态锁（保护 conn/connected/token 等状态字段）
+	writeMu   sync.Mutex    // 写入锁，仅保护 WriteJSON，避免写超时阻塞 Stop()
 	connected bool
 	stopCh    chan struct{} // 通知 Run() 退出
+	stopOnce  sync.Once     // 保证 stopCh 只被关闭一次，避免并发 Stop panic
 
 	// 回调函数
 	onRegisterOK   func(token string)
@@ -42,7 +44,8 @@ type WSClient struct {
 // NewWSClient 创建 WebSocket 客户端
 func NewWSClient(serverURL, token, registerCode string, insecureTLS bool) *WSClient {
 	return &WSClient{
-		serverURL:            serverURL,
+		// 规范化 serverURL，去除尾斜杠以避免拼接出双斜杠 URL（如 https://host//api/...）
+		serverURL:            strings.TrimRight(serverURL, "/"),
 		token:                token,
 		registerCode:         registerCode,
 		insecureTLS:          insecureTLS,
@@ -54,12 +57,10 @@ func NewWSClient(serverURL, token, registerCode string, insecureTLS bool) *WSCli
 
 // Stop 停止 WebSocket 客户端，优雅关闭连接
 func (c *WSClient) Stop() {
-	select {
-	case <-c.stopCh:
-		// 已经关闭
-	default:
-		close(c.stopCh)
-	}
+	// 使用 sync.Once 保证 stopCh 只被关闭一次，避免 check-then-close 反模式导致的并发 panic
+	c.stopOnce.Do(func() { close(c.stopCh) })
+	// 仅持有连接状态锁来关闭 conn，不持有 writeMu：
+	// 这样正在进行的 WriteJSON 会被 conn.Close() 中断，而不会阻塞 Stop() 最长 10s
 	c.mu.Lock()
 	c.connected = false
 	if c.conn != nil {
@@ -132,6 +133,15 @@ func (c *WSClient) Connect() error {
 	// 设置读取大小限制，防止恶意 Server 发送超大消息导致内存耗尽
 	conn.SetReadLimit(1024 * 1024) // 1MB
 
+	// dial 成功后、设置 c.conn 之前检查 stopCh：拨号最长 10s，期间若 Stop() 已被调用，
+	// 立即关闭新连接并返回错误，避免连接泄漏（连接被建立却永不关闭）
+	select {
+	case <-c.stopCh:
+		conn.Close()
+		return fmt.Errorf("客户端已停止，丢弃新建立的连接")
+	default:
+	}
+
 	c.mu.Lock()
 	c.conn = conn
 	c.reconnectAttempts = 0
@@ -166,6 +176,18 @@ func (c *WSClient) Connect() error {
 		return fmt.Errorf("安全错误：缺少 Token 和注册码，无法建立认证连接")
 	}
 
+	// 认证（resumeSession/register）成功后、标记 connected=true 之前再次检查 stopCh：
+	// 认证最长 30s，期间若 Stop() 被调用，需关闭已认证连接避免泄漏
+	select {
+	case <-c.stopCh:
+		c.mu.Lock()
+		c.conn = nil
+		c.mu.Unlock()
+		conn.Close()
+		return fmt.Errorf("客户端已停止，丢弃已完成认证的连接")
+	default:
+	}
+
 	// 会话初始化成功后才标记为已连接
 	c.mu.Lock()
 	c.connected = true
@@ -193,22 +215,21 @@ func (c *WSClient) register() error {
 		c.mu.Unlock()
 		return fmt.Errorf("连接已关闭")
 	}
-	c.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
-	err := c.conn.WriteJSON(msg)
+	conn := c.conn
 	c.mu.Unlock()
+
+	// 写入操作使用独立的 writeMu，与连接状态锁分离，
+	// 避免 WriteJSON 写超时（最长 10s）期间阻塞 Stop() 和其他发送方
+	c.writeMu.Lock()
+	conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+	err := conn.WriteJSON(msg)
+	c.writeMu.Unlock()
 
 	if err != nil {
 		return fmt.Errorf("发送注册消息失败: %w", err)
 	}
 
-	// 等待注册响应
-	c.mu.Lock()
-	conn := c.conn
-	c.mu.Unlock()
-
-	if conn == nil {
-		return fmt.Errorf("连接已关闭")
-	}
+	// 等待注册响应（gorilla/websocket 允许并发读/写，读取无需 writeMu）
 	conn.SetReadDeadline(time.Now().Add(30 * time.Second))
 	_, message, err := conn.ReadMessage()
 	if err != nil {
@@ -262,22 +283,21 @@ func (c *WSClient) resumeSession() error {
 		c.mu.Unlock()
 		return fmt.Errorf("连接已关闭")
 	}
-	c.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
-	err := c.conn.WriteJSON(msg)
+	conn := c.conn
 	c.mu.Unlock()
+
+	// 写入操作使用独立的 writeMu，与连接状态锁分离，
+	// 避免 WriteJSON 写超时（最长 10s）期间阻塞 Stop() 和其他发送方
+	c.writeMu.Lock()
+	conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+	err := conn.WriteJSON(msg)
+	c.writeMu.Unlock()
 
 	if err != nil {
 		return fmt.Errorf("发送会话恢复消息失败: %w", err)
 	}
 
-	// 等待响应
-	c.mu.Lock()
-	conn := c.conn
-	c.mu.Unlock()
-
-	if conn == nil {
-		return fmt.Errorf("连接已关闭")
-	}
+	// 等待响应（gorilla/websocket 允许并发读/写，读取无需 writeMu）
 	conn.SetReadDeadline(time.Now().Add(30 * time.Second))
 	_, message, err := conn.ReadMessage()
 	if err != nil {
@@ -319,6 +339,13 @@ func (c *WSClient) Run() {
 		c.mu.Unlock()
 
 		if conn == nil {
+			// 重连前再次检查 stopCh，避免 Stop() 后仍触发重连拨号
+			select {
+			case <-c.stopCh:
+				log.Printf("WebSocket 客户端已停止")
+				return
+			default:
+			}
 			// 重连
 			if err := c.reconnect(); err != nil {
 				log.Printf("重连失败: %v", err)
@@ -392,17 +419,27 @@ func (c *WSClient) handleMessage(msg *sharedmodel.WSMessage) {
 
 // SendMessage 发送消息
 func (c *WSClient) SendMessage(msg *sharedmodel.WSMessage) error {
+	// 仅短暂持有连接状态锁获取 conn 引用与状态，避免 WriteJSON 期间长时间阻塞 Stop()
 	c.mu.Lock()
-	defer c.mu.Unlock()
+	conn := c.conn
+	connected := c.connected
+	token := c.token
+	c.mu.Unlock()
 
-	if c.conn == nil || !c.connected {
+	if conn == nil || !connected {
 		return fmt.Errorf("未连接")
 	}
 
-	msg.Token = c.token
-	c.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
-	defer c.conn.SetWriteDeadline(time.Time{})
-	return c.conn.WriteJSON(msg)
+	msg.Token = token
+
+	// 写入操作由 writeMu 保护，与连接状态锁分离；
+	// Stop() 可同时关闭 conn 中断阻塞中的写操作，从而不会等待写超时
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
+
+	conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+	defer conn.SetWriteDeadline(time.Time{})
+	return conn.WriteJSON(msg)
 }
 
 // SendHeartbeat 发送心跳

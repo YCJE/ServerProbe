@@ -30,7 +30,6 @@ const (
 // PingCollector Ping 探测采集器
 type PingCollector struct {
 	method         PingMethod
-	detectedOnce   bool
 	detectedMethod PingMethod
 	detectOnce     sync.Once
 	insecureTLS    bool
@@ -103,6 +102,8 @@ func (c *PingCollector) pingTarget(target sharedmodel.PingTarget) sharedmodel.Pi
 		switch strings.ToLower(target.Method) {
 		case "icmp":
 			method = PingMethodICMP
+		case "icmp_unprivileged":
+			method = PingMethodICMPUnprivileged
 		case "tcp":
 			method = PingMethodTCP
 		case "http":
@@ -133,7 +134,6 @@ func (c *PingCollector) detectBestMethod() PingMethod {
 		// 如果配置指定了明确的方法，直接使用
 		if c.method != PingMethodAuto {
 			c.detectedMethod = c.method
-			c.detectedOnce = true
 			return
 		}
 		// 自动检测
@@ -144,7 +144,6 @@ func (c *PingCollector) detectBestMethod() PingMethod {
 		} else {
 			c.detectedMethod = PingMethodTCP
 		}
-		c.detectedOnce = true
 	})
 	return c.detectedMethod
 }
@@ -326,10 +325,14 @@ func (c *PingCollector) doHTTPPing(result *sharedmodel.PingResult, target string
 		return
 	}
 
-	// 构建 URL scheme
-	scheme := "http"
-	if parsed.port == "443" || strings.Contains(target, "https://") {
-		scheme = "https"
+	// 构建 URL scheme：优先使用 parseURL 解析出的 scheme，
+	// 修复 example.com:8443（带 https://）等非标准端口被误判为 http 的问题
+	scheme := parsed.scheme
+	if scheme == "" {
+		scheme = "http"
+		if parsed.port == "443" {
+			scheme = "https"
+		}
 	}
 
 	count := 50
@@ -386,8 +389,11 @@ func (c *PingCollector) doHTTPPing(result *sharedmodel.PingResult, target string
 
 		if err == nil {
 			resp.Body.Close()
-			successCount++
-			latencies = append(latencies, float64(elapsed.Microseconds())/1000.0)
+			// 仅 2xx/3xx 视为成功，4xx/5xx 计为失败
+			if resp.StatusCode >= 200 && resp.StatusCode < 400 {
+				successCount++
+				latencies = append(latencies, float64(elapsed.Microseconds())/1000.0)
+			}
 		}
 
 		if i < count-1 {
@@ -438,20 +444,30 @@ func (c *PingCollector) doHTTPPing(result *sharedmodel.PingResult, target string
 
 // parsedURL 解析后的 URL
 type parsedURL struct {
-	host string
-	port string
+	scheme string
+	host   string
+	port   string
 }
 
 // parseURL 解析 URL（使用 net/url 标准库，支持 IPv6）
 func parseURL(rawURL string) (*parsedURL, error) {
+	// 记录原始输入是否带有 scheme，用于决定最终保留的 scheme
+	hadScheme := strings.Contains(rawURL, "://")
 	// 如果没有 scheme，添加临时的 http:// 以便 url.Parse 正确解析主机和端口
-	if !strings.Contains(rawURL, "://") {
+	if !hadScheme {
 		rawURL = "http://" + rawURL
 	}
 
 	u, err := url.Parse(rawURL)
 	if err != nil {
 		return nil, err
+	}
+
+	// 保留 url.Parse 解析出的 scheme（仅当原始输入确实带 scheme 时才信任），
+	// 避免非标准端口（如 example.com:8443 带 https://）被误判为 http
+	scheme := u.Scheme
+	if scheme == "" || !hadScheme {
+		scheme = "http"
 	}
 
 	host := u.Hostname()
@@ -461,14 +477,14 @@ func parseURL(rawURL string) (*parsedURL, error) {
 
 	port := u.Port()
 	if port == "" {
-		if u.Scheme == "https" {
+		if scheme == "https" {
 			port = "443"
 		} else {
 			port = "80"
 		}
 	}
 
-	return &parsedURL{host: host, port: port}, nil
+	return &parsedURL{scheme: scheme, host: host, port: port}, nil
 }
 
 // canPrivilegedICMP 检查是否可以使用 privileged ICMP

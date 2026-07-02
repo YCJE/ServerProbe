@@ -104,6 +104,22 @@ func (r *AgentRepository) Delete(id int64) error {
 	return r.db.Delete(&model.Agent{}, id).Error
 }
 
+// DeleteWithRecordsTx 在事务内同时删除 Agent 的历史聚合数据和 Agent 记录
+// 确保删除操作的原子性，避免部分失败导致数据不一致
+func (r *AgentRepository) DeleteWithRecordsTx(agentID int64) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		// 先删除关联的历史聚合数据 (metric_records)
+		if err := tx.Where("agent_id = ?", agentID).Delete(&model.MetricRecord{}).Error; err != nil {
+			return err
+		}
+		// 再删除 Agent 记录
+		if err := tx.Delete(&model.Agent{}, agentID).Error; err != nil {
+			return err
+		}
+		return nil
+	})
+}
+
 // RegisterCodeRepository 注册码 CRUD
 type RegisterCodeRepository struct {
 	db *gorm.DB

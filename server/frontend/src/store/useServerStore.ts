@@ -98,8 +98,12 @@ function applyTheme(theme: Theme): void {
 
 /** 从 localStorage 加载主题 */
 function loadTheme(): Theme {
-  const stored = localStorage.getItem('probe_theme') as Theme | null
-  return stored || 'dark' // 默认深色主题 (Apple HIG)
+  const stored = localStorage.getItem('probe_theme')
+  // 校验返回值是否为合法主题，无效值回退到默认深色主题
+  if (stored === 'light' || stored === 'dark' || stored === 'system') {
+    return stored
+  }
+  return 'dark' // 默认深色主题 (Apple HIG)
 }
 
 export const useServerStore = create<ServerStoreState>((set, get) => ({
@@ -212,13 +216,17 @@ export const useServerStore = create<ServerStoreState>((set, get) => ({
   // 删除 Agent，并刷新服务器列表（从仪表盘移除已删除的 Agent）
   deleteAgent: async (id: number) => {
     await deleteAgentAPI(id)
-    // 刷新服务器列表，从仪表盘移除已删除的 Agent
-    await get().fetchServers()
-    // 同时从 dashboardData 中删除对应条目，
-    // 防止 WebSocket 推送的实时数据导致已删除的服务器重新出现
-    const newMap = new Map(get().dashboardData)
+    // 原子化删除：先从 servers 和 dashboardData 中同时移除，
+    // 避免在 fetchServers 完成前 WebSocket 推送的实时数据导致已删除的服务器重新出现
+    const state = get()
+    const newMap = new Map(state.dashboardData)
     newMap.delete(id)
-    set({ dashboardData: newMap })
+    set({
+      servers: state.servers.filter((s) => s.id !== id),
+      dashboardData: newMap,
+    })
+    // 异步刷新服务器列表，与本地状态更新解耦
+    get().fetchServers().catch(() => {})
   },
 
   // 连接 WebSocket

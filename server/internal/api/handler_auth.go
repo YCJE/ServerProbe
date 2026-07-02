@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"log"
 	"net/http"
 	"time"
@@ -123,7 +124,7 @@ func (h *AuthHandler) HandleLogout(c *gin.Context) {
 // HandleSetup 处理首次设置（创建管理员账户）
 // 路由: POST /api/v1/auth/setup
 func (h *AuthHandler) HandleSetup(c *gin.Context) {
-	// 检查是否已有管理员
+	// 检查是否已有管理员（快速路径，事务外预检查）
 	count, err := h.adminRepo.Count()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "检查管理员失败"})
@@ -140,17 +141,6 @@ func (h *AuthHandler) HandleSetup(c *gin.Context) {
 		return
 	}
 
-	// 再次检查（防止 TOCTOU 竞争条件）
-	count, err = h.adminRepo.Count()
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "检查管理员失败"})
-		return
-	}
-	if count > 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "管理员账户已存在"})
-		return
-	}
-
 	// 验证密码强度
 	if err := pkg.ValidatePasswordStrength(req.Password); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -164,13 +154,18 @@ func (h *AuthHandler) HandleSetup(c *gin.Context) {
 		return
 	}
 
-	// 创建管理员
+	// 创建管理员（事务内再次检查，防止 TOCTOU 竞态条件导致创建多个管理员）
 	admin := &model.Admin{
 		Username:     req.Username,
 		PasswordHash: hash,
 	}
 
-	if err := h.adminRepo.Create(admin); err != nil {
+	if err := h.adminRepo.CreateFirstAdmin(admin); err != nil {
+		if errors.Is(err, repository.ErrAdminAlreadyExists) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "管理员账户已存在"})
+			return
+		}
+		log.Printf("创建管理员失败: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建管理员失败"})
 		return
 	}

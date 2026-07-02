@@ -38,7 +38,7 @@ func NewSyncer(serverURL, token string, interval time.Duration, insecureTLS bool
 	}
 
 	return &Syncer{
-		serverURL:   serverURL,
+		serverURL:   strings.TrimRight(serverURL, "/"),
 		token:       token,
 		interval:    interval,
 		insecureTLS: insecureTLS,

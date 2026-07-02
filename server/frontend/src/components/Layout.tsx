@@ -3,6 +3,21 @@ import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom'
 import { useServerStore } from '@/store/useServerStore'
 import ThemeToggle from './ThemeToggle'
 
+/** 侧边栏导航分组配置（模块级常量，避免每次渲染重建数组） */
+const NAV_GROUPS = [
+  {
+    title: '管理',
+    items: [
+      { to: '/admin', label: '仪表盘', icon: '▣', end: true },
+      { to: '/admin/agents', label: 'Agent 管理', icon: '⬡', end: false },
+      { to: '/admin/ping-targets', label: '探测目标', icon: '◈', end: false },
+      { to: '/admin/alerts', label: '告警管理', icon: '⚠', end: false },
+      { to: '/admin/notify', label: '通知渠道', icon: '✉', end: false },
+      { to: '/admin/system', label: '系统状态', icon: '⚙', end: false },
+    ],
+  },
+]
+
 /** 布局组件（顶栏 + 侧边栏 + 主内容区） */
 export default function Layout() {
   const navigate = useNavigate()
@@ -58,23 +73,9 @@ export default function Layout() {
   const onlineCount = servers.filter((s) => s.online).length
   const totalCount = servers.length
 
-  const navGroups = [
-    {
-      title: '管理',
-      items: [
-        { to: '/admin', label: '仪表盘', icon: '▣', end: true },
-        { to: '/admin/agents', label: 'Agent 管理', icon: '⬡', end: false },
-        { to: '/admin/ping-targets', label: '探测目标', icon: '◈', end: false },
-        { to: '/admin/alerts', label: '告警管理', icon: '⚠', end: false },
-        { to: '/admin/notify', label: '通知渠道', icon: '✉', end: false },
-        { to: '/admin/system', label: '系统状态', icon: '⚙', end: false },
-      ],
-    },
-  ]
-
   const renderNavItems = (onNavigate?: () => void) => (
     <nav className="flex flex-col gap-4 p-3">
-      {navGroups.map((group) => (
+      {NAV_GROUPS.map((group) => (
         <div key={group.title} className="flex flex-col gap-1">
           <h3 className="px-3 pb-1 text-xs font-medium uppercase tracking-wider text-muted-foreground/70">
             {group.title}

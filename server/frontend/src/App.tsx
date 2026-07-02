@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
-import { Routes, Route, Navigate } from 'react-router-dom'
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { useServerStore } from '@/store/useServerStore'
+import ErrorBoundary from '@/components/ErrorBoundary'
 import PublicLayout from '@/components/PublicLayout'
 import Layout from '@/components/Layout'
 import Login from '@/pages/Login'
@@ -20,6 +21,7 @@ function App() {
   const isAuthenticated = useServerStore((s) => s.isAuthenticated)
   const needsSetup = useServerStore((s) => s.needsSetup)
   const checkSetupStatus = useServerStore((s) => s.checkSetupStatus)
+  const location = useLocation()
 
   // 初始化主题
   useEffect(() => {
@@ -33,15 +35,11 @@ function App() {
 
   // 未初始化时所有路由都指向 Setup
   // WebSocket 连接管理已移至 Layout.tsx，避免 admin 路由间导航导致 WS 断开重连
-  if (needsSetup) {
-    return (
-      <Routes>
-        <Route path="*" element={<Setup />} />
-      </Routes>
-    )
-  }
-
-  return (
+  const routes = needsSetup ? (
+    <Routes>
+      <Route path="*" element={<Setup />} />
+    </Routes>
+  ) : (
     <Routes>
       {/* 公开页面 (无需登录) */}
       <Route element={<PublicLayout />}>
@@ -72,6 +70,14 @@ function App() {
       {/* 兜底 */}
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
+  )
+
+  // 使用 location.pathname 作为 ErrorBoundary 的 key，路由切换时重新挂载，
+  // 自动清除错误状态，避免用户永久卡死在错误页
+  return (
+    <ErrorBoundary key={location.pathname}>
+      {routes}
+    </ErrorBoundary>
   )
 }
 

@@ -95,7 +95,7 @@ func (s *AggregationService) aggregate() {
 
 		// 计算平均值/累计值
 		var cpuSum, memSum, load1Sum, load5Sum, load15Sum float64
-		var memTotalSum, memUsedSum, swapTotalSum, swapUsedSum, uptimeMax uint64
+		var uptimeMax uint64
 		var netRxSum, netTxSum uint64
 		var tcpConnsSum, udpConnsSum, processCountSum int
 		var pingData []sharedmodel.PingResult
@@ -106,10 +106,6 @@ func (s *AggregationService) aggregate() {
 			load1Sum += p.Load1
 			load5Sum += p.Load5
 			load15Sum += p.Load15
-			memTotalSum += p.MemTotal
-			memUsedSum += p.MemUsed
-			swapTotalSum += p.SwapTotal
-			swapUsedSum += p.SwapUsed
 			netRxSum += p.NetRx
 			netTxSum += p.NetTx
 			tcpConnsSum += p.TCPConns

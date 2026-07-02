@@ -113,6 +113,14 @@ async function request<T>(
   if (!text) {
     return {} as T
   }
+  // 校验响应 Content-Type，避免反向代理返回 HTML 错误页时 JSON.parse 抛出不友好错误
+  const contentType = response.headers.get('Content-Type') || ''
+  if (!contentType.includes('application/json')) {
+    throw new ApiError(
+      response.status,
+      `服务器返回了非 JSON 响应 (Content-Type: ${contentType || '未知'})`,
+    )
+  }
   return JSON.parse(text) as T
 }
 
