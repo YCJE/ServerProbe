@@ -104,11 +104,14 @@ func (s *NotifyService) sendTelegram(channel *model.NotifyChannel, title, conten
 	// Telegram API 是公网地址，通过 SSRF 防护器发送
 	statusCode, respBody, err := s.ssrf.SendWebhook(apiURL, body)
 	if err != nil {
-		return fmt.Errorf("Telegram 发送失败: %w", err)
+		// 完整错误可能包含带 token 的 URL，仅记录日志，不返回给调用方
+		log.Printf("Telegram 发送失败: %v", err)
+		return fmt.Errorf("Telegram 发送失败")
 	}
 
 	if statusCode >= 400 {
-		return fmt.Errorf("Telegram API 返回错误状态码: %d, 响应: %s", statusCode, string(respBody))
+		log.Printf("Telegram API 返回错误状态码: %d, 响应: %s", statusCode, string(respBody))
+		return fmt.Errorf("Telegram 发送失败")
 	}
 
 	log.Printf("Telegram 通知发送成功")
@@ -122,9 +125,9 @@ func (s *NotifyService) sendEmail(channel *model.NotifyChannel, title, content s
 		return fmt.Errorf("解析邮件配置失败: %w", err)
 	}
 
-	// 过滤 CRLF 防止邮件头注入
+	// 过滤 CRLF 防止邮件头注入（同时处理单独的 \r）
 	safeTitle := strings.NewReplacer("\r", " ", "\n", " ").Replace(title)
-	safeContent := strings.ReplaceAll(content, "\r\n", "\n")
+	safeContent := strings.NewReplacer("\r\n", "\n", "\r", "").Replace(content)
 
 	// 构建邮件内容
 	subject := fmt.Sprintf("Subject: %s\r\n", safeTitle)

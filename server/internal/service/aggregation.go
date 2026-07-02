@@ -3,6 +3,7 @@ package service
 import (
 	"encoding/json"
 	"log"
+	"sync"
 	"time"
 
 	"github.com/server-probe/server/internal/model"
@@ -17,6 +18,7 @@ type AggregationService struct {
 	agentRepo   *repository.AgentRepository
 	ticker      *time.Ticker
 	stopCh      chan struct{}
+	stopOnce    sync.Once
 }
 
 // NewAggregationService 创建数据聚合服务
@@ -56,10 +58,12 @@ func (s *AggregationService) Start() {
 
 // Stop 停止聚合服务
 func (s *AggregationService) Stop() {
-	if s.ticker != nil {
-		s.ticker.Stop()
-	}
-	close(s.stopCh)
+	s.stopOnce.Do(func() {
+		if s.ticker != nil {
+			s.ticker.Stop()
+		}
+		close(s.stopCh)
+	})
 }
 
 // aggregate 执行一次数据聚合

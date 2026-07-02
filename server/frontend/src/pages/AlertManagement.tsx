@@ -153,6 +153,14 @@ export default function AlertManagement() {
       setFormError('请选择通知渠道')
       return
     }
+    if (form.threshold < 0 || form.threshold > 100) {
+      setFormError('阈值必须在 0-100 之间')
+      return
+    }
+    if (form.duration < 1) {
+      setFormError('持续时间必须大于等于 1 秒')
+      return
+    }
 
     setSubmitting(true)
     try {

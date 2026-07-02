@@ -58,7 +58,6 @@ interface ServerStoreState {
   _publicWsCleanups: (() => void)[] | null
 
   // Actions
-  initAuth: () => Promise<void>
   checkSetupStatus: () => Promise<void>
   login: (username: string, password: string) => Promise<void>
   setup: (username: string, password: string) => Promise<void>
@@ -116,14 +115,6 @@ export const useServerStore = create<ServerStoreState>((set, get) => ({
   currentServerLoading: false,
   _wsCleanups: null,
   _publicWsCleanups: null,
-
-  // 初始化认证状态
-  initAuth: async () => {
-    const token = getToken()
-    if (token) {
-      set({ isAuthenticated: true })
-    }
-  },
 
   // 检查是否需要初始化
   checkSetupStatus: async () => {
@@ -319,7 +310,7 @@ export const useServerStore = create<ServerStoreState>((set, get) => ({
           net_rx: item.net_rx,
           net_tx: item.net_tx,
           uptime: item.uptime,
-          load_1: item.load_1,
+          load_1: item.load_1 || 0,
           load_5: item.load_5 || 0,
           load_15: item.load_15 || 0,
           disk_usage: item.disk_usage || 0,

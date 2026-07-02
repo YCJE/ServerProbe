@@ -177,6 +177,11 @@ export default function NotifyChannels() {
     if (!form.name.trim()) return '请输入渠道名称'
     if (form.type === 'webhook') {
       if (!form.webhook.url.trim()) return '请输入 Webhook URL'
+      try {
+        new URL(form.webhook.url)
+      } catch {
+        return 'Webhook URL 格式无效'
+      }
     } else if (form.type === 'telegram') {
       // 编辑时 bot_token 可为空（表示不修改），新增时必填
       if (editingId === null && !form.telegram.bot_token.trim()) return '请输入 Bot Token'
@@ -184,7 +189,13 @@ export default function NotifyChannels() {
     } else if (form.type === 'email') {
       if (!form.email.smtp_host.trim()) return '请输入 SMTP 主机'
       if (!form.email.smtp_port) return '请输入 SMTP 端口'
+      if (form.email.smtp_port < 1 || form.email.smtp_port > 65535) {
+        return 'SMTP 端口必须在 1-65535 之间'
+      }
       if (!form.email.from.trim()) return '请输入发件人邮箱'
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.from.trim())) {
+        return '发件人邮箱格式无效'
+      }
       if (!form.email.to.trim()) return '请输入收件人邮箱'
       if (editingId === null && !form.email.password.trim()) return '请输入邮箱密码'
     }

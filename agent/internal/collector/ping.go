@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/prometheus-community/pro-bing"
@@ -49,19 +50,39 @@ func (c *PingCollector) Collect() (interface{}, error) {
 	return nil, fmt.Errorf("请使用 PingTargets 方法")
 }
 
-// PingTargets 对多个目标执行 Ping 探测
+// PingTargets 对多个目标执行 Ping 探测（并发执行，限制并发数 5）
 func (c *PingCollector) PingTargets(targets []sharedmodel.PingTarget) []sharedmodel.PingResult {
-	results := make([]sharedmodel.PingResult, 0, len(targets))
-
-	for _, target := range targets {
-		if !target.Enabled {
-			continue
+	// 先筛选启用的目标，保留原始顺序
+	enabled := make([]sharedmodel.PingTarget, 0, len(targets))
+	for _, t := range targets {
+		if t.Enabled {
+			enabled = append(enabled, t)
 		}
-
-		result := c.pingTarget(target)
-		results = append(results, result)
 	}
 
+	n := len(enabled)
+	if n == 0 {
+		return []sharedmodel.PingResult{}
+	}
+
+	// 预分配结果切片，按索引写入（不同索引为独立内存，无需加锁）
+	results := make([]sharedmodel.PingResult, n)
+
+	// 使用信号量限制并发数为 5
+	sem := make(chan struct{}, 5)
+	var wg sync.WaitGroup
+
+	for i := range enabled {
+		wg.Add(1)
+		go func(idx int, target sharedmodel.PingTarget) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			results[idx] = c.pingTarget(target)
+		}(i, enabled[i])
+	}
+
+	wg.Wait()
 	return results
 }
 
@@ -140,8 +161,11 @@ func (c *PingCollector) doICMPPing(result *sharedmodel.PingResult, target string
 
 	// 预解析 DNS，排除 DNS 时间
 	if ip := net.ParseIP(target); ip == nil {
-		// 是域名，预解析
-		ips, err := net.LookupIP(target)
+		// 是域名，预解析（带超时，防止 DNS 解析阻塞）
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		resolver := &net.Resolver{}
+		ips, err := resolver.LookupIPAddr(ctx, target)
 		if err != nil || len(ips) == 0 {
 			result.Loss = 100
 			result.Method = string(method)
@@ -197,7 +221,10 @@ func (c *PingCollector) doTCPPing(result *sharedmodel.PingResult, target string)
 		port = "80"
 	}
 
-	ips, err := net.LookupIP(host)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	resolver := &net.Resolver{}
+	ips, err := resolver.LookupIPAddr(ctx, host)
 	if err != nil || len(ips) == 0 {
 		result.Loss = 100
 		return
@@ -207,6 +234,7 @@ func (c *PingCollector) doTCPPing(result *sharedmodel.PingResult, target string)
 
 	count := 50
 	successCount := 0
+	attempts := 0
 	var latencies []float64
 	deadline := time.Now().Add(30 * time.Second) // 整体超时 30s，防止不可达目标阻塞太久
 
@@ -214,6 +242,7 @@ func (c *PingCollector) doTCPPing(result *sharedmodel.PingResult, target string)
 		if time.Now().After(deadline) {
 			break // 超时提前退出
 		}
+		attempts++
 		start := time.Now()
 		conn, err := net.DialTimeout("tcp", addr, 1*time.Second)
 		elapsed := time.Since(start)
@@ -229,11 +258,11 @@ func (c *PingCollector) doTCPPing(result *sharedmodel.PingResult, target string)
 		}
 	}
 
-	result.PacketsSent = count
+	result.PacketsSent = attempts
 	result.PacketsRecv = successCount
 
-	if count > 0 {
-		result.Loss = float64(count-successCount) / float64(count) * 100
+	if attempts > 0 {
+		result.Loss = float64(attempts-successCount) / float64(attempts) * 100
 	}
 
 	if len(latencies) > 0 {
@@ -278,7 +307,10 @@ func (c *PingCollector) doHTTPPing(result *sharedmodel.PingResult, target string
 		return
 	}
 
-	ips, err := net.LookupIP(parsed.host)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	resolver := &net.Resolver{}
+	ips, err := resolver.LookupIPAddr(ctx, parsed.host)
 	if err != nil || len(ips) == 0 {
 		result.Loss = 100
 		return
@@ -292,6 +324,7 @@ func (c *PingCollector) doHTTPPing(result *sharedmodel.PingResult, target string
 
 	count := 50
 	successCount := 0
+	attempts := 0
 	var latencies []float64
 	deadline := time.Now().Add(30 * time.Second) // 整体超时 30s
 
@@ -321,6 +354,7 @@ func (c *PingCollector) doHTTPPing(result *sharedmodel.PingResult, target string
 		if time.Now().After(deadline) {
 			break // 超时提前退出
 		}
+		attempts++
 		reqURL := target
 		if !strings.Contains(target, "://") {
 			reqURL = fmt.Sprintf("%s://%s", scheme, target)
@@ -350,11 +384,11 @@ func (c *PingCollector) doHTTPPing(result *sharedmodel.PingResult, target string
 	// 关闭空闲连接，避免连接堆积
 	transport.CloseIdleConnections()
 
-	result.PacketsSent = count
+	result.PacketsSent = attempts
 	result.PacketsRecv = successCount
 
-	if count > 0 {
-		result.Loss = float64(count-successCount) / float64(count) * 100
+	if attempts > 0 {
+		result.Loss = float64(attempts-successCount) / float64(attempts) * 100
 	}
 
 	if len(latencies) > 0 {

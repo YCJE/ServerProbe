@@ -151,6 +151,10 @@ export default function PingTargets() {
       setFormError('请输入目标地址')
       return
     }
+    if (form.method === 'http' && !/^https?:\/\/.+/.test(form.target.trim())) {
+      setFormError('HTTP 探测目标必须为有效的 http(s):// URL')
+      return
+    }
 
     setSubmitting(true)
     try {

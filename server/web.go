@@ -27,6 +27,12 @@ func StaticFileHandler() gin.HandlerFunc {
 	fileServer := http.FileServer(http.FS(subFS))
 
 	return func(c *gin.Context) {
+		// API 路径未匹配路由时返回 JSON 404，而非 HTML
+		if strings.HasPrefix(c.Request.URL.Path, "/api/") {
+			c.JSON(http.StatusNotFound, gin.H{"error": "接口不存在"})
+			return
+		}
+
 		// 检查文件是否存在
 		path := strings.TrimPrefix(c.Request.URL.Path, "/")
 		if path == "" {

@@ -78,6 +78,7 @@ export default function SystemStatus() {
 
   const loadStatus = useCallback(async () => {
     if (!mountedRef.current) return
+    if (document.hidden) return
     setLoading(true)
     try {
       const data = await getSystemStatus()
@@ -100,7 +101,17 @@ export default function SystemStatus() {
   useEffect(() => {
     loadStatus()
     const interval = setInterval(loadStatus, 5000)
-    return () => clearInterval(interval)
+    // 标签页重新可见时立即刷新一次
+    const handleVisibilityChange = () => {
+      if (!document.hidden && mountedRef.current) {
+        loadStatus()
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => {
+      clearInterval(interval)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
   }, [loadStatus])
 
   // 计算磁盘使用率

@@ -32,6 +32,11 @@ func NewSSRFProtector() *SSRFProtector {
 				return nil, fmt.Errorf("DNS 解析失败: %w", err)
 			}
 
+			// 检查 DNS 解析是否返回了 IP
+			if len(ips) == 0 {
+				return nil, fmt.Errorf("DNS 解析未返回任何 IP: %s", host)
+			}
+
 			// 检查所有解析到的 IP
 			for _, ip := range ips {
 				if isPrivateIP(ip) {
@@ -138,6 +143,10 @@ func isPrivateIP(ip net.IP) bool {
 	}
 
 	if ip4 := ip.To4(); ip4 != nil {
+		// 0.0.0.0/8 ("本网络" 网段)
+		if ip4[0] == 0 {
+			return true
+		}
 		// 10.0.0.0/8
 		if ip4[0] == 10 {
 			return true

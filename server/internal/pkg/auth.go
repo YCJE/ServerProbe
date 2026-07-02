@@ -93,6 +93,10 @@ func ValidatePasswordStrength(password string) error {
 	if len(password) < 12 {
 		return errors.New("密码长度至少 12 位")
 	}
+	// bcrypt 静默截断超过 72 字节的输入，这里显式限制
+	if len(password) > 72 {
+		return errors.New("密码长度不能超过 72 字节")
+	}
 
 	hasUpper := false
 	hasLower := false

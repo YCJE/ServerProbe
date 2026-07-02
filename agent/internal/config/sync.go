@@ -20,6 +20,8 @@ type Syncer struct {
 	interval    time.Duration
 	insecureTLS bool
 
+	httpClient *http.Client
+
 	currentConfig *sharedmodel.AgentConfig
 	mu             sync.RWMutex
 	stopCh         chan struct{}
@@ -28,12 +30,25 @@ type Syncer struct {
 
 // NewSyncer 创建配置拉取器
 func NewSyncer(serverURL, token string, interval time.Duration, insecureTLS bool) *Syncer {
+	tlsConfig := &tls.Config{
+		MinVersion: tls.VersionTLS12,
+	}
+	if insecureTLS {
+		tlsConfig.InsecureSkipVerify = true
+	}
+
 	return &Syncer{
 		serverURL:   serverURL,
 		token:       token,
 		interval:    interval,
 		insecureTLS: insecureTLS,
-		stopCh:      make(chan struct{}),
+		httpClient: &http.Client{
+			Timeout: 10 * time.Second,
+			Transport: &http.Transport{
+				TLSClientConfig: tlsConfig,
+			},
+		},
+		stopCh: make(chan struct{}),
 	}
 }
 
@@ -87,21 +102,6 @@ func (s *Syncer) sync() {
 		return
 	}
 
-	// 创建 HTTP 客户端
-	tlsConfig := &tls.Config{
-		MinVersion: tls.VersionTLS12,
-	}
-	if s.insecureTLS {
-		tlsConfig.InsecureSkipVerify = true
-	}
-
-	client := &http.Client{
-		Timeout: 10 * time.Second,
-		Transport: &http.Transport{
-			TLSClientConfig: tlsConfig,
-		},
-	}
-
 	url := s.serverURL + "/api/v1/agent/config"
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
@@ -110,7 +110,7 @@ func (s *Syncer) sync() {
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
 
-	resp, err := client.Do(req)
+	resp, err := s.httpClient.Do(req)
 	if err != nil {
 		log.Printf("拉取配置失败: %v", err)
 		return

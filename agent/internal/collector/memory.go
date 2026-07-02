@@ -12,6 +12,9 @@ import (
 type memInfo struct {
 	total     uint64 // MemTotal（字节）
 	available uint64 // MemAvailable（字节）
+	free      uint64 // MemFree（字节，旧内核回退用）
+	buffers   uint64 // Buffers（字节，旧内核回退用）
+	cached    uint64 // Cached（字节，旧内核回退用）
 	swapTotal uint64 // SwapTotal（字节）
 	swapFree  uint64 // SwapFree（字节）
 }
@@ -44,9 +47,14 @@ func (c *MemoryCollector) Collect() (interface{}, error) {
 	}
 
 	// Used = Total - Available
+	// 旧内核 /proc/meminfo 不含 MemAvailable，回退用 total - free - buffers - cached
+	available := info.available
+	if available == 0 {
+		available = info.free + info.buffers + info.cached
+	}
 	used := uint64(0)
-	if info.available <= info.total {
-		used = info.total - info.available
+	if available <= info.total {
+		used = info.total - available
 	}
 
 	swapUsed := uint64(0)
@@ -90,6 +98,12 @@ func parseMemInfo(data string) (memInfo, error) {
 			info.total = value
 		case "MemAvailable":
 			info.available = value
+		case "MemFree":
+			info.free = value
+		case "Buffers":
+			info.buffers = value
+		case "Cached":
+			info.cached = value
 		case "SwapTotal":
 			info.swapTotal = value
 		case "SwapFree":

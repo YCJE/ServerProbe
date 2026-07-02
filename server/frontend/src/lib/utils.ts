@@ -29,19 +29,6 @@ export function formatUptime(seconds: number): string {
   return `${minutes}分钟`
 }
 
-/** 格式化时间戳为相对时间 */
-export function formatRelativeTime(timestamp: number): string {
-  if (!timestamp) return '-'
-  const now = Date.now()
-  const diff = now - timestamp * 1000
-  const seconds = Math.floor(diff / 1000)
-
-  if (seconds < 60) return '刚刚'
-  if (seconds < 3600) return `${Math.floor(seconds / 60)}分钟前`
-  if (seconds < 86400) return `${Math.floor(seconds / 3600)}小时前`
-  return `${Math.floor(seconds / 86400)}天前`
-}
-
 /** 根据使用率返回颜色 class */
 export function getUsageColor(usage: number): string {
   if (usage >= 90) return 'bg-destructive'

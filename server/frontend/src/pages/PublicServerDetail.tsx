@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, useCallback, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useServerStore } from '@/store/useServerStore'
 import { getPublicServers, getPublicServerHistory } from '@/lib/api'
-import type { ServerData, PingResult, TimeRange, HistoryData } from '@/types'
+import type { ServerData, DashboardItem, PingResult, TimeRange, HistoryData } from '@/types'
 import CpuChart from '@/components/CpuChart'
 import MemoryChart from '@/components/MemoryChart'
 import PingChart from '@/components/PingChart'
@@ -12,7 +12,6 @@ import {
   formatUptime,
   formatLatency,
   formatLoss,
-  getUsageColor,
   getUsageTextColor,
   getLossColor,
 } from '@/lib/utils'
@@ -106,8 +105,36 @@ export default function PublicServerDetail() {
       getPublicServers()
         .then((res) => {
           if (!mountedRef.current) return
-          // 无论有无数据都清除 loading（有数据时由 WS 推送更新）
-          if (res.servers.length === 0) {
+          if (res.servers.length > 0) {
+            // 将公开服务器数据转换为 DashboardItem 格式写入 store
+            const dashboardItems: DashboardItem[] = res.servers.map((s) => ({
+              agent_id: s.id,
+              hostname: s.hostname,
+              display_name: s.display_name,
+              online: s.online,
+              cpu: s.cpu,
+              mem: s.mem,
+              mem_total: s.mem_total,
+              mem_used: s.mem_used,
+              swap_total: 0,
+              swap_used: 0,
+              net_rx: s.net_rx,
+              net_tx: s.net_tx,
+              load_1: s.load_1 || 0,
+              load_5: 0,
+              load_15: 0,
+              uptime: s.uptime,
+              disk_usage: s.disk_usage || 0,
+              disks: [],
+              tcp_connections: 0,
+              udp_connections: 0,
+              process_count: 0,
+              ping_data: [],
+              timestamp: Math.floor(Date.now() / 1000),
+            }))
+            useServerStore.getState().handleDashboardMessage(dashboardItems)
+            setLoading(false)
+          } else {
             setLoading(false)
           }
         })

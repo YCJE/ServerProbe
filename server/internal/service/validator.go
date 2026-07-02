@@ -15,6 +15,7 @@ type DataValidator struct {
 	lastReportTime map[int64]time.Time // Agent ID -> 上次上报时间
 	ticker         *time.Ticker
 	stopCh         chan struct{}
+	stopOnce       sync.Once
 }
 
 // NewDataValidator 创建数据校验器
@@ -44,10 +45,12 @@ func (v *DataValidator) StartCleanupTask() {
 
 // Stop 停止数据校验器
 func (v *DataValidator) Stop() {
-	if v.ticker != nil {
-		v.ticker.Stop()
-	}
-	close(v.stopCh)
+	v.stopOnce.Do(func() {
+		if v.ticker != nil {
+			v.ticker.Stop()
+		}
+		close(v.stopCh)
+	})
 }
 
 // cleanupStaleEntries 清理超过 30 分钟未上报的 Agent 条目

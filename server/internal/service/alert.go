@@ -23,6 +23,7 @@ type AlertEngine struct {
 	mu      sync.RWMutex
 	ticker  *time.Ticker
 	stopCh  chan struct{}
+	stopOnce sync.Once
 
 	// 静默期（默认 60 分钟）
 	silencePeriod time.Duration
@@ -71,10 +72,12 @@ func (e *AlertEngine) Start() {
 
 // Stop 停止告警引擎
 func (e *AlertEngine) Stop() {
-	if e.ticker != nil {
-		e.ticker.Stop()
-	}
-	close(e.stopCh)
+	e.stopOnce.Do(func() {
+		if e.ticker != nil {
+			e.ticker.Stop()
+		}
+		close(e.stopCh)
+	})
 }
 
 // CleanupStatesForAgent 清理指定 Agent 的所有告警状态 (删除 Agent 时调用)
@@ -143,15 +146,25 @@ func (e *AlertEngine) checkRuleForAgent(rule model.AlertRule, agentID int64) {
 	// 检查是否超阈值
 	thresholdExceeded := e.checkThreshold(value, rule.Operator, rule.Threshold)
 
+	now := time.Now()
+
+	// 待发送通知（锁外执行，避免持锁发送通知导致阻塞）
+	type pendingNotification struct {
+		rule    model.AlertRule
+		agentID int64
+		value   float64
+		state   model.AlertState
+	}
+	var pendingNotifications []pendingNotification
+
+	// 整个状态检查和修改过程放在锁内
 	e.mu.Lock()
+
 	state, ok := e.states[key]
 	if !ok {
 		state = &alertState{state: model.AlertStateOK}
 		e.states[key] = state
 	}
-	e.mu.Unlock()
-
-	now := time.Now()
 
 	if thresholdExceeded {
 		switch state.state {
@@ -165,14 +178,14 @@ func (e *AlertEngine) checkRuleForAgent(rule model.AlertRule, agentID int64) {
 			if now.Sub(state.firstTriggered) >= time.Duration(rule.Duration)*time.Second {
 				state.state = model.AlertStateFiring
 				state.lastNotified = now
-				e.sendAlertNotification(rule, agentID, value, model.AlertStateFiring)
+				pendingNotifications = append(pendingNotifications, pendingNotification{rule, agentID, value, model.AlertStateFiring})
 			}
 
 		case model.AlertStateFiring:
 			// 检查静默期
 			if now.Sub(state.lastNotified) >= e.silencePeriod {
 				state.lastNotified = now
-				e.sendAlertNotification(rule, agentID, value, model.AlertStateFiring)
+				pendingNotifications = append(pendingNotifications, pendingNotification{rule, agentID, value, model.AlertStateFiring})
 			}
 
 		case model.AlertStateResolved:
@@ -189,8 +202,15 @@ func (e *AlertEngine) checkRuleForAgent(rule model.AlertRule, agentID int64) {
 		case model.AlertStateFiring:
 			// FIRING → RESOLVED
 			state.state = model.AlertStateResolved
-			e.sendAlertNotification(rule, agentID, value, model.AlertStateResolved)
+			pendingNotifications = append(pendingNotifications, pendingNotification{rule, agentID, value, model.AlertStateResolved})
 		}
+	}
+
+	e.mu.Unlock()
+
+	// 锁外发送通知
+	for _, n := range pendingNotifications {
+		e.sendAlertNotification(n.rule, n.agentID, n.value, n.state)
 	}
 }
 

@@ -90,14 +90,14 @@ func (c *WSClient) Connect() error {
 	}
 	c.mu.Unlock()
 
-	// 强制 TLS：拒绝明文连接
-	if !strings.HasPrefix(c.serverURL, "https://") {
+	// 强制 TLS：拒绝明文连接（大小写不敏感）
+	lowerURL := strings.ToLower(c.serverURL)
+	if !strings.HasPrefix(lowerURL, "https://") {
 		return fmt.Errorf("安全错误：Server 地址必须使用 https://，拒绝明文连接")
 	}
 
-	// 转换为 WebSocket URL
-	wsURL := strings.Replace(c.serverURL, "https://", "wss://", 1)
-	wsURL += "/api/v1/agent/report"
+	// 转换为 WebSocket URL（大小写不敏感地替换 scheme 前缀）
+	wsURL := "wss://" + c.serverURL[len("https://"):] + "/api/v1/agent/report"
 
 	// 验证 URL
 	parsed, err := url.Parse(wsURL)
@@ -189,6 +189,10 @@ func (c *WSClient) register() error {
 	}
 
 	c.mu.Lock()
+	if c.conn == nil {
+		c.mu.Unlock()
+		return fmt.Errorf("连接已关闭")
+	}
 	c.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
 	err := c.conn.WriteJSON(msg)
 	c.mu.Unlock()
@@ -202,6 +206,9 @@ func (c *WSClient) register() error {
 	conn := c.conn
 	c.mu.Unlock()
 
+	if conn == nil {
+		return fmt.Errorf("连接已关闭")
+	}
 	conn.SetReadDeadline(time.Now().Add(30 * time.Second))
 	_, message, err := conn.ReadMessage()
 	if err != nil {
@@ -251,6 +258,10 @@ func (c *WSClient) resumeSession() error {
 	}
 
 	c.mu.Lock()
+	if c.conn == nil {
+		c.mu.Unlock()
+		return fmt.Errorf("连接已关闭")
+	}
 	c.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
 	err := c.conn.WriteJSON(msg)
 	c.mu.Unlock()
@@ -264,6 +275,9 @@ func (c *WSClient) resumeSession() error {
 	conn := c.conn
 	c.mu.Unlock()
 
+	if conn == nil {
+		return fmt.Errorf("连接已关闭")
+	}
 	conn.SetReadDeadline(time.Now().Add(30 * time.Second))
 	_, message, err := conn.ReadMessage()
 	if err != nil {
@@ -281,10 +295,8 @@ func (c *WSClient) resumeSession() error {
 		return nil
 
 	case sharedmodel.MsgTypeRegisterFail:
-		// Token 失效，清除 Token 以便后续使用注册码重新注册
-		c.mu.Lock()
-		c.token = ""
-		c.mu.Unlock()
+		// 保留 Token，仅记录失败，返回 error 让 Run() 重试，避免永久无法重连
+		log.Printf("会话恢复被拒绝: %s", response.Reason)
 		return fmt.Errorf("会话恢复被拒绝: %s", response.Reason)
 
 	default:
@@ -330,11 +342,17 @@ func (c *WSClient) Run() {
 		_, message, err := conn.ReadMessage()
 		if err != nil {
 			log.Printf("WebSocket 读取错误: %v", err)
+			// 仅当 c.conn 仍为当前连接（未被 Stop 关闭）时才关闭，避免 double close
 			c.mu.Lock()
 			c.connected = false
-			c.conn = nil
+			needClose := c.conn == conn
+			if needClose {
+				c.conn = nil
+			}
 			c.mu.Unlock()
-			conn.Close()
+			if needClose {
+				conn.Close()
+			}
 			continue
 		}
 		// 读到消息后重置读取超时，避免消息处理时间影响下一次读取

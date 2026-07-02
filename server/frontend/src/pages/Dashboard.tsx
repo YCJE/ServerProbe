@@ -5,7 +5,6 @@ import ServerCard from '@/components/ServerCard'
 /** 仪表盘页（服务器卡片网格） */
 export default function Dashboard() {
   const servers = useServerStore((s) => s.servers)
-  const serversLoading = useServerStore((s) => s.serversLoading)
   const fetchServers = useServerStore((s) => s.fetchServers)
   const wsConnected = useServerStore((s) => s.wsConnected)
 
@@ -31,7 +30,6 @@ export default function Dashboard() {
 
   // 不再显示全屏加载 spinner，直接显示内容
   // 如果正在加载且无数据，显示"加载中"文本而非 spinner
-  // serversLoading 仅用于指示后台加载状态（由 Layout 触发）
 
   return (
     <div className="space-y-4">

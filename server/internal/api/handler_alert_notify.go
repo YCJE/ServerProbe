@@ -486,7 +486,7 @@ func (h *NotifyHandler) HandleUpdateChannel(c *gin.Context) {
 			}
 			for k, oldVal := range oldCfg {
 				if sensitiveKeys[k] {
-					if newVal, exists := newCfg[k]; !exists || newVal == "" {
+					if newVal, exists := newCfg[k]; !exists || newVal == nil || newVal == "" {
 						newCfg[k] = oldVal
 					}
 				}

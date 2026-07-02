@@ -39,6 +39,7 @@ type MonitorService struct {
 	dashWSCount  int32 // 面板 WebSocket 连接数 (atomic)
 	ticker       *time.Ticker
 	stopCh       chan struct{}
+	stopOnce     sync.Once
 }
 
 // NewMonitorService 创建监控服务
@@ -119,6 +120,8 @@ func (m *MonitorService) RegisterConnection(agentID int64, conn *websocket.Conn)
 
 	// 更新数据库在线状态
 	_ = m.agentRepo.UpdateOnlineStatus(agentID, true)
+	// 更新 last_seen 时间戳（标记上线）
+	_ = m.agentRepo.UpdateLastSeen(agentID, true)
 
 	log.Printf("Agent %d 已连接", agentID)
 	return agentConn
@@ -333,6 +336,8 @@ func (m *MonitorService) CheckHeartbeatTimeout(timeout time.Duration) {
 			conn.Conn.Close()
 			delete(m.connections, agentID)
 			_ = m.agentRepo.UpdateOnlineStatus(agentID, false)
+			// 更新 last_seen 时间戳（标记离线）
+			_ = m.agentRepo.UpdateLastSeen(agentID, false)
 		}
 	}
 }
@@ -354,10 +359,12 @@ func (m *MonitorService) StartHeartbeatChecker(timeout time.Duration) {
 
 // Stop 停止监控服务（停止心跳检查器）
 func (m *MonitorService) Stop() {
-	if m.ticker != nil {
-		m.ticker.Stop()
-	}
-	close(m.stopCh)
+	m.stopOnce.Do(func() {
+		if m.ticker != nil {
+			m.ticker.Stop()
+		}
+		close(m.stopCh)
+	})
 }
 
 // GetDashboardData 获取仪表盘数据

@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { ServerData, PingResult } from '@/types'
 import {
@@ -60,10 +61,12 @@ function PingInfo({ ping, online }: { ping?: PingResult; online: boolean }) {
 }
 
 /** 服务器卡片组件 */
-export default function ServerCard({ server, basePath = '/admin' }: ServerCardProps) {
+function ServerCard({ server, basePath = '/admin' }: ServerCardProps) {
   const navigate = useNavigate()
 
   const handleClick = () => {
+    const selection = window.getSelection()
+    if (selection && selection.toString().length > 0) return
     navigate(`${basePath}/server/${server.id}`)
   }
 
@@ -201,3 +204,5 @@ export default function ServerCard({ server, basePath = '/admin' }: ServerCardPr
     </div>
   )
 }
+
+export default memo(ServerCard)

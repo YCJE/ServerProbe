@@ -69,11 +69,10 @@ func (m *Middleware) LoginRateLimit() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		ip := c.ClientIP()
 
-		rateLimiter.mu.Lock()
-		defer rateLimiter.mu.Unlock()
-
 		now := time.Now()
 		cutoff := now.Add(-time.Minute)
+
+		rateLimiter.mu.Lock()
 
 		// 每 5 分钟清理一次不活跃 IP 的记录，防止内存泄漏
 		if now.Sub(rateLimiter.lastClean) > 5*time.Minute {
@@ -104,15 +103,27 @@ func (m *Middleware) LoginRateLimit() gin.HandlerFunc {
 
 		if len(valid) >= 5 {
 			rateLimiter.attempts[ip] = valid
+			rateLimiter.mu.Unlock()
 			c.JSON(http.StatusTooManyRequests, gin.H{"error": "登录尝试过于频繁，请稍后再试"})
 			c.Abort()
 			return
 		}
 
+		// 暂时记录本次尝试，待 handler 返回后根据状态码决定是否保留
 		valid = append(valid, now)
 		rateLimiter.attempts[ip] = valid
+		rateLimiter.mu.Unlock()
 
 		c.Next()
+
+		// 仅 401（认证失败）才保留计数；成功登录或其他响应不计入限速
+		if c.Writer.Status() != http.StatusUnauthorized {
+			rateLimiter.mu.Lock()
+			if cur, ok := rateLimiter.attempts[ip]; ok && len(cur) > 0 {
+				rateLimiter.attempts[ip] = cur[:len(cur)-1]
+			}
+			rateLimiter.mu.Unlock()
+		}
 	}
 }
 

@@ -29,7 +29,9 @@ export default function CpuChart({
           color: isDark ? '#e5e7eb' : '#1f2937',
         },
         formatter: (params: any) => {
+          if (!params || params.length === 0) return ''
           const point = params[0]
+          if (point.value == null) return ''
           const time = new Date(point.axisValue * 1000).toLocaleTimeString('zh-CN')
           return `${time}<br/>CPU: <strong>${point.value.toFixed(1)}%</strong>`
         },
@@ -125,7 +127,7 @@ export default function CpuChart({
       option={option}
       style={{ height: `${height}px`, width: '100%' }}
       opts={{ renderer: 'canvas' }}
-      notMerge={false}
+      notMerge={true}
       lazyUpdate={true}
     />
   )
