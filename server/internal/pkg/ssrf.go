@@ -151,6 +151,10 @@ func isPrivateIP(ip net.IP) bool {
 		if ip4[0] == 10 {
 			return true
 		}
+		// 100.64.0.0/10 - CGNAT (RFC 6598)
+		if ip4[0] == 100 && ip4[1] >= 64 && ip4[1] <= 127 {
+			return true
+		}
 		// 172.16.0.0/12
 		if ip4[0] == 172 && ip4[1] >= 16 && ip4[1] <= 31 {
 			return true

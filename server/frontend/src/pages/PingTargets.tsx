@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import {
   getPingTargets,
   createPingTarget,
@@ -63,6 +63,14 @@ export default function PingTargets() {
   const [intervalSaving, setIntervalSaving] = useState(false)
   const [intervalMessage, setIntervalMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
+  // 跟踪提示消息消失的定时器，组件卸载时清理
+  const intervalTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  useEffect(() => {
+    return () => {
+      if (intervalTimeoutRef.current) clearTimeout(intervalTimeoutRef.current)
+    }
+  }, [])
+
   /** 加载探测间隔 */
   const loadInterval = useCallback(async () => {
     setIntervalLoading(true)
@@ -101,7 +109,7 @@ export default function PingTargets() {
     try {
       await setPingInterval(probeInterval)
       setIntervalMessage({ type: 'success', text: '探测间隔已保存' })
-      setTimeout(() => setIntervalMessage(null), 3000)
+      intervalTimeoutRef.current = setTimeout(() => setIntervalMessage(null), 3000)
     } catch (err) {
       setIntervalMessage({ type: 'error', text: err instanceof Error ? err.message : '保存失败' })
     } finally {

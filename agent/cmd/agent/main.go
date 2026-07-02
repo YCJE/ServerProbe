@@ -48,7 +48,7 @@ func main() {
 	diskCollector := collector.NewDiskCollector(&collector.OSDiskMounter{})
 	netCollector := collector.NewNetworkCollector(fileReader)
 	sysCollector := collector.NewSystemCollector(fileReader, "v1.0.0")
-	pingCollector := collector.NewPingCollector(cfg.PingMethod)
+	pingCollector := collector.NewPingCollector(cfg.PingMethod, cfg.InsecureTLS)
 
 	// 创建 WebSocket 客户端
 	wsClient := reporter.NewWSClient(cfg.ServerURL, cfg.Token, cfg.RegisterCode, cfg.InsecureTLS)
@@ -87,6 +87,11 @@ func main() {
 		nil,
 	)
 
+	// 创建配置同步器（必须在 wsClient.Connect()/Run() 之前，避免注册回调中读到 nil）
+	cfgMu.Lock()
+	configSyncer = config.NewSyncer(cfg.ServerURL, cfg.Token, time.Duration(cfg.ConfigSyncInterval)*time.Second, cfg.InsecureTLS)
+	cfgMu.Unlock()
+
 	// 连接 Server
 	if err := wsClient.Connect(); err != nil {
 		log.Printf("连接 Server 失败: %v", err)
@@ -114,9 +119,6 @@ func main() {
 	go startPingProbe(wsClient, pingCollector, &pingTargets, &pingTargetsMu, &pingInterval, pingStopCh)
 
 	// 启动配置拉取（无条件启动，sync() 内部会检查 Token 是否为空）
-	cfgMu.Lock()
-	configSyncer = config.NewSyncer(cfg.ServerURL, cfg.Token, time.Duration(cfg.ConfigSyncInterval)*time.Second, cfg.InsecureTLS)
-	cfgMu.Unlock()
 	configSyncer.Start()
 
 	log.Printf("Agent 已启动，开始监控")

@@ -99,6 +99,9 @@ func (h *AuthHandler) HandleLogin(c *gin.Context) {
 		return
 	}
 
+	// 标记登录成功，供 LoginRateLimit 中间件移除限速计数
+	c.Set("login_success", true)
+
 	// 设置 Cookie（HttpOnly + Secure + SameSite=Strict）
 	c.SetSameSite(http.SameSiteStrictMode)
 	c.SetCookie("token", token, int(12*time.Hour/time.Second), "/", "", true, true)

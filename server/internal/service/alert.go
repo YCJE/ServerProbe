@@ -24,6 +24,7 @@ type AlertEngine struct {
 	ticker  *time.Ticker
 	stopCh  chan struct{}
 	stopOnce sync.Once
+	wg      sync.WaitGroup // 跟踪后台 goroutine
 
 	// 静默期（默认 60 分钟）
 	silencePeriod time.Duration
@@ -56,7 +57,9 @@ func NewAlertEngine(
 func (e *AlertEngine) Start() {
 	e.ticker = time.NewTicker(10 * time.Second)
 
+	e.wg.Add(1)
 	go func() {
+		defer e.wg.Done()
 		for {
 			select {
 			case <-e.ticker.C:
@@ -77,6 +80,7 @@ func (e *AlertEngine) Stop() {
 			e.ticker.Stop()
 		}
 		close(e.stopCh)
+		e.wg.Wait()
 	})
 }
 

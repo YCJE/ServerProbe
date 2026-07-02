@@ -72,7 +72,7 @@ function ServerCard({ server, basePath = '/admin' }: ServerCardProps) {
 
   const memUsagePercent = server.mem_total > 0
     ? (server.mem_used / server.mem_total) * 100
-    : server.mem
+    : (server.mem || 0)
 
   const diskUsage = server.disk_usage || 0
   const disks = server.disks || []
@@ -124,7 +124,7 @@ function ServerCard({ server, basePath = '/admin' }: ServerCardProps) {
           <div className="mb-1 flex items-center justify-between text-xs">
             <span className="text-muted-foreground">CPU</span>
             <span className={`font-medium ${getUsageTextColor(server.cpu)}`}>
-              {server.cpu.toFixed(1)}%
+              {(server.cpu || 0).toFixed(1)}%
             </span>
           </div>
           <ProgressBar value={server.cpu} color={getUsageColor(server.cpu)} />

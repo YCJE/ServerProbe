@@ -116,8 +116,9 @@ func (m *Middleware) LoginRateLimit() gin.HandlerFunc {
 
 		c.Next()
 
-		// 仅 401（认证失败）才保留计数；成功登录或其他响应不计入限速
-		if c.Writer.Status() != http.StatusUnauthorized {
+		// 仅当 handler 显式标记登录成功时才移除计数
+		// （NeedTOTP 返回 200 但并非真正登录成功，不应移除计数，防止 TOTP 暴力破解）
+		if c.GetBool("login_success") {
 			rateLimiter.mu.Lock()
 			if cur, ok := rateLimiter.attempts[ip]; ok && len(cur) > 0 {
 				rateLimiter.attempts[ip] = cur[:len(cur)-1]

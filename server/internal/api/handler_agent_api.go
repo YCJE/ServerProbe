@@ -13,19 +13,21 @@ import (
 
 // AgentAPIHandler Agent 管理 API 处理器 (面向前端)
 type AgentAPIHandler struct {
-	registry  *service.AgentRegistryService
-	agentRepo *repository.AgentRepository
-	monitor   *service.MonitorService
-	engine    *service.AlertEngine
+	registry   *service.AgentRegistryService
+	agentRepo  *repository.AgentRepository
+	recordRepo *repository.RecordRepository
+	monitor    *service.MonitorService
+	engine     *service.AlertEngine
 }
 
 // NewAgentAPIHandler 创建 Agent API 处理器
-func NewAgentAPIHandler(registry *service.AgentRegistryService, agentRepo *repository.AgentRepository, monitor *service.MonitorService, engine *service.AlertEngine) *AgentAPIHandler {
+func NewAgentAPIHandler(registry *service.AgentRegistryService, agentRepo *repository.AgentRepository, recordRepo *repository.RecordRepository, monitor *service.MonitorService, engine *service.AlertEngine) *AgentAPIHandler {
 	return &AgentAPIHandler{
-		registry:  registry,
-		agentRepo: agentRepo,
-		monitor:   monitor,
-		engine:    engine,
+		registry:   registry,
+		agentRepo:  agentRepo,
+		recordRepo: recordRepo,
+		monitor:    monitor,
+		engine:     engine,
 	}
 }
 
@@ -137,6 +139,13 @@ func (h *AgentAPIHandler) HandleDeleteAgent(c *gin.Context) {
 	// 清理告警引擎中的状态
 	if h.engine != nil {
 		h.engine.CleanupStatesForAgent(agentID)
+	}
+
+	// 删除关联的历史聚合数据 (metric_records)
+	if h.recordRepo != nil {
+		if err := h.recordRepo.DeleteByAgentID(agentID); err != nil {
+			log.Printf("删除 Agent %d 历史数据失败: %v", agentID, err)
+		}
 	}
 
 	if err := h.agentRepo.Delete(agentID); err != nil {

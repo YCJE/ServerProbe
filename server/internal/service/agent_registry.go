@@ -77,6 +77,11 @@ func (s *AgentRegistryService) RegisterAgent(req RegisterAgentRequest) (*Registe
 		return nil, fmt.Errorf("注册码已过期")
 	}
 
+	// 检查主机指纹不能为空，防止空指纹匹配到第一个无指纹 Agent 导致身份混淆
+	if req.HostFingerprint == "" {
+		return nil, fmt.Errorf("主机指纹不能为空")
+	}
+
 	// 检查主机指纹是否已注册（同一台机器重新注册）
 	existingAgent, fpErr := s.agentRepo.GetByFingerprint(req.HostFingerprint)
 

@@ -81,6 +81,17 @@ export default function PublicServerDetail() {
     return () => { mountedRef.current = false }
   }, [])
 
+  // 跟踪历史数据请求 ID，防止快速切换时间范围时旧请求覆盖新数据
+  const historyRequestIdRef = useRef(0)
+
+  // 跟踪 loading 超时定时器，组件卸载时清理
+  const loadingTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  useEffect(() => {
+    return () => {
+      if (loadingTimeoutRef.current) clearTimeout(loadingTimeoutRef.current)
+    }
+  }, [])
+
   // 切换服务器时清除历史数据，防止图表数据混合
   useEffect(() => {
     setHistory([])
@@ -143,7 +154,7 @@ export default function PublicServerDetail() {
         })
         .finally(() => {
           if (mountedRef.current) {
-            setTimeout(() => {
+            loadingTimeoutRef.current = setTimeout(() => {
               if (mountedRef.current) setLoading(false)
             }, 5000)
           }
@@ -241,19 +252,20 @@ export default function PublicServerDetail() {
 
   // 加载历史数据
   const loadHistory = useCallback(async (range: TimeRange) => {
+    const requestId = ++historyRequestIdRef.current
     if (isRealtimeRange(range)) {
-      if (mountedRef.current) setHistoryData(null)
+      if (mountedRef.current && historyRequestIdRef.current === requestId) setHistoryData(null)
       return
     }
-    if (mountedRef.current) setHistoryLoading(true)
+    if (mountedRef.current && historyRequestIdRef.current === requestId) setHistoryLoading(true)
     try {
       const data = await getPublicServerHistory(serverId, range)
-      if (mountedRef.current) setHistoryData(data)
+      if (mountedRef.current && historyRequestIdRef.current === requestId) setHistoryData(data)
     } catch (err) {
       console.error('加载历史数据失败:', err)
-      if (mountedRef.current) setHistoryData(null)
+      if (mountedRef.current && historyRequestIdRef.current === requestId) setHistoryData(null)
     } finally {
-      if (mountedRef.current) setHistoryLoading(false)
+      if (mountedRef.current && historyRequestIdRef.current === requestId) setHistoryLoading(false)
     }
   }, [serverId])
 
@@ -318,7 +330,7 @@ export default function PublicServerDetail() {
 
   const memUsagePercent = displayServer.mem_total > 0
     ? (displayServer.mem_used / displayServer.mem_total) * 100
-    : displayServer.mem
+    : (displayServer.mem || 0)
 
   return (
     <div className="space-y-4">
@@ -390,7 +402,7 @@ export default function PublicServerDetail() {
 
       {/* 实时指标卡片 */}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
-        <MetricCard label="CPU" value={`${displayServer.cpu.toFixed(1)}%`} color={getUsageTextColor(displayServer.cpu)} />
+        <MetricCard label="CPU" value={`${(displayServer.cpu || 0).toFixed(1)}%`} color={getUsageTextColor(displayServer.cpu)} />
         <MetricCard label="内存" value={`${memUsagePercent.toFixed(1)}%`} subValue={`${formatBytes(displayServer.mem_used)} / ${formatBytes(displayServer.mem_total)}`} color={getUsageTextColor(memUsagePercent)} />
         <MetricCard label="磁盘" value={`${(displayServer.disk_usage || 0).toFixed(1)}%`} color={getUsageTextColor(displayServer.disk_usage || 0)} />
         <MetricCard label="下行" value={displayServer.online ? formatSpeed(displayServer.net_rx) : '---'} />
@@ -509,7 +521,7 @@ export default function PublicServerDetail() {
                     <div className="text-right">
                       <span className="text-xs text-muted-foreground">抖动</span>
                       <div className="font-medium text-foreground">
-                        {displayServer.online ? `${ping.jitter.toFixed(1)} ms` : '---'}
+                        {displayServer.online ? `${(ping.jitter || 0).toFixed(1)} ms` : '---'}
                       </div>
                     </div>
                   </div>

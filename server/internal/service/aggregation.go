@@ -19,6 +19,7 @@ type AggregationService struct {
 	ticker      *time.Ticker
 	stopCh      chan struct{}
 	stopOnce    sync.Once
+	wg          sync.WaitGroup // 跟踪后台 goroutine
 }
 
 // NewAggregationService 创建数据聚合服务
@@ -39,7 +40,9 @@ func NewAggregationService(
 func (s *AggregationService) Start() {
 	s.ticker = time.NewTicker(5 * time.Minute)
 
+	s.wg.Add(1)
 	go func() {
+		defer s.wg.Done()
 		// 首次立即执行
 		s.aggregate()
 
@@ -63,6 +66,7 @@ func (s *AggregationService) Stop() {
 			s.ticker.Stop()
 		}
 		close(s.stopCh)
+		s.wg.Wait()
 	})
 }
 
@@ -211,7 +215,9 @@ func (s *AggregationService) CleanupExpiredData(retentionDays int) {
 func (s *AggregationService) StartCleanupTask(retentionDays int) {
 	ticker := time.NewTicker(24 * time.Hour) // 每天清理一次
 
+	s.wg.Add(1)
 	go func() {
+		defer s.wg.Done()
 		for {
 			select {
 			case <-ticker.C:

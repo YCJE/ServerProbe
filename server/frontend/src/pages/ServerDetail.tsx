@@ -75,6 +75,9 @@ export default function ServerDetail() {
     }
   }, [])
 
+  // 跟踪历史数据请求 ID，防止快速切换时间范围时旧请求覆盖新数据
+  const historyRequestIdRef = useRef(0)
+
   const isDark = useMemo(() => {
     if (theme === 'dark') return true
     if (theme === 'light') return false
@@ -96,28 +99,29 @@ export default function ServerDetail() {
 
   // 加载历史数据（非实时范围时）
   const loadHistory = useCallback(async (range: TimeRange) => {
+    const requestId = ++historyRequestIdRef.current
     if (isRealtimeRange(range)) {
-      if (mountedRef.current) {
+      if (mountedRef.current && historyRequestIdRef.current === requestId) {
         setHistoryData(null)
       }
       return
     }
 
-    if (mountedRef.current) {
+    if (mountedRef.current && historyRequestIdRef.current === requestId) {
       setHistoryLoading(true)
     }
     try {
       const data = await getServerHistory(serverId, range)
-      if (mountedRef.current) {
+      if (mountedRef.current && historyRequestIdRef.current === requestId) {
         setHistoryData(data)
       }
     } catch (err) {
       console.error('加载历史数据失败:', err)
-      if (mountedRef.current) {
+      if (mountedRef.current && historyRequestIdRef.current === requestId) {
         setHistoryData(null)
       }
     } finally {
-      if (mountedRef.current) {
+      if (mountedRef.current && historyRequestIdRef.current === requestId) {
         setHistoryLoading(false)
       }
     }
@@ -230,7 +234,7 @@ export default function ServerDetail() {
 
   const memUsagePercent = displayServer.mem_total > 0
     ? (displayServer.mem_used / displayServer.mem_total) * 100
-    : displayServer.mem
+    : (displayServer.mem || 0)
 
   return (
     <div className="space-y-4">
@@ -292,7 +296,7 @@ export default function ServerDetail() {
         {/* CPU */}
         <MetricCard
           label="CPU"
-          value={`${displayServer.cpu.toFixed(1)}%`}
+          value={`${(displayServer.cpu || 0).toFixed(1)}%`}
           color={getUsageTextColor(displayServer.cpu)}
         />
         {/* 内存 */}
@@ -514,7 +518,7 @@ export default function ServerDetail() {
                     <div className="text-right">
                       <span className="text-xs text-muted-foreground">抖动</span>
                       <div className="font-medium text-foreground">
-                        {displayServer.online ? `${ping.jitter.toFixed(1)} ms` : '---'}
+                        {displayServer.online ? `${(ping.jitter || 0).toFixed(1)} ms` : '---'}
                       </div>
                     </div>
                   </div>

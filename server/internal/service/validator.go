@@ -16,6 +16,7 @@ type DataValidator struct {
 	ticker         *time.Ticker
 	stopCh         chan struct{}
 	stopOnce       sync.Once
+	wg             sync.WaitGroup // 跟踪后台 goroutine
 }
 
 // NewDataValidator 创建数据校验器
@@ -30,7 +31,9 @@ func NewDataValidator() *DataValidator {
 // 防止已断开连接的 Agent 条目导致内存泄漏
 func (v *DataValidator) StartCleanupTask() {
 	v.ticker = time.NewTicker(10 * time.Minute)
+	v.wg.Add(1)
 	go func() {
+		defer v.wg.Done()
 		for {
 			select {
 			case <-v.ticker.C:
@@ -50,6 +53,7 @@ func (v *DataValidator) Stop() {
 			v.ticker.Stop()
 		}
 		close(v.stopCh)
+		v.wg.Wait()
 	})
 }
 

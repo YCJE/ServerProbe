@@ -14,6 +14,9 @@ import (
 	sharedmodel "github.com/server-probe/shared/model"
 )
 
+// maxDashboardWSConnections 面板 WebSocket 最大并发连接数，防止 DoS
+const maxDashboardWSConnections = 200
+
 // DashboardWSHandler 仪表盘 WebSocket 处理器
 type DashboardWSHandler struct {
 	monitor    *service.MonitorService
@@ -77,6 +80,12 @@ func (h *DashboardWSHandler) HandleDashboardWS(c *gin.Context) {
 		return
 	}
 	_ = claims
+
+	// 升级前检查连接数，防止 DoS
+	if h.monitor.GetDashboardWSCount() >= maxDashboardWSConnections {
+		c.JSON(http.StatusTooManyRequests, gin.H{"error": "连接数已满"})
+		return
+	}
 
 	// 升级为 WebSocket 连接
 	conn, err := h.upgrader.Upgrade(c.Writer, c.Request, nil)
@@ -182,6 +191,12 @@ func (h *DashboardWSHandler) pushDashboardData(ws *wsConn) bool {
 // HandlePublicDashboardWS 公开仪表盘 WebSocket 端点 (无需登录)
 // 路由: GET /ws/public/dashboard
 func (h *DashboardWSHandler) HandlePublicDashboardWS(c *gin.Context) {
+	// 升级前检查连接数，防止 DoS
+	if h.monitor.GetDashboardWSCount() >= maxDashboardWSConnections {
+		c.JSON(http.StatusTooManyRequests, gin.H{"error": "连接数已满"})
+		return
+	}
+
 	// 升级为 WebSocket 连接
 	conn, err := h.upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {

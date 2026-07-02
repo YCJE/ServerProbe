@@ -50,6 +50,11 @@ func (r *RecordRepository) DeleteOlderThan(before int64) (int64, error) {
 	return result.RowsAffected, result.Error
 }
 
+// DeleteByAgentID 删除指定 Agent 的所有历史聚合数据
+func (r *RecordRepository) DeleteByAgentID(agentID int64) error {
+	return r.db.Where("agent_id = ?", agentID).Delete(&model.MetricRecord{}).Error
+}
+
 // CleanupExpired 清理过期数据（默认保留 2 天）
 func (r *RecordRepository) CleanupExpired(retentionDays int) (int64, error) {
 	if retentionDays <= 0 {

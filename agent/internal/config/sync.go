@@ -86,8 +86,9 @@ func (s *Syncer) GetConfig() *sharedmodel.AgentConfig {
 
 // sync 拉取配置
 func (s *Syncer) sync() {
-	// 强制 TLS
-	if !strings.HasPrefix(s.serverURL, "https://") {
+	// 强制 TLS（大小写不敏感）
+	lowerURL := strings.ToLower(s.serverURL)
+	if !strings.HasPrefix(lowerURL, "https://") {
 		log.Printf("安全错误：Server 地址必须使用 https://")
 		return
 	}

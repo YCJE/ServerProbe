@@ -2,6 +2,7 @@ package collector
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"math"
 	"net"
@@ -31,12 +32,15 @@ type PingCollector struct {
 	method         PingMethod
 	detectedOnce   bool
 	detectedMethod PingMethod
+	detectOnce     sync.Once
+	insecureTLS    bool
 }
 
 // NewPingCollector 创建 Ping 采集器
-func NewPingCollector(method string) *PingCollector {
+func NewPingCollector(method string, insecureTLS bool) *PingCollector {
 	return &PingCollector{
-		method: PingMethod(method),
+		method:      PingMethod(method),
+		insecureTLS: insecureTLS,
 	}
 }
 
@@ -94,6 +98,17 @@ func (c *PingCollector) pingTarget(target sharedmodel.PingTarget) sharedmodel.Pi
 	}
 
 	method := c.method
+	// 优先使用 target 配置的探测方式
+	if target.Method != "" {
+		switch strings.ToLower(target.Method) {
+		case "icmp":
+			method = PingMethodICMP
+		case "tcp":
+			method = PingMethodTCP
+		case "http":
+			method = PingMethodHTTP
+		}
+	}
 	if method == PingMethodAuto {
 		method = c.detectBestMethod()
 	}
@@ -112,31 +127,26 @@ func (c *PingCollector) pingTarget(target sharedmodel.PingTarget) sharedmodel.Pi
 	return result
 }
 
-// detectBestMethod 自动检测最佳 Ping 方式（缓存检测结果）
+// detectBestMethod 自动检测最佳 Ping 方式（使用 sync.Once 保证并发安全）
 func (c *PingCollector) detectBestMethod() PingMethod {
-	// 如果已检测过，直接返回缓存的结果
-	if c.detectedOnce {
-		return c.detectedMethod
-	}
-
-	// 尝试 privileged ICMP
-	if canPrivilegedICMP() {
-		c.detectedMethod = PingMethodICMP
+	c.detectOnce.Do(func() {
+		// 如果配置指定了明确的方法，直接使用
+		if c.method != PingMethodAuto {
+			c.detectedMethod = c.method
+			c.detectedOnce = true
+			return
+		}
+		// 自动检测
+		if canPrivilegedICMP() {
+			c.detectedMethod = PingMethodICMP
+		} else if canUnprivilegedICMP() {
+			c.detectedMethod = PingMethodICMPUnprivileged
+		} else {
+			c.detectedMethod = PingMethodTCP
+		}
 		c.detectedOnce = true
-		return PingMethodICMP
-	}
-
-	// 尝试 unprivileged ICMP
-	if canUnprivilegedICMP() {
-		c.detectedMethod = PingMethodICMPUnprivileged
-		c.detectedOnce = true
-		return PingMethodICMPUnprivileged
-	}
-
-	// 降级到 TCP
-	c.detectedMethod = PingMethodTCP
-	c.detectedOnce = true
-	return PingMethodTCP
+	})
+	return c.detectedMethod
 }
 
 // doICMPPing 执行 ICMP Ping
@@ -340,6 +350,10 @@ func (c *PingCollector) doHTTPPing(result *sharedmodel.PingResult, target string
 			return dialer.DialContext(ctx, network, net.JoinHostPort(ips[0].String(), port))
 		},
 		TLSHandshakeTimeout: 1 * time.Second,
+		TLSClientConfig: &tls.Config{
+			InsecureSkipVerify: c.insecureTLS,
+			MinVersion:         tls.VersionTLS12,
+		},
 	}
 
 	client := &http.Client{

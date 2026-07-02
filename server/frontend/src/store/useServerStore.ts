@@ -78,6 +78,9 @@ interface ServerStoreState {
 /** 实时历史数据最大保留点数 */
 const MAX_REALTIME_POINTS = 1200
 
+/** fetchServerDetail 请求 ID，用于防止快速切换服务器时旧请求覆盖新数据 */
+let fetchServerDetailRequestId = 0
+
 /** 确保系统主题变化监听器只注册一次 */
 let mediaQueryListenerRegistered = false
 
@@ -190,12 +193,18 @@ export const useServerStore = create<ServerStoreState>((set, get) => ({
 
   // 获取服务器详情
   fetchServerDetail: async (id: number) => {
-    set({ currentServerLoading: true })
+    const requestId = ++fetchServerDetailRequestId
+    set({ currentServer: null, currentServerLoading: true })
     try {
       const server = await getServerDetail(id)
-      set({ currentServer: server, currentServerLoading: false })
+      // 仅当请求 ID 匹配时才更新状态，防止快速切换时旧请求覆盖新数据
+      if (fetchServerDetailRequestId === requestId) {
+        set({ currentServer: server, currentServerLoading: false })
+      }
     } catch (err) {
-      set({ currentServerLoading: false })
+      if (fetchServerDetailRequestId === requestId) {
+        set({ currentServerLoading: false })
+      }
       throw err
     }
   },
@@ -331,24 +340,24 @@ export const useServerStore = create<ServerStoreState>((set, get) => ({
         return {
           ...server,
           online: live.online,
-          cpu: live.cpu,
-          mem: live.mem,
+          cpu: live.cpu || 0,
+          mem: live.mem || 0,
           mem_total: live.mem_total,
           mem_used: live.mem_used,
           swap_total: live.swap_total || 0,
           swap_used: live.swap_used || 0,
-          net_rx: live.net_rx,
-          net_tx: live.net_tx,
+          net_rx: live.net_rx || 0,
+          net_tx: live.net_tx || 0,
           uptime: live.uptime,
-          load_1: live.load_1,
+          load_1: live.load_1 || 0,
           load_5: live.load_5 || 0,
           load_15: live.load_15 || 0,
-          disk_usage: live.disk_usage,
+          disk_usage: live.disk_usage || 0,
           disks: live.disks || [],
           tcp_connections: live.tcp_connections || 0,
           udp_connections: live.udp_connections || 0,
           process_count: live.process_count || 0,
-          ping_data: live.ping_data,
+          ping_data: live.ping_data || [],
           last_seen: live.timestamp,
           hostname: live.hostname || server.hostname,
           display_name: live.display_name || server.display_name,

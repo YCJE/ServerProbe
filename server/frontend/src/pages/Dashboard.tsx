@@ -17,10 +17,10 @@ export default function Dashboard() {
     const online = servers.filter((s) => s.online).length
     const offline = total - online
     const avgCpu = online > 0
-      ? servers.filter((s) => s.online).reduce((sum, s) => sum + s.cpu, 0) / online
+      ? servers.filter((s) => s.online).reduce((sum, s) => sum + (s.cpu || 0), 0) / online
       : 0
     const avgMem = online > 0
-      ? servers.filter((s) => s.online).reduce((sum, s) => sum + s.mem, 0) / online
+      ? servers.filter((s) => s.online).reduce((sum, s) => sum + (s.mem || 0), 0) / online
       : 0
     const totalRx = servers.filter((s) => s.online).reduce((sum, s) => sum + (s.net_rx || 0), 0)
     const totalTx = servers.filter((s) => s.online).reduce((sum, s) => sum + (s.net_tx || 0), 0)

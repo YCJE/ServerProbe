@@ -40,16 +40,19 @@ type MonitorService struct {
 	ticker       *time.Ticker
 	stopCh       chan struct{}
 	stopOnce     sync.Once
+	wg           sync.WaitGroup // 跟踪后台 goroutine
+	lastDBUpdate map[int64]time.Time // 限频更新 last_seen 的记录 (复用 mu 保护)
 }
 
 // NewMonitorService 创建监控服务
 func NewMonitorService(agentRepo *repository.AgentRepository, dataDir string) *MonitorService {
 	return &MonitorService{
-		agentRepo:   agentRepo,
-		ringBuffers: make(map[int64]*repository.RingBuffer),
-		connections: make(map[int64]*AgentConn),
-		dataDir:     dataDir,
-		stopCh:      make(chan struct{}),
+		agentRepo:    agentRepo,
+		ringBuffers:  make(map[int64]*repository.RingBuffer),
+		connections:  make(map[int64]*AgentConn),
+		dataDir:      dataDir,
+		stopCh:       make(chan struct{}),
+		lastDBUpdate: make(map[int64]time.Time),
 	}
 }
 
@@ -150,6 +153,8 @@ func (m *MonitorService) UnregisterConnectionIfMatch(agentID int64, conn *websoc
 	if ac, ok := m.connections[agentID]; ok {
 		if ac.Conn == conn {
 			ac.Conn.Close()
+			// 更新 last_seen 时间戳（标记离线）
+			_ = m.agentRepo.UpdateLastSeen(agentID, false)
 			delete(m.connections, agentID)
 			_ = m.agentRepo.UpdateOnlineStatus(agentID, false)
 			return true
@@ -206,11 +211,22 @@ func (m *MonitorService) SetConfigPushCallback(cb func(agentID int64, config *sh
 
 // UpdateHeartbeat 更新心跳时间
 func (m *MonitorService) UpdateHeartbeat(agentID int64) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+	var needDBUpdate bool
 
+	m.mu.Lock()
 	if conn, ok := m.connections[agentID]; ok {
 		conn.LastSeen = time.Now()
+	}
+	// 限频更新数据库 last_seen（每 60 秒最多一次），避免持续在线时 last_seen 始终停留在上线时间
+	if last, ok := m.lastDBUpdate[agentID]; !ok || time.Since(last) >= 60*time.Second {
+		m.lastDBUpdate[agentID] = time.Now()
+		needDBUpdate = true
+	}
+	m.mu.Unlock()
+
+	// 在锁外执行数据库写入，避免持锁阻塞监控服务
+	if needDBUpdate {
+		_ = m.agentRepo.UpdateLastSeen(agentID, true)
 	}
 }
 
@@ -345,7 +361,9 @@ func (m *MonitorService) CheckHeartbeatTimeout(timeout time.Duration) {
 // StartHeartbeatChecker 启动心跳检查器
 func (m *MonitorService) StartHeartbeatChecker(timeout time.Duration) {
 	m.ticker = time.NewTicker(30 * time.Second)
+	m.wg.Add(1)
 	go func() {
+		defer m.wg.Done()
 		for {
 			select {
 			case <-m.ticker.C:
@@ -364,6 +382,7 @@ func (m *MonitorService) Stop() {
 			m.ticker.Stop()
 		}
 		close(m.stopCh)
+		m.wg.Wait()
 	})
 }
 
