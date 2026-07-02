@@ -21,12 +21,12 @@ export default function ThemeToggle() {
   }, [])
 
   const options: { value: Theme; label: string; icon: string }[] = [
-    { value: 'light', label: '浅色', icon: '☀' },
     { value: 'dark', label: '深色', icon: '☾' },
+    { value: 'light', label: '浅色', icon: '☀' },
     { value: 'system', label: '跟随系统', icon: '⌂' },
   ]
 
-  const current = options.find((o) => o.value === theme) || options[2]
+  const current = options.find((o) => o.value === theme) || options[0]
 
   return (
     <div className="relative" ref={ref}>

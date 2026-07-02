@@ -97,7 +97,7 @@ function applyTheme(theme: Theme): void {
 /** 从 localStorage 加载主题 */
 function loadTheme(): Theme {
   const stored = localStorage.getItem('probe_theme') as Theme | null
-  return stored || 'system'
+  return stored || 'dark' // 默认深色主题 (Apple HIG)
 }
 
 export const useServerStore = create<ServerStoreState>((set, get) => ({
