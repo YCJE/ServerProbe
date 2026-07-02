@@ -129,6 +129,10 @@ func (s *NotifyService) sendEmail(channel *model.NotifyChannel, title, content s
 	safeTitle := strings.NewReplacer("\r", " ", "\n", " ").Replace(title)
 	safeContent := strings.NewReplacer("\r\n", "\n", "\r", "").Replace(content)
 
+	// 过滤 From/To 中的 CRLF，防止 SMTP 命令/邮件头注入
+	config.From = strings.NewReplacer("\r", "", "\n", "").Replace(config.From)
+	config.To = strings.NewReplacer("\r", "", "\n", "").Replace(config.To)
+
 	// 构建邮件内容
 	subject := fmt.Sprintf("Subject: %s\r\n", safeTitle)
 	contentType := "Content-Type: text/plain; charset=UTF-8\r\n"
@@ -251,10 +255,34 @@ func (s *NotifyService) ValidateChannelConfig(channelType, config string) error 
 		if cfg.SMTPHost == "" || cfg.From == "" || cfg.To == "" {
 			return fmt.Errorf("SMTPHost、From、To 不能为空")
 		}
+		// 验证邮箱格式，防止注入非法字符到 SMTP 命令
+		if !isValidEmail(cfg.From) {
+			return fmt.Errorf("From 邮箱格式无效")
+		}
+		if !isValidEmail(cfg.To) {
+			return fmt.Errorf("To 邮箱格式无效")
+		}
 
 	default:
 		return fmt.Errorf("未知渠道类型: %s", channelType)
 	}
 
 	return nil
+}
+
+// isValidEmail 验证邮箱地址的基本格式
+// 检查是否包含且仅包含一个 @、@ 不在首尾、域名部分包含 .，且不含空白/尖括号等非法字符
+func isValidEmail(email string) bool {
+	if strings.ContainsAny(email, " \t\r\n<>") {
+		return false
+	}
+	at := strings.IndexByte(email, '@')
+	if at <= 0 || at == len(email)-1 {
+		return false
+	}
+	domain := email[at+1:]
+	if !strings.Contains(domain, ".") {
+		return false
+	}
+	return true
 }

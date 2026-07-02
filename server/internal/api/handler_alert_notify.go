@@ -114,6 +114,15 @@ func (h *AlertHandler) HandleCreateAlert(c *gin.Context) {
 		return
 	}
 
+	// GORM v2 对有 default tag 且字段值为零值(false)的字段会在 INSERT 中省略，
+	// 让数据库使用 DEFAULT 值(true)。用户显式指定 enabled=false 时，需 Create 后用 Update 覆盖。
+	if !req.Enabled {
+		rule.Enabled = false
+		if err := h.repo.Update(rule); err != nil {
+			log.Printf("更新告警规则 Enabled 字段失败: %v", err)
+		}
+	}
+
 	c.JSON(http.StatusOK, gin.H{"rule": rule})
 }
 

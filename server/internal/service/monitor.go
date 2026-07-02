@@ -102,11 +102,11 @@ func (m *MonitorService) GetDataDir() string {
 // RegisterConnection 注册 Agent 连接
 func (m *MonitorService) RegisterConnection(agentID int64, conn *websocket.Conn) *AgentConn {
 	m.mu.Lock()
-	defer m.mu.Unlock()
 
-	// 如果已有连接，关闭旧连接
-	if oldConn, ok := m.connections[agentID]; ok {
-		oldConn.Conn.Close()
+	// 在锁内收集需要关闭的旧连接引用，锁外再关闭，避免持锁阻塞
+	var oldConn *AgentConn
+	if oc, ok := m.connections[agentID]; ok {
+		oldConn = oc
 	}
 
 	agentConn := &AgentConn{
@@ -121,7 +121,14 @@ func (m *MonitorService) RegisterConnection(agentID int64, conn *websocket.Conn)
 		m.ringBuffers[agentID] = repository.NewRingBuffer(7200) // 7200 点 × 3s = 6 小时
 	}
 
-	// 更新数据库在线状态
+	m.mu.Unlock()
+
+	// 在锁外关闭旧连接，避免持锁阻塞监控服务
+	if oldConn != nil {
+		oldConn.Conn.Close()
+	}
+
+	// 更新数据库在线状态（锁外执行，避免持锁阻塞监控服务）
 	_ = m.agentRepo.UpdateOnlineStatus(agentID, true)
 	// 更新 last_seen 时间戳（标记上线）
 	_ = m.agentRepo.UpdateLastSeen(agentID, true)
@@ -148,21 +155,28 @@ func (m *MonitorService) UnregisterConnection(agentID int64) {
 // 解决 Agent 重连竞态: 旧连接的 defer 不应关闭新连接
 func (m *MonitorService) UnregisterConnectionIfMatch(agentID int64, conn *websocket.Conn) bool {
 	m.mu.Lock()
-	defer m.mu.Unlock()
 
+	// 在锁内仅收集需要清理的状态、关闭连接、删除 map 条目
+	needCleanup := false
 	if ac, ok := m.connections[agentID]; ok {
 		if ac.Conn == conn {
 			ac.Conn.Close()
-			// 更新 last_seen 时间戳（标记离线）
-			_ = m.agentRepo.UpdateLastSeen(agentID, false)
 			delete(m.connections, agentID)
-			_ = m.agentRepo.UpdateOnlineStatus(agentID, false)
-			return true
+			needCleanup = true
 		}
 		// 连接已被新连接替换，不执行注销
+	}
+	m.mu.Unlock()
+
+	if !needCleanup {
 		return false
 	}
-	return false
+
+	// 在锁外执行数据库写入，避免持锁阻塞监控服务
+	// 更新 last_seen 时间戳（标记离线）
+	_ = m.agentRepo.UpdateLastSeen(agentID, false)
+	_ = m.agentRepo.UpdateOnlineStatus(agentID, false)
+	return true
 }
 
 // UnregisterAgent 完全移除 Agent (删除 Agent 时调用)
@@ -197,12 +211,14 @@ func (m *MonitorService) BroadcastConfigUpdate(config *sharedmodel.AgentConfig) 
 	for agentID := range m.connections {
 		agentIDs = append(agentIDs, agentID)
 	}
+	// 在 RLock 内复制回调函数指针，避免锁释放后被 SetConfigPushCallback 替换
+	onConfigPush := m.onConfigPush
 	m.mu.RUnlock()
 
 	// 通过 OnConfigPush 回调推送 (使用 handler_agent.go 中的 agentWSConn.mu 锁)
-	if m.onConfigPush != nil {
+	if onConfigPush != nil {
 		for _, agentID := range agentIDs {
-			m.onConfigPush(agentID, config)
+			onConfigPush(agentID, config)
 		}
 	}
 }

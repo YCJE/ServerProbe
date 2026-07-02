@@ -88,10 +88,7 @@ async function request<T>(
       // 使用防重定向标志，避免多次 401 触发多次跳转
       if (!isRedirecting) {
         isRedirecting = true
-        setTimeout(() => {
-          window.location.href = '/login'
-          isRedirecting = false
-        }, 0)
+        window.location.href = '/login'
       }
     }
     throw new ApiError(401, '未授权，请重新登录')
@@ -110,18 +107,17 @@ async function request<T>(
 
   // 处理空响应
   const text = await response.text()
-  if (!text) {
-    return {} as T
+  if (!text) return {} as T
+  // 先尝试 JSON.parse，失败再检查 Content-Type 给出友好错误
+  try {
+    return JSON.parse(text) as T
+  } catch {
+    const contentType = response.headers.get('Content-Type') || ''
+    if (!contentType.toLowerCase().includes('application/json')) {
+      throw new ApiError(response.status, `服务器返回了非 JSON 响应 (Content-Type: ${contentType || '未知'})`)
+    }
+    throw new ApiError(response.status, '响应 JSON 解析失败')
   }
-  // 校验响应 Content-Type，避免反向代理返回 HTML 错误页时 JSON.parse 抛出不友好错误
-  const contentType = response.headers.get('Content-Type') || ''
-  if (!contentType.includes('application/json')) {
-    throw new ApiError(
-      response.status,
-      `服务器返回了非 JSON 响应 (Content-Type: ${contentType || '未知'})`,
-    )
-  }
-  return JSON.parse(text) as T
 }
 
 // ==================== 认证相关 API ====================

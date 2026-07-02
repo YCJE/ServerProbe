@@ -165,7 +165,7 @@ export default function ServerDetail() {
         load_1: liveData.load_1,
         load_5: liveData.load_5 || 0,
         load_15: liveData.load_15 || 0,
-        disk_usage: liveData.disk_usage,
+        disk_usage: liveData.disk_usage ?? 0,
         disks: liveData.disks || [],
         tcp_connections: liveData.tcp_connections || 0,
         udp_connections: liveData.udp_connections || 0,

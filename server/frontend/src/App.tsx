@@ -72,10 +72,10 @@ function App() {
     </Routes>
   )
 
-  // 使用 location.pathname 作为 ErrorBoundary 的 key，路由切换时重新挂载，
-  // 自动清除错误状态，避免用户永久卡死在错误页
+  // 使用 location.pathname 作为 ErrorBoundary 的 resetKey，路由切换时清除错误状态，
+  // 不使用 key 触发重挂载，避免子树（含 Layout/WS 连接）卸载重建
   return (
-    <ErrorBoundary key={location.pathname}>
+    <ErrorBoundary resetKey={location.pathname}>
       {routes}
     </ErrorBoundary>
   )

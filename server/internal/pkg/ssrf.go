@@ -88,8 +88,10 @@ func CheckURL(rawURL string) error {
 		}
 	}
 
-	// 解析主机名
-	ips, err := net.LookupIP(host)
+	// 解析主机名（带超时，避免 DNS 不响应时阻塞告警通知）
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	ips, err := net.DefaultResolver.LookupIP(ctx, "ip", host)
 	if err != nil {
 		return fmt.Errorf("DNS 解析失败: %w", err)
 	}

@@ -65,7 +65,13 @@ export class DashboardWebSocket {
     this.ws.onmessage = (event) => {
       try {
         const message = JSON.parse(event.data) as DashboardMessage
-        this.listeners.forEach((listener) => listener(message))
+        this.listeners.forEach((listener) => {
+          try {
+            listener(message)
+          } catch (err) {
+            console.error('[WS] 消息监听器异常:', err)
+          }
+        })
       } catch (err) {
         console.error('[WS] 消息解析失败:', err)
       }

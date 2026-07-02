@@ -12,6 +12,7 @@ import (
 type memInfo struct {
 	total     uint64 // MemTotal（字节）
 	available uint64 // MemAvailable（字节）
+	hasAvail  bool   // 是否解析到 MemAvailable 键（旧内核无此字段）
 	free      uint64 // MemFree（字节，旧内核回退用）
 	buffers   uint64 // Buffers（字节，旧内核回退用）
 	cached    uint64 // Cached（字节，旧内核回退用）
@@ -47,9 +48,11 @@ func (c *MemoryCollector) Collect() (interface{}, error) {
 	}
 
 	// Used = Total - Available
-	// 旧内核 /proc/meminfo 不含 MemAvailable，回退用 total - free - buffers - cached
+	// 旧内核 /proc/meminfo 不含 MemAvailable，回退用 total - free - buffers - cached。
+	// 注意 MemAvailable 合法可为 0（内存耗尽时），因此用 hasAvail 标志判断键是否存在，
+	// 而非用 available == 0 判断，避免把"内存耗尽"误判为"字段缺失"。
 	available := info.available
-	if available == 0 {
+	if !info.hasAvail {
 		available = info.free + info.buffers + info.cached
 	}
 	used := uint64(0)
@@ -98,6 +101,7 @@ func parseMemInfo(data string) (memInfo, error) {
 			info.total = value
 		case "MemAvailable":
 			info.available = value
+			info.hasAvail = true
 		case "MemFree":
 			info.free = value
 		case "Buffers":

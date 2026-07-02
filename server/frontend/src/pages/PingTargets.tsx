@@ -163,12 +163,14 @@ export default function PingTargets() {
       setFormError('HTTP 探测目标必须为有效的 http(s):// URL')
       return
     }
-    if (form.method === 'tcp' && !/^[^\s:]+:\d+$/.test(form.target.trim())) {
-      setFormError('TCP 探测目标必须为 host:port 格式（例如：example.com:80）')
+    // TCP: 支持 [IPv6]:port
+    if (form.method === 'tcp' && !/^(\[[0-9a-fA-F:]+\]|[^\s:]+):\d+$/.test(form.target.trim())) {
+      setFormError('TCP 探测目标必须为 host:port 或 [IPv6]:port 格式')
       return
     }
-    if (form.method === 'icmp' && !/^[a-zA-Z0-9]([a-zA-Z0-9\-.]*[a-zA-Z0-9])?$/.test(form.target.trim())) {
-      setFormError('ICMP 探测目标必须为有效的主机名或 IP 地址（不含协议和端口）')
+    // ICMP: 支持 IPv6
+    if (form.method === 'icmp' && !/^([0-9a-fA-F:]+|[a-zA-Z0-9]([a-zA-Z0-9\-.]*[a-zA-Z0-9])?)$/.test(form.target.trim())) {
+      setFormError('ICMP 探测目标必须为有效的主机名、IPv4 或 IPv6 地址')
       return
     }
 

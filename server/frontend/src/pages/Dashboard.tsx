@@ -43,7 +43,7 @@ export default function Dashboard() {
         </div>
         <div className="flex items-center gap-2">
           <button
-            onClick={() => fetchServers()}
+            onClick={() => fetchServers().catch(() => {})}
             className="flex h-9 items-center gap-1.5 rounded-lg border border-border bg-card px-2.5 text-sm text-foreground transition-colors hover:bg-accent sm:px-3"
           >
             <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -147,7 +147,7 @@ export default function Dashboard() {
 
 /** 格式化速率（简短版） */
 function formatSpeedShort(bytesPerSec: number): string {
-  if (bytesPerSec === 0 || bytesPerSec == null) return '0 B/s'
+  if (bytesPerSec == null || !isFinite(bytesPerSec) || bytesPerSec <= 0) return '0 B/s'
   const k = 1024
   const sizes = ['B/s', 'KB/s', 'MB/s', 'GB/s']
   const i = Math.min(Math.floor(Math.log(bytesPerSec) / Math.log(k)), sizes.length - 1)

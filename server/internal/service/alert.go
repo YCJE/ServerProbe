@@ -207,6 +207,10 @@ func (e *AlertEngine) checkRuleForAgent(rule model.AlertRule, agentID int64) {
 			// FIRING → RESOLVED
 			state.state = model.AlertStateResolved
 			pendingNotifications = append(pendingNotifications, pendingNotification{rule, agentID, value, model.AlertStateResolved})
+
+		case model.AlertStateResolved:
+			// RESOLVED → OK (已恢复告警回到正常状态，避免 states map 中条目永远存在)
+			state.state = model.AlertStateOK
 		}
 	}
 

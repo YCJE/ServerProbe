@@ -1,6 +1,7 @@
 package api
 
 import (
+	"log"
 	"net/http"
 	"strconv"
 
@@ -108,6 +109,15 @@ func (h *PingTargetHandler) HandleCreatePingTarget(c *gin.Context) {
 	if err := h.repo.Create(target); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建探测目标失败"})
 		return
+	}
+
+	// GORM v2 对有 default tag 且字段值为零值(false)的字段会在 INSERT 中省略，
+	// 让数据库使用 DEFAULT 值(true)。用户显式指定 enabled=false 时，需 Create 后用 Update 覆盖。
+	if req.Enabled != nil && !*req.Enabled {
+		target.Enabled = false
+		if err := h.repo.Update(target); err != nil {
+			log.Printf("更新探测目标 Enabled 字段失败: %v", err)
+		}
 	}
 
 	h.pushConfigUpdate()

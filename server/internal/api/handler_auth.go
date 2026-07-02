@@ -2,6 +2,7 @@ package api
 
 import (
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"time"
@@ -48,12 +49,39 @@ type LoginResponse struct {
 	Token     string `json:"token,omitempty"`
 }
 
+// validateUsername 验证用户名格式: 长度 3-32，仅允许字母、数字、下划线和连字符
+func validateUsername(username string) error {
+	if len(username) < 3 || len(username) > 32 {
+		return fmt.Errorf("用户名长度必须在 3-32 个字符之间")
+	}
+	for _, r := range username {
+		switch {
+		case r >= 'a' && r <= 'z':
+		case r >= 'A' && r <= 'Z':
+		case r >= '0' && r <= '9':
+		case r == '_' || r == '-':
+		default:
+			return fmt.Errorf("用户名只能包含字母、数字、下划线和连字符")
+		}
+	}
+	return nil
+}
+
 // HandleLogin 处理登录
 // 路由: POST /api/v1/auth/login
 func (h *AuthHandler) HandleLogin(c *gin.Context) {
 	var req LoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "请求参数无效"})
+		return
+	}
+
+	// 验证用户名格式 (格式非法时直接返回通用错误，避免无效用户名查询数据库)
+	if err := validateUsername(req.Username); err != nil {
+		c.JSON(http.StatusUnauthorized, LoginResponse{
+			Success: false,
+			Message: "用户名或密码错误",
+		})
 		return
 	}
 
@@ -138,6 +166,12 @@ func (h *AuthHandler) HandleSetup(c *gin.Context) {
 	var req SetupRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "参数错误"})
+		return
+	}
+
+	// 验证用户名格式 (长度 3-32，仅允许字母、数字、下划线和连字符)
+	if err := validateUsername(req.Username); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 

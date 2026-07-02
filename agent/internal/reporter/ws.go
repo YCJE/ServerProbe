@@ -153,26 +153,41 @@ func (c *WSClient) Connect() error {
 		// 已有 Token，发送会话恢复请求
 		if err := c.resumeSession(); err != nil {
 			c.mu.Lock()
-			c.conn = nil
+			needClose := c.conn == conn
+			if needClose {
+				c.conn = nil
+			}
 			c.mu.Unlock()
-			conn.Close()
+			if needClose {
+				conn.Close()
+			}
 			return fmt.Errorf("会话恢复失败: %w", err)
 		}
 	} else if c.registerCode != "" {
 		// 有注册码，发送注册请求
 		if err := c.register(); err != nil {
 			c.mu.Lock()
-			c.conn = nil
+			needClose := c.conn == conn
+			if needClose {
+				c.conn = nil
+			}
 			c.mu.Unlock()
-			conn.Close()
+			if needClose {
+				conn.Close()
+			}
 			return fmt.Errorf("注册失败: %w", err)
 		}
 	} else {
 		// Token 和注册码都为空，无法建立认证连接
 		c.mu.Lock()
-		c.conn = nil
+		needClose := c.conn == conn
+		if needClose {
+			c.conn = nil
+		}
 		c.mu.Unlock()
-		conn.Close()
+		if needClose {
+			conn.Close()
+		}
 		return fmt.Errorf("安全错误：缺少 Token 和注册码，无法建立认证连接")
 	}
 
@@ -206,7 +221,7 @@ func (c *WSClient) register() error {
 		Hostname:        hostname,
 		OS:              runtime.GOOS,
 		Arch:            runtime.GOARCH,
-		AgentVersion:    "1.0.0",
+		AgentVersion:    "v1.0.0",
 		HostFingerprint: c.fingerprint,
 	}
 
@@ -274,7 +289,7 @@ func (c *WSClient) resumeSession() error {
 		Hostname:        hostname,
 		OS:              runtime.GOOS,
 		Arch:            runtime.GOARCH,
-		AgentVersion:    "1.0.0",
+		AgentVersion:    "v1.0.0",
 		HostFingerprint: c.fingerprint,
 	}
 

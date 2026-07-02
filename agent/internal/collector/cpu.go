@@ -2,6 +2,7 @@ package collector
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 
@@ -23,8 +24,11 @@ type cpuStat struct {
 }
 
 // total 返回所有字段的总和
+// 注意：内核 /proc/stat 中 guest 已包含在 user 中，guest_nice 已包含在 nice 中，
+// 这里不能再累加 Guest/GuestNice，否则 total 会双重计算，导致 totalDelta 虚高、
+// usage 系统性偏低。
 func (s cpuStat) total() uint64 {
-	return s.User + s.Nice + s.System + s.Idle + s.IOWait + s.IRQ + s.SoftIRQ + s.Steal + s.Guest + s.GuestNice
+	return s.User + s.Nice + s.System + s.Idle + s.IOWait + s.IRQ + s.SoftIRQ + s.Steal
 }
 
 // busy 返回非空闲字段的总和
@@ -78,9 +82,14 @@ func (c *CPUCollector) Collect() (interface{}, error) {
 				busyDelta = currentBusy - prevBusy
 			}
 			usage = float64(busyDelta) / float64(totalDelta) * 100
-		} else {
-			usage = c.prevUsage
+		} else if currentTotal < prevTotal {
+			// 计数器回退（容器/cgroup 重置等），丢弃旧基准，本轮返回 0，
+			// 并以当前值作为新基准，避免后续长时间返回陈旧值
+			usage = 0
+			c.prevStat = &currentStat
+			c.prevUsage = 0
 		}
+		// currentTotal == prevTotal 时 usage 保持默认 0（无活动）
 	}
 
 	c.prevStat = &currentStat
@@ -230,10 +239,9 @@ func parseLoadavg(data string) (float64, float64, float64, error) {
 }
 
 // roundFloat 保留 n 位小数
+// 使用 math.Round 避免原实现 float64(int64(val*multiplier+0.5)) 对负数方向错误
+// 以及浮点精度偏差问题
 func roundFloat(val float64, n int) float64 {
-	multiplier := 1.0
-	for i := 0; i < n; i++ {
-		multiplier *= 10
-	}
-	return float64(int64(val*multiplier+0.5)) / multiplier
+	p := math.Pow(10, float64(n))
+	return math.Round(val*p) / p
 }

@@ -3,6 +3,7 @@ import type { ErrorInfo, ReactNode } from 'react'
 
 interface ErrorBoundaryProps {
   children: ReactNode
+  resetKey?: string
 }
 
 interface ErrorBoundaryState {
@@ -19,6 +20,16 @@ export default class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBo
 
   static getDerivedStateFromError(error: Error): ErrorBoundaryState {
     return { hasError: true, error }
+  }
+
+  componentDidUpdate(prevProps: ErrorBoundaryProps): void {
+    // resetKey 变化时清除错误状态（不触发重挂载，避免子树状态丢失）
+    if (
+      prevProps.resetKey !== this.props.resetKey &&
+      this.state.hasError
+    ) {
+      this.setState({ hasError: false, error: null })
+    }
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo): void {

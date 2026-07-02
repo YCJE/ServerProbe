@@ -133,19 +133,20 @@ func (h *AgentAPIHandler) HandleDeleteAgent(c *gin.Context) {
 		return
 	}
 
-	// 先清理 MonitorService 中的连接和 ringBuffer
+	// 先删除关联的历史聚合数据和 Agent 记录 (使用事务确保原子性)
+	// 先执行 DB 删除，成功后再清理内存状态，避免 DB 删除失败但内存已被清理
+	if err := h.agentRepo.DeleteWithRecordsTx(agentID); err != nil {
+		log.Printf("删除 Agent %d 及其历史数据失败: %v", agentID, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "删除 Agent 失败"})
+		return
+	}
+
+	// DB 删除成功后，清理 MonitorService 中的连接和 ringBuffer
 	h.monitor.UnregisterAgent(agentID)
 
 	// 清理告警引擎中的状态
 	if h.engine != nil {
 		h.engine.CleanupStatesForAgent(agentID)
-	}
-
-	// 删除关联的历史聚合数据和 Agent 记录 (使用事务确保原子性)
-	if err := h.agentRepo.DeleteWithRecordsTx(agentID); err != nil {
-		log.Printf("删除 Agent %d 及其历史数据失败: %v", agentID, err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "删除 Agent 失败"})
-		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{"success": true})

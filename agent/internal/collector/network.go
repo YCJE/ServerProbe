@@ -76,13 +76,21 @@ func (c *NetworkCollector) Collect() (interface{}, error) {
 	if err != nil {
 		return nil, fmt.Errorf("读取 /proc/net/tcp 失败: %w", err)
 	}
-	tcpCount := countConnections(string(tcpData))
+	// 仅统计 ESTABLISHED 状态(st=="01")，排除 LISTEN/TIME_WAIT 等非活跃连接
+	tcpCount := countConnections(string(tcpData), "01")
+
+	// 同时读取 /proc/net/tcp6 统计 IPv6 上的 ESTABLISHED 连接
+	// （IPv6 禁用时该文件可能不存在，忽略错误）
+	if tcp6Data, err := c.reader.ReadFile(ProcPath + "/net/tcp6"); err == nil {
+		tcpCount += countConnections(string(tcp6Data), "01")
+	}
 
 	udpData, err := c.reader.ReadFile(ProcPath + "/net/udp")
 	if err != nil {
 		return nil, fmt.Errorf("读取 /proc/net/udp 失败: %w", err)
 	}
-	udpCount := countConnections(string(udpData))
+	// UDP 无连接概念，统计所有 socket
+	udpCount := countConnections(string(udpData), "")
 
 	return model.NetworkInfo{
 		RxSpeed:        rxSpeed,
@@ -92,8 +100,22 @@ func (c *NetworkCollector) Collect() (interface{}, error) {
 	}, nil
 }
 
+// virtualPrefixes 容器/虚拟网络接口前缀，这些接口在 Docker/K8s 宿主上
+// 会导致流量被重复计算（宿主与容器间流量计入两次），采集时需排除。
+var virtualPrefixes = []string{"veth", "br-", "docker", "cni", "flannel", "cilium"}
+
+// isVirtualIface 判断是否为虚拟/容器接口
+func isVirtualIface(name string) bool {
+	for _, p := range virtualPrefixes {
+		if strings.HasPrefix(name, p) {
+			return true
+		}
+	}
+	return false
+}
+
 // parseNetDev 解析 /proc/net/dev，返回总 RX 和 TX 字节数
-// 排除 lo 回环接口
+// 排除 lo 回环接口以及 veth/br-/docker 等虚拟接口
 func parseNetDev(data string) (uint64, uint64, error) {
 	var totalRx, totalTx uint64
 	lines := strings.Split(data, "\n")
@@ -115,8 +137,8 @@ func parseNetDev(data string) (uint64, uint64, error) {
 		}
 
 		iface := strings.TrimSpace(parts[0])
-		// 排除回环接口
-		if iface == "lo" {
+		// 排除回环接口与虚拟/容器接口，避免双重计数
+		if iface == "lo" || isVirtualIface(iface) {
 			continue
 		}
 
@@ -143,8 +165,9 @@ func parseNetDev(data string) (uint64, uint64, error) {
 }
 
 // countConnections 统计 /proc/net/tcp 或 /proc/net/udp 的连接数
-// 跳过表头行
-func countConnections(data string) int {
+// 跳过表头行。stateFilter 为空时统计所有条目；非空时仅统计指定状态
+// （如 "01" 表示 TCP ESTABLISHED），用于排除 LISTEN/TIME_WAIT 等非活跃状态。
+func countConnections(data string, stateFilter string) int {
 	lines := strings.Split(data, "\n")
 	count := 0
 
@@ -159,8 +182,11 @@ func countConnections(data string) int {
 		}
 
 		fields := strings.Fields(line)
+		// fields[3] 为 st（状态）字段
 		if len(fields) >= 4 {
-			count++
+			if stateFilter == "" || fields[3] == stateFilter {
+				count++
+			}
 		}
 	}
 

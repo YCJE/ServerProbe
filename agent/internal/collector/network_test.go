@@ -60,12 +60,12 @@ func TestNetworkCollector_Collect(t *testing.T) {
 		t.Errorf("首次采集上行速率应为 0, 得到 %d", netInfo.TxSpeed)
 	}
 
-	// TCP 连接数：4 条
-	if netInfo.TCPConnections != 4 {
-		t.Errorf("TCP 连接数错误: 期望 4, 得到 %d", netInfo.TCPConnections)
+	// TCP 连接数：3 条 ESTABLISHED（st=="01"），1 条 LISTEN(st=="0A") 被排除
+	if netInfo.TCPConnections != 3 {
+		t.Errorf("TCP 连接数错误: 期望 3, 得到 %d", netInfo.TCPConnections)
 	}
 
-	// UDP 连接数：2 条
+	// UDP 连接数：2 条（UDP 无连接概念，统计所有 socket）
 	if netInfo.UDPConnections != 2 {
 		t.Errorf("UDP 连接数错误: 期望 2, 得到 %d", netInfo.UDPConnections)
 	}
@@ -147,12 +147,14 @@ func TestParseNetDev(t *testing.T) {
 }
 
 func TestCountConnections(t *testing.T) {
-	tcpCount := countConnections(tcpSample)
-	if tcpCount != 4 {
-		t.Errorf("TCP 连接数错误: 期望 4, 得到 %d", tcpCount)
+	// TCP: 仅统计 ESTABLISHED(st=="01")，共 3 条；LISTEN(st=="0A") 被排除
+	tcpCount := countConnections(tcpSample, "01")
+	if tcpCount != 3 {
+		t.Errorf("TCP 连接数错误: 期望 3, 得到 %d", tcpCount)
 	}
 
-	udpCount := countConnections(udpSample)
+	// UDP: 统计所有 socket（stateFilter 为空）
+	udpCount := countConnections(udpSample, "")
 	if udpCount != 2 {
 		t.Errorf("UDP 连接数错误: 期望 2, 得到 %d", udpCount)
 	}

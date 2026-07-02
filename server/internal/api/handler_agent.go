@@ -377,6 +377,13 @@ func (h *AgentHandler) handlePingResult(ws *agentWSConn, msg *sharedmodel.WSMess
 		}
 	}
 
+	// 限制 PingData 数量，防止攻击者发送大量 PingResult 导致资源耗尽
+	const maxPingResults = 100
+	if len(msg.PingData) > maxPingResults {
+		log.Printf("Agent %d PingData 数量超限: %d (最大 %d)", *agentID, len(msg.PingData), maxPingResults)
+		return
+	}
+
 	// 校验 Ping 数据
 	for i := range msg.PingData {
 		if err := h.validator.ValidatePingResult(&msg.PingData[i]); err != nil {

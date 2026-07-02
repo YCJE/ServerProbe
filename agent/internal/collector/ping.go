@@ -1,6 +1,7 @@
 package collector
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"fmt"
@@ -8,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -148,6 +150,16 @@ func (c *PingCollector) detectBestMethod() PingMethod {
 	return c.detectedMethod
 }
 
+// sortIPAddrs 对 LookupIPAddr 返回的 IP 列表按字节序排序后返回首个 IP 字符串。
+// Go resolver 在返回多 IP 时顺序不稳定（会重排），若直接取 ips[0] 会导致
+// 每个采集周期 ping 到不同 IP，结果跳变。排序后保证每次取到同一 IP。
+func pickStableIP(ips []net.IPAddr) string {
+	sort.Slice(ips, func(i, j int) bool {
+		return bytes.Compare(ips[i].IP.To16(), ips[j].IP.To16()) < 0
+	})
+	return ips[0].String()
+}
+
 // doICMPPing 执行 ICMP Ping
 func (c *PingCollector) doICMPPing(result *sharedmodel.PingResult, target string, method PingMethod) {
 	pinger, err := probing.NewPinger(target)
@@ -180,8 +192,8 @@ func (c *PingCollector) doICMPPing(result *sharedmodel.PingResult, target string
 			result.Method = string(method)
 			return
 		}
-		// 使用解析到的 IP 创建新的 pinger
-		pinger, err = probing.NewPinger(ips[0].String())
+		// 排序后取首个 IP，避免 Go resolver 重排导致每周期 ping 不同 IP
+		pinger, err = probing.NewPinger(pickStableIP(ips))
 		if err != nil {
 			result.Loss = 100
 			result.Method = string(method)
@@ -239,7 +251,8 @@ func (c *PingCollector) doTCPPing(result *sharedmodel.PingResult, target string)
 		return
 	}
 
-	addr := net.JoinHostPort(ips[0].String(), port)
+	// 排序后取首个 IP，避免 Go resolver 重排导致每周期 ping 不同 IP
+	addr := net.JoinHostPort(pickStableIP(ips), port)
 
 	count := 50
 	successCount := 0
@@ -325,6 +338,9 @@ func (c *PingCollector) doHTTPPing(result *sharedmodel.PingResult, target string
 		return
 	}
 
+	// 排序后取首个 IP，避免 Go resolver 重排导致每周期 ping 不同 IP
+	stableIP := pickStableIP(ips)
+
 	// 构建 URL scheme：优先使用 parseURL 解析出的 scheme，
 	// 修复 example.com:8443（带 https://）等非标准端口被误判为 http 的问题
 	scheme := parsed.scheme
@@ -350,7 +366,7 @@ func (c *PingCollector) doHTTPPing(result *sharedmodel.PingResult, target string
 			if err != nil {
 				port = parsed.port
 			}
-			return dialer.DialContext(ctx, network, net.JoinHostPort(ips[0].String(), port))
+			return dialer.DialContext(ctx, network, net.JoinHostPort(stableIP, port))
 		},
 		TLSHandshakeTimeout: 1 * time.Second,
 		TLSClientConfig: &tls.Config{
@@ -381,7 +397,12 @@ func (c *PingCollector) doHTTPPing(result *sharedmodel.PingResult, target string
 		if err != nil {
 			continue
 		}
-		req.Host = parsed.host
+		// 保留非标准端口到 Host 头，避免按端口路由的虚拟主机路由错误
+		if parsed.port != "" && parsed.port != "80" && parsed.port != "443" {
+			req.Host = net.JoinHostPort(parsed.host, parsed.port)
+		} else {
+			req.Host = parsed.host
+		}
 
 		start := time.Now()
 		resp, err := client.Do(req)

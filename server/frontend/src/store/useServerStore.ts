@@ -98,10 +98,14 @@ function applyTheme(theme: Theme): void {
 
 /** 从 localStorage 加载主题 */
 function loadTheme(): Theme {
-  const stored = localStorage.getItem('probe_theme')
-  // 校验返回值是否为合法主题，无效值回退到默认深色主题
-  if (stored === 'light' || stored === 'dark' || stored === 'system') {
-    return stored
+  try {
+    const stored = localStorage.getItem('probe_theme')
+    // 校验返回值是否为合法主题，无效值回退到默认深色主题
+    if (stored === 'light' || stored === 'dark' || stored === 'system') {
+      return stored
+    }
+  } catch {
+    // localStorage 不可用（隐私模式等），回退默认值
   }
   return 'dark' // 默认深色主题 (Apple HIG)
 }
@@ -383,7 +387,11 @@ export const useServerStore = create<ServerStoreState>((set, get) => ({
 
   // 设置主题
   setTheme: (theme: Theme) => {
-    localStorage.setItem('probe_theme', theme)
+    try {
+      localStorage.setItem('probe_theme', theme)
+    } catch {
+      // localStorage 不可用（隐私模式等），忽略写入错误
+    }
     applyTheme(theme)
     set({ theme })
   },

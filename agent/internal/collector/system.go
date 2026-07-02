@@ -72,11 +72,14 @@ func (c *SystemCollector) CollectProcessCount() (int, error) {
 		return 0, fmt.Errorf("读取 /proc 目录失败: %w", err)
 	}
 
-	var dirs []string
+	// 直接在循环内计数，避免先收集所有 entry 名字到 []string 再计数的多余 O(n) 拷贝
+	count := 0
 	for _, entry := range entries {
-		dirs = append(dirs, entry.Name())
+		if _, err := strconv.Atoi(entry.Name()); err == nil {
+			count++
+		}
 	}
-	return countProcessDirs(dirs), nil
+	return count, nil
 }
 
 // parseUptime 解析 /proc/uptime

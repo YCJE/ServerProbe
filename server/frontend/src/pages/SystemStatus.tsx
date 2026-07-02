@@ -68,6 +68,7 @@ export default function SystemStatus() {
   const [error, setError] = useState('')
   const [lastUpdate, setLastUpdate] = useState<number>(0)
   const mountedRef = useRef(true)
+  const requestIdRef = useRef(0)
 
   useEffect(() => {
     mountedRef.current = true
@@ -78,20 +79,22 @@ export default function SystemStatus() {
 
   const loadStatus = useCallback(async () => {
     if (!mountedRef.current) return
+    const requestId = ++requestIdRef.current
     setLoading(true)
     try {
       const data = await getSystemStatus()
-      if (mountedRef.current) {
+      // 仅当请求 ID 匹配时才更新状态，防止并发请求竞态
+      if (mountedRef.current && requestIdRef.current === requestId) {
         setStatus(data)
         setError('')
         setLastUpdate(Date.now())
       }
     } catch (err) {
-      if (mountedRef.current) {
+      if (mountedRef.current && requestIdRef.current === requestId) {
         setError(err instanceof Error ? err.message : '加载系统状态失败')
       }
     } finally {
-      if (mountedRef.current) {
+      if (mountedRef.current && requestIdRef.current === requestId) {
         setLoading(false)
       }
     }

@@ -112,6 +112,12 @@ func (r *AgentRepository) DeleteWithRecordsTx(agentID int64) error {
 		if err := tx.Where("agent_id = ?", agentID).Delete(&model.MetricRecord{}).Error; err != nil {
 			return err
 		}
+		// 清理 register_codes 表中 used_by_agent_id 的悬空引用，避免外键悬空
+		if err := tx.Model(&model.RegisterCode{}).
+			Where("used_by_agent_id = ?", agentID).
+			Update("used_by_agent_id", 0).Error; err != nil {
+			return err
+		}
 		// 再删除 Agent 记录
 		if err := tx.Delete(&model.Agent{}, agentID).Error; err != nil {
 			return err
