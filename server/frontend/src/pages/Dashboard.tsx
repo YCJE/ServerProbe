@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { useServerStore } from '@/store/useServerStore'
 import ServerCard from '@/components/ServerCard'
+import { formatSpeed } from '@/lib/utils'
 
 /** 仪表盘页（服务器卡片网格） */
 export default function Dashboard() {
@@ -107,11 +108,11 @@ export default function Dashboard() {
           </div>
           <div className="mt-2 flex items-baseline gap-1">
             <span className="text-sm font-bold text-foreground">
-              ↓{formatSpeedShort(stats.totalRx)}
+              ↓{formatSpeed(stats.totalRx)}
             </span>
             <span className="text-sm text-muted-foreground">/</span>
             <span className="text-sm font-bold text-foreground">
-              ↑{formatSpeedShort(stats.totalTx)}
+              ↑{formatSpeed(stats.totalTx)}
             </span>
           </div>
         </div>
@@ -144,13 +145,4 @@ export default function Dashboard() {
       )}
     </div>
   )
-}
-
-/** 格式化速率（简短版） */
-function formatSpeedShort(bytesPerSec: number): string {
-  if (bytesPerSec == null || !isFinite(bytesPerSec) || bytesPerSec <= 0) return '0 B/s'
-  const k = 1024
-  const sizes = ['B/s', 'KB/s', 'MB/s', 'GB/s']
-  const i = Math.min(Math.floor(Math.log(bytesPerSec) / Math.log(k)), sizes.length - 1)
-  return `${parseFloat((bytesPerSec / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`
 }

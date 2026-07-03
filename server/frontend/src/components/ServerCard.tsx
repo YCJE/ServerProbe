@@ -75,12 +75,12 @@ function MetricCell({
   )
 }
 
-/** 迷你延迟柱形图 - 每个柱子代表一个探测目标的延迟 */
+/** 迷你延迟柱形图 - 每个柱子代表一个探测目标的延迟，有丢包时标红 */
 function LatencyBars({
   targets,
   online,
 }: {
-  targets: Array<{ name: string; latency: number; color: string }>
+  targets: Array<{ name: string; latency: number; color: string; loss: number }>
   online: boolean
 }) {
   if (!online || targets.length === 0) {
@@ -97,19 +97,23 @@ function LatencyBars({
     <div className="flex h-10 items-end justify-center gap-2">
       {targets.map((t, i) => {
         const ratio = t.latency > 0 ? t.latency / maxLatency : 0
-        const barHeight = Math.max(3, ratio * 32)
+        const barHeight = Math.max(3, ratio * 28)
+        const hasLoss = t.loss > 0
         return (
           <div key={i} className="flex min-w-0 flex-1 flex-col items-center gap-0.5">
-            <span className="text-[9px] font-medium text-foreground/80">
+            <span className={`text-[9px] font-medium ${hasLoss ? 'text-amber-500' : 'text-foreground/80'}`}>
               {t.latency > 0 ? `${t.latency.toFixed(0)}` : '--'}
             </span>
             <div
               className="w-full max-w-[20px] rounded-t-sm transition-all duration-500"
-              style={{ height: `${barHeight}px`, backgroundColor: t.color }}
+              style={{ height: `${barHeight}px`, backgroundColor: hasLoss ? '#FF3B30' : t.color }}
             />
             <span className="w-full truncate text-center text-[8px] text-muted-foreground">
               {t.name || '--'}
             </span>
+            {hasLoss && (
+              <span className="text-[8px] font-medium text-amber-500">{t.loss.toFixed(0)}%</span>
+            )}
           </div>
         )
       })}
@@ -156,6 +160,7 @@ function ServerCard({ server, basePath = '/admin' }: ServerCardProps) {
       name: p.name || categorizePing(p),
       latency: p.avg_latency ?? 0,
       color: categoryColor(categorizePing(p)),
+      loss: p.loss ?? 0,
     }))
   }, [server.ping_data, showAllPings])
 

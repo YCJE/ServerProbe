@@ -103,6 +103,7 @@ export default function ServerDetail() {
     if (isRealtimeRange(range)) {
       if (mountedRef.current && historyRequestIdRef.current === requestId) {
         setHistoryData(null)
+        setHistoryLoading(false)
       }
       return
     }

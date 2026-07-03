@@ -85,6 +85,22 @@ let fetchServerDetailRequestId = 0
 /** 确保系统主题变化监听器只注册一次 */
 let mediaQueryListenerRegistered = false
 
+/** 浅比较两个 ping_data 数组是否内容相同 */
+function pingDataEqual(a: DashboardItem['ping_data'], b: DashboardItem['ping_data']): boolean {
+  if (a === b) return true
+  if (!a || !b) return false
+  if (a.length !== b.length) return false
+  for (let i = 0; i < a.length; i++) {
+    const pa = a[i], pb = b[i]
+    if (pa.target !== pb.target || pa.name !== pb.name ||
+        pa.avg_latency !== pb.avg_latency || pa.loss !== pb.loss ||
+        pa.min_latency !== pb.min_latency || pa.max_latency !== pb.max_latency) {
+      return false
+    }
+  }
+  return true
+}
+
 /** 应用主题到 DOM */
 function applyTheme(theme: Theme): void {
   const root = document.documentElement
@@ -384,7 +400,7 @@ export const useServerStore = create<ServerStoreState>((set, get) => ({
           server.tcp_connections === (live.tcp_connections || 0) &&
           server.udp_connections === (live.udp_connections || 0) &&
           server.process_count === (live.process_count || 0) &&
-          server.ping_data === (live.ping_data || [])
+          pingDataEqual(server.ping_data, live.ping_data || [])
         ) {
           return server
         }
@@ -412,7 +428,10 @@ export const useServerStore = create<ServerStoreState>((set, get) => ({
           tcp_connections: live.tcp_connections || 0,
           udp_connections: live.udp_connections || 0,
           process_count: live.process_count || 0,
-          ping_data: live.ping_data || [],
+          // 若 ping_data 内容未变则保留旧引用，避免不必要重渲染
+          ping_data: pingDataEqual(server.ping_data, live.ping_data || [])
+            ? server.ping_data
+            : (live.ping_data || []),
           last_seen: live.timestamp,
           hostname: live.hostname || server.hostname,
           display_name: live.display_name || server.display_name,
@@ -471,6 +490,8 @@ export const useServerStore = create<ServerStoreState>((set, get) => ({
       mql.addEventListener('change', () => {
         if (get().theme === 'system') {
           applyTheme('system')
+          // 触发 set 使订阅 theme 的组件重渲染
+          set({ theme: 'system' })
         }
       })
       mediaQueryListenerRegistered = true

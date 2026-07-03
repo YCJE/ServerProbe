@@ -102,23 +102,25 @@ func (w *agentWSConn) writeJSON(v interface{}) error {
 // HandleWebSocket Agent WebSocket 接入端点
 // 路由: WS /api/v1/agent/report
 func (h *AgentHandler) HandleWebSocket(c *gin.Context) {
-	// 连接数限制，防止 DoS
-	if agentWSConnCount.Load() >= maxAgentWSConnections {
+	// 连接数限制，防止 DoS（先递增再检查，避免 TOCTOU 竞态）
+	if agentWSConnCount.Add(1) > maxAgentWSConnections {
+		agentWSConnCount.Add(-1)
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "服务器连接数已满"})
 		return
 	}
 
 	conn, err := h.upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
+		agentWSConnCount.Add(-1) // Upgrade 失败，回退计数
 		log.Printf("WebSocket 升级失败: %v", err)
 		return
 	}
-	agentWSConnCount.Add(1) // Upgrade 成功后才递增
 
 	ws := &agentWSConn{conn: conn}
 
-	var agentID int64
-	var registered bool
+	// 使用 atomic 类型防止 ping 协程与主读循环之间的数据竞争
+	var agentID atomic.Int64
+	var registered atomic.Bool
 
 	// 使用 done channel 通知 ping 协程退出，避免 goroutine 泄漏
 	done := make(chan struct{})
@@ -126,13 +128,13 @@ func (h *AgentHandler) HandleWebSocket(c *gin.Context) {
 	defer func() {
 		agentWSConnCount.Add(-1) // 递减连接计数
 		close(done)              // 通知 ping 协程退出
-		if registered && agentID > 0 {
+		if registered.Load() && agentID.Load() > 0 {
 			// 条件注销: 仅当注册的连接仍是自己时才注销
 			// 防止旧连接的 defer 关闭新连接
-			h.monitor.UnregisterConnectionIfMatch(agentID, conn)
+			h.monitor.UnregisterConnectionIfMatch(agentID.Load(), conn)
 			h.wsConnsMu.Lock()
-			if existing, ok := h.wsConns[agentID]; ok && existing == ws {
-				delete(h.wsConns, agentID)
+			if existing, ok := h.wsConns[agentID.Load()]; ok && existing == ws {
+				delete(h.wsConns, agentID.Load())
 			}
 			h.wsConnsMu.Unlock()
 		}
@@ -156,7 +158,7 @@ func (h *AgentHandler) HandleWebSocket(c *gin.Context) {
 		for {
 			select {
 			case <-pingTicker.C:
-				if !registered {
+				if !registered.Load() {
 					continue // 未注册不发 ping
 				}
 				if err := ws.writeMessage(websocket.PingMessage, nil); err != nil {
@@ -207,11 +209,11 @@ func (h *AgentHandler) HandleWebSocket(c *gin.Context) {
 // 两种场景:
 //  1. 新 Agent 注册: 消息携带 Code (注册码)，无 Token
 //  2. 已有 Agent 会话恢复: 消息携带 Token，无 Code (Server 重启后 Agent 重连)
-func (h *AgentHandler) handleRegister(ws *agentWSConn, msg *sharedmodel.WSMessage, agentID *int64, registered *bool) {
+func (h *AgentHandler) handleRegister(ws *agentWSConn, msg *sharedmodel.WSMessage, agentID *atomic.Int64, registered *atomic.Bool) {
 	// 忽略重复注册消息: Agent 已注册后再次发送 Register 时，
 	// 直接忽略，避免 RegisterConnection 检测到旧连接(自身)并关闭
-	if *registered {
-		log.Printf("Agent %d 重复发送注册消息，已忽略", *agentID)
+	if registered.Load() {
+		log.Printf("Agent %d 重复发送注册消息，已忽略", agentID.Load())
 		return
 	}
 
@@ -241,8 +243,8 @@ func (h *AgentHandler) handleRegister(ws *agentWSConn, msg *sharedmodel.WSMessag
 			}
 		}
 
-		*agentID = agent.ID
-		*registered = true
+		agentID.Store(agent.ID)
+		registered.Store(true)
 
 		// 注册连接
 		h.monitor.RegisterConnection(agent.ID, ws.conn)
@@ -287,8 +289,8 @@ func (h *AgentHandler) handleRegister(ws *agentWSConn, msg *sharedmodel.WSMessag
 		return
 	}
 
-	*agentID = result.AgentID
-	*registered = true
+	agentID.Store(result.AgentID)
+	registered.Store(true)
 
 	// 注册连接
 	h.monitor.RegisterConnection(result.AgentID, ws.conn)
@@ -312,16 +314,18 @@ func (h *AgentHandler) handleRegister(ws *agentWSConn, msg *sharedmodel.WSMessag
 }
 
 // handleReport 处理数据上报
-func (h *AgentHandler) handleReport(ws *agentWSConn, msg *sharedmodel.WSMessage, agentID *int64, registered *bool) {
+func (h *AgentHandler) handleReport(ws *agentWSConn, msg *sharedmodel.WSMessage, agentID *atomic.Int64, registered *atomic.Bool) {
 	// Token 逐帧验证优化: 已注册连接使用缓存的 agentID，不再每帧查询数据库验证 Token
 	// Token 和主机指纹已在注册（handleRegister/lazyRegister）时校验
-	if !*registered || *agentID == 0 {
+	if !registered.Load() || agentID.Load() == 0 {
 		// 向后兼容: 旧版 Agent 重连后不发送 register，直接上报数据
 		// lazyRegister 内部会验证 Token 和主机指纹
 		if msg.Token == "" || !h.lazyRegister(ws, msg, agentID, registered) {
 			return
 		}
 	}
+
+	id := agentID.Load()
 
 	// 校验数据
 	if msg.Data == nil {
@@ -331,80 +335,70 @@ func (h *AgentHandler) handleReport(ws *agentWSConn, msg *sharedmodel.WSMessage,
 	// 校验数据大小 (≤10KB)
 	if rawData, err := json.Marshal(msg.Data); err == nil {
 		if err := h.validator.CheckDataSize(rawData); err != nil {
-			log.Printf("Agent %d 数据大小超限: %v", *agentID, err)
+			log.Printf("Agent %d 数据大小超限: %v", id, err)
 			return
 		}
 	} else {
-		log.Printf("Agent %d 数据序列化失败，拒绝上报", *agentID)
+		log.Printf("Agent %d 数据序列化失败，拒绝上报", id)
 		return
 	}
 
-	if err := h.validator.ValidateMetricData(*agentID, msg.Data); err != nil {
-		log.Printf("Agent %d 数据校验失败: %v", *agentID, err)
+	if err := h.validator.ValidateMetricData(id, msg.Data); err != nil {
+		log.Printf("Agent %d 数据校验失败: %v", id, err)
 		return
 	}
 
-	if err := h.validator.CheckReportFrequency(*agentID); err != nil {
-		log.Printf("Agent %d 上报频率异常: %v", *agentID, err)
+	if err := h.validator.CheckReportFrequency(id); err != nil {
+		log.Printf("Agent %d 上报频率异常: %v", id, err)
 		return
 	}
 
 	// 写入实时数据
-	if err := h.monitor.WriteMetricData(*agentID, msg.Data); err != nil {
-		log.Printf("Agent %d 写入数据失败: %v", *agentID, err)
+	if err := h.monitor.WriteMetricData(id, msg.Data); err != nil {
+		log.Printf("Agent %d 写入数据失败: %v", id, err)
 		return
 	}
 
 	// 更新心跳
-	h.monitor.UpdateHeartbeat(*agentID)
+	h.monitor.UpdateHeartbeat(id)
 }
 
 // handlePingResult 处理 Ping 结果
-func (h *AgentHandler) handlePingResult(ws *agentWSConn, msg *sharedmodel.WSMessage, agentID *int64, registered *bool) {
-	if !*registered || *agentID == 0 {
+func (h *AgentHandler) handlePingResult(ws *agentWSConn, msg *sharedmodel.WSMessage, agentID *atomic.Int64, registered *atomic.Bool) {
+	if !registered.Load() || agentID.Load() == 0 {
 		if msg.Token == "" || !h.lazyRegister(ws, msg, agentID, registered) {
 			return
 		}
 	}
 
-	// 验证 Token
-	agent, err := h.registry.ValidateToken(msg.Token)
-	if err != nil || agent.ID != *agentID {
-		return
-	}
+	id := agentID.Load()
 
-	// 校验主机指纹 (与其他 handler 保持一致)
-	if agent.HostFingerprint != "" {
-		if msg.HostFingerprint == "" || agent.HostFingerprint != msg.HostFingerprint {
-			log.Printf("Agent %d Ping 结果指纹不匹配或缺失，拒绝", *agentID)
-			return
-		}
-	}
+	// Token 和主机指纹已在注册时校验，不再每帧查询数据库（与 handleReport 保持一致）
 
 	// 限制 PingData 数量，防止攻击者发送大量 PingResult 导致资源耗尽
 	const maxPingResults = 100
 	if len(msg.PingData) > maxPingResults {
-		log.Printf("Agent %d PingData 数量超限: %d (最大 %d)", *agentID, len(msg.PingData), maxPingResults)
+		log.Printf("Agent %d PingData 数量超限: %d (最大 %d)", id, len(msg.PingData), maxPingResults)
 		return
 	}
 
 	// 校验 Ping 数据
 	for i := range msg.PingData {
 		if err := h.validator.ValidatePingResult(&msg.PingData[i]); err != nil {
-			log.Printf("Agent %d Ping 数据校验失败: %v", *agentID, err)
+			log.Printf("Agent %d Ping 数据校验失败: %v", id, err)
 			return
 		}
 	}
 
 	// 写入 Ping 数据
-	if err := h.monitor.WritePingData(*agentID, msg.PingData); err != nil {
-		log.Printf("Agent %d 写入 Ping 数据失败: %v", *agentID, err)
+	if err := h.monitor.WritePingData(id, msg.PingData); err != nil {
+		log.Printf("Agent %d 写入 Ping 数据失败: %v", id, err)
 		return
 	}
 }
 
 // handleHeartbeat 处理心跳
-func (h *AgentHandler) handleHeartbeat(ws *agentWSConn, msg *sharedmodel.WSMessage, agentID *int64, registered *bool) {
+func (h *AgentHandler) handleHeartbeat(ws *agentWSConn, msg *sharedmodel.WSMessage, agentID *atomic.Int64, registered *atomic.Bool) {
 	// 速率限制：距上次 heartbeat 不足 5 秒则忽略，防止高频心跳导致资源耗尽
 	// lastHeartbeat 仅在连接的读循环 goroutine 中访问，无需额外同步
 	now := time.Now()
@@ -413,30 +407,16 @@ func (h *AgentHandler) handleHeartbeat(ws *agentWSConn, msg *sharedmodel.WSMessa
 	}
 	ws.lastHeartbeat = now
 
-	if !*registered || *agentID == 0 {
+	if !registered.Load() || agentID.Load() == 0 {
 		// 向后兼容: 旧版 Agent 重连后不发送 register，直接发心跳
 		if msg.Token == "" || !h.lazyRegister(ws, msg, agentID, registered) {
 			return
 		}
 	}
 
-	// 校验 Token (心跳必须携带 Token)
-	if msg.Token == "" {
-		return
-	}
-	agent, err := h.registry.ValidateToken(msg.Token)
-	if err != nil || agent.ID != *agentID {
-		return
-	}
-	// 校验主机指纹 (存储的指纹非空时，消息指纹必须匹配)
-	if agent.HostFingerprint != "" {
-		if msg.HostFingerprint == "" || agent.HostFingerprint != msg.HostFingerprint {
-			log.Printf("Agent %d 心跳指纹不匹配或缺失，拒绝", *agentID)
-			return
-		}
-	}
+	// Token 和主机指纹已在注册时校验，不再每帧查询数据库（与 handleReport 保持一致）
 
-	h.monitor.UpdateHeartbeat(*agentID)
+	h.monitor.UpdateHeartbeat(agentID.Load())
 
 	// 发送心跳确认
 	response := sharedmodel.WSMessage{
@@ -448,7 +428,7 @@ func (h *AgentHandler) handleHeartbeat(ws *agentWSConn, msg *sharedmodel.WSMessa
 // lazyRegister 懒注册会话（向后兼容旧版 Agent）
 // 当 Agent 重连后未发送 register 消息而直接上报数据时，
 // 通过 Token 验证身份并建立会话
-func (h *AgentHandler) lazyRegister(ws *agentWSConn, msg *sharedmodel.WSMessage, agentID *int64, registered *bool) bool {
+func (h *AgentHandler) lazyRegister(ws *agentWSConn, msg *sharedmodel.WSMessage, agentID *atomic.Int64, registered *atomic.Bool) bool {
 	agent, err := h.registry.ValidateToken(msg.Token)
 	if err != nil {
 		return false
@@ -462,8 +442,8 @@ func (h *AgentHandler) lazyRegister(ws *agentWSConn, msg *sharedmodel.WSMessage,
 		}
 	}
 
-	*agentID = agent.ID
-	*registered = true
+	agentID.Store(agent.ID)
+	registered.Store(true)
 
 	// 注册连接
 	h.monitor.RegisterConnection(agent.ID, ws.conn)

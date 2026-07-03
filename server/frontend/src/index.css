@@ -243,8 +243,8 @@
   }
 
   .filter-pill-active {
-    background: hsl(0 0% 100%);
-    color: hsl(0 0% 0%);
+    background: hsl(var(--primary));
+    color: hsl(var(--primary-foreground));
   }
 
   .dark .filter-pill-active {

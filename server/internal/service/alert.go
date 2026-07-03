@@ -120,6 +120,9 @@ func (e *AlertEngine) checkAlerts() {
 	// 获取所有 Agent（包括离线的），用于 agent_offline 指标检查
 	allAgents := e.monitor.GetAllAgentIDs()
 
+	// 清理不在 Agent 列表中的过期告警状态（Agent 已被删除但状态残留）
+	e.cleanupStaleStates(allAgents)
+
 	// 按 Agent 分组检查，每个 Agent 只读一次 RingBuffer（避免 N+1 读取）
 	for _, agentID := range allAgents {
 		isOnline := e.monitor.IsAgentOnline(agentID)
@@ -137,6 +140,28 @@ func (e *AlertEngine) checkAlerts() {
 			} else if isOnline && len(points) > 0 {
 				e.checkRuleForAgent(rule, agentID, points)
 			}
+		}
+	}
+}
+
+// cleanupStaleStates 清理不属于当前 Agent 列表的过期告警状态
+func (e *AlertEngine) cleanupStaleStates(activeAgentIDs []int64) {
+	activeSet := make(map[int64]bool, len(activeAgentIDs))
+	for _, id := range activeAgentIDs {
+		activeSet[id] = true
+	}
+
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	for key := range e.states {
+		// key 格式为 "agentID:ruleID"
+		var agentID, ruleID int64
+		if _, err := fmt.Sscanf(key, "%d:%d", &agentID, &ruleID); err != nil {
+			continue
+		}
+		if !activeSet[agentID] {
+			delete(e.states, key)
 		}
 	}
 }
@@ -269,7 +294,8 @@ func (e *AlertEngine) checkThreshold(value float64, operator string, threshold f
 	case model.OpLessThan:
 		return value < threshold
 	case model.OpEqual:
-		return value == threshold
+		// 使用容差比较避免浮点精度问题
+		return (value-threshold) < 0.001 && (threshold-value) < 0.001
 	default:
 		return false
 	}

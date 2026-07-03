@@ -243,6 +243,7 @@ export default function PublicServerDetail() {
   // 加载历史数据
   const loadHistory = useCallback(
     async (range: TimeRange) => {
+      if (serverId <= 0) return
       const requestId = ++historyRequestIdRef.current
       if (mountedRef.current && historyRequestIdRef.current === requestId) {
         setHistoryLoading(true)
@@ -335,6 +336,11 @@ export default function PublicServerDetail() {
           return ping ? ping.avg_latency : null
         }),
         loss: latestLoss,
+        // 每个时间点的丢包率（用于绘制丢包率趋势图）
+        lossData: allPings.map((pings) => {
+          const ping = pings.find((pp) => pp.name === name)
+          return ping ? ping.loss : null
+        }),
       }
     })
 
@@ -549,7 +555,7 @@ export default function PublicServerDetail() {
             <NetworkQualityChart
               timestamps={networkChartData.timestamps}
               series={networkChartData.series}
-              height={300}
+              height={360}
             />
           )}
         </div>

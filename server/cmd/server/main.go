@@ -89,6 +89,9 @@ func main() {
 	}
 	// 配置文件中的 JWT 密钥优先
 	if cfg.JWTSecret != "" {
+		if len(cfg.JWTSecret) < 32 {
+			log.Fatalf("配置文件中的 JWT 密钥长度不足 (当前 %d, 需要 >= 32)", len(cfg.JWTSecret))
+		}
 		jwtSecret = cfg.JWTSecret
 	}
 

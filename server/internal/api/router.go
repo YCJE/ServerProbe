@@ -54,6 +54,11 @@ func NewRouter(
 	r.Use(middleware.SecurityHeaders())
 	r.Use(middleware.CORS())
 	r.Use(gin.Recovery())
+	// 全局请求体大小限制 (1MB)，防止超大请求导致 OOM
+	r.Use(func(c *gin.Context) {
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 1<<20)
+		c.Next()
+	})
 
 	// 创建处理器
 	authHandler := NewAuthHandler(adminRepo, jwtManager)
@@ -77,7 +82,7 @@ func NewRouter(
 		auth := api.Group("/auth")
 		{
 			auth.GET("/setup-status", authHandler.HandleCheckSetup)
-			auth.POST("/setup", authHandler.HandleSetup)
+			auth.POST("/setup", middleware.LoginRateLimit(), authHandler.HandleSetup)
 			auth.POST("/login", middleware.LoginRateLimit(), authHandler.HandleLogin)
 			auth.POST("/logout", authHandler.HandleLogout)
 		}

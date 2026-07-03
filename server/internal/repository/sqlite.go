@@ -46,6 +46,10 @@ func NewSQLiteDB(dataDir string) (*SQLiteDB, error) {
 	if _, err := sqlDB.Exec("PRAGMA busy_timeout=5000;"); err != nil {
 		log.Printf("警告: 设置 busy_timeout 失败: %v", err)
 	}
+	// 启用外键约束，确保引用完整性
+	if _, err := sqlDB.Exec("PRAGMA foreign_keys=ON;"); err != nil {
+		log.Printf("警告: 启用外键约束失败: %v", err)
+	}
 	// 设置连接池
 	sqlDB.SetMaxOpenConns(1) // SQLite 单写多读，限制连接数避免锁冲突
 	sqlDB.SetMaxIdleConns(1)
