@@ -172,8 +172,8 @@ func (c *PingCollector) doICMPPing(result *sharedmodel.PingResult, target string
 		return
 	}
 
-	pinger.Count = 50
-	pinger.Interval = 200 * time.Millisecond
+	pinger.Count = 1000
+	pinger.Interval = 10 * time.Millisecond
 	pinger.Timeout = 15 * time.Second
 
 	// 设置探测方式
@@ -202,8 +202,8 @@ func (c *PingCollector) doICMPPing(result *sharedmodel.PingResult, target string
 			result.Method = string(method)
 			return
 		}
-		pinger.Count = 50
-		pinger.Interval = 200 * time.Millisecond
+		pinger.Count = 1000
+		pinger.Interval = 10 * time.Millisecond
 		pinger.Timeout = 15 * time.Second
 		if method == PingMethodICMPUnprivileged {
 			pinger.SetPrivileged(false)
@@ -257,11 +257,11 @@ func (c *PingCollector) doTCPPing(result *sharedmodel.PingResult, target string)
 	// 排序后取首个 IP，避免 Go resolver 重排导致每周期 ping 不同 IP
 	addr := net.JoinHostPort(pickStableIP(ips), port)
 
-	count := 50
+	count := 200
 	successCount := 0
 	attempts := 0
 	var latencies []float64
-	deadline := time.Now().Add(30 * time.Second) // 整体超时 30s，防止不可达目标阻塞太久
+	deadline := time.Now().Add(25 * time.Second) // 整体超时 25s，防止不可达目标阻塞太久
 
 	for i := 0; i < count; i++ {
 		if time.Now().After(deadline) {
@@ -279,7 +279,7 @@ func (c *PingCollector) doTCPPing(result *sharedmodel.PingResult, target string)
 		}
 
 		if i < count-1 {
-			time.Sleep(200 * time.Millisecond)
+			time.Sleep(50 * time.Millisecond)
 		}
 	}
 
@@ -354,11 +354,11 @@ func (c *PingCollector) doHTTPPing(result *sharedmodel.PingResult, target string
 		}
 	}
 
-	count := 50
+	count := 200
 	successCount := 0
 	attempts := 0
 	var latencies []float64
-	deadline := time.Now().Add(30 * time.Second) // 整体超时 30s
+	deadline := time.Now().Add(25 * time.Second) // 整体超时 25s
 
 	// 创建自定义 Transport，使用预解析的 IP 排除 DNS 时间
 	dialer := &net.Dialer{Timeout: 1 * time.Second}
@@ -421,7 +421,7 @@ func (c *PingCollector) doHTTPPing(result *sharedmodel.PingResult, target string
 		}
 
 		if i < count-1 {
-			time.Sleep(200 * time.Millisecond)
+			time.Sleep(50 * time.Millisecond)
 		}
 	}
 
