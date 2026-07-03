@@ -33,9 +33,13 @@ type ServerDataExt = ServerData & {
 
 /** 时间范围选项（仅 1h / 6h / 24h） */
 const TIME_RANGES: { value: TimeRange; label: string }[] = [
+  { value: 'realtime', label: '实时' },
   { value: '1h', label: '1小时' },
   { value: '6h', label: '6小时' },
+  { value: '12h', label: '12小时' },
   { value: '1d', label: '24小时' },
+  { value: '2d', label: '2天' },
+  { value: '48h', label: '3天' },
 ]
 
 /** ping 目标线条颜色池（Apple 强调色） */
@@ -245,6 +249,14 @@ export default function PublicServerDetail() {
     async (range: TimeRange) => {
       if (serverId <= 0) return
       const requestId = ++historyRequestIdRef.current
+      // 实时模式：不请求历史 API，使用 WebSocket 推送的 realtimeHistory
+      if (range === 'realtime') {
+        if (mountedRef.current && historyRequestIdRef.current === requestId) {
+          setHistoryData(null)
+          setHistoryLoading(false)
+        }
+        return
+      }
       if (mountedRef.current && historyRequestIdRef.current === requestId) {
         setHistoryLoading(true)
       }
@@ -293,11 +305,54 @@ export default function PublicServerDetail() {
     }
   }, [timeRange, loadHistory])
 
-  // 从历史数据中提取网络质量图表数据
+  // 从历史数据或实时数据中提取网络质量图表数据
   const networkChartData = useMemo<{
     timestamps: number[]
     series: ChartSeries[]
   }>(() => {
+    // 实时模式：从 realtimeHistory 提取
+    if (timeRange === 'realtime') {
+      const points = realtimeHistory.slice(-120)
+      if (points.length === 0) return { timestamps: [], series: [] }
+      const timestamps = points.map((p) => p.timestamp)
+      const allPings = points.map((p) => parsePingData(p.ping_data))
+      const targetNames: string[] = []
+      const seen = new Set<string>()
+      for (const pings of allPings) {
+        for (const ping of pings) {
+          if (!seen.has(ping.name)) {
+            seen.add(ping.name)
+            targetNames.push(ping.name)
+          }
+        }
+      }
+      const series: ChartSeries[] = targetNames.map((name, i) => {
+        let latestLoss: number | undefined
+        for (let j = allPings.length - 1; j >= 0; j--) {
+          const ping = allPings[j].find((pp) => pp.name === name)
+          if (ping && ping.loss >= 0) {
+            latestLoss = ping.loss
+            break
+          }
+        }
+        return {
+          name,
+          color: PING_COLORS[i % PING_COLORS.length],
+          data: allPings.map((pings) => {
+            const ping = pings.find((pp) => pp.name === name)
+            return ping ? ping.avg_latency : null
+          }),
+          loss: latestLoss,
+          lossData: allPings.map((pings) => {
+            const ping = pings.find((pp) => pp.name === name)
+            return ping ? ping.loss : null
+          }),
+        }
+      })
+      return { timestamps, series }
+    }
+
+    // 历史模式：从 historyData 提取
     if (!historyData || !historyData.points || historyData.points.length === 0) {
       return { timestamps: [], series: [] }
     }
@@ -345,7 +400,7 @@ export default function PublicServerDetail() {
     })
 
     return { timestamps, series }
-  }, [historyData])
+  }, [timeRange, historyData, realtimeHistory])
 
   // 从 realtimeHistory 中提取 Sparkline 数据（取最近 N 个点）
   const sparklineData = useMemo(() => {

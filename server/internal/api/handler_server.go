@@ -287,28 +287,14 @@ func (h *ServerHandler) HandleGetServerHistory(c *gin.Context) {
 		startTime = now - 24*3600
 	case "2d":
 		startTime = now - 2*24*3600
+	case "48h":
+		startTime = now - 48*3600
 	default:
 		startTime = now - 3600
 	}
 
-	// 1h 和 6h 从环形缓冲读取
-	if rangeStr == "1h" || rangeStr == "6h" {
-		if rb := h.monitor.GetRingBuffer(id); rb != nil {
-			points := rb.GetByTimeRange(startTime, now)
-			// 将 MetricPoint 转换为统一的历史数据点格式
-			historyPoints := make([]historyPoint, 0, len(points))
-			for _, p := range points {
-				historyPoints = append(historyPoints, metricPointToHistoryPoint(p))
-			}
-			c.JSON(http.StatusOK, gin.H{
-				"source": "ringbuffer",
-				"points": historyPoints,
-			})
-			return
-		}
-	}
-
-	// 12h+ 从 SQLite 读取
+	// 所有历史范围均从 SQLite 读取（聚合数据，每5分钟一条，数据稳定可靠）
+	// RingBuffer 仅用于实时模式（前端 WebSocket 推送）
 	records, err := h.recordRepo.GetByAgentAndTimeRange(id, startTime, now)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取历史数据失败"})
@@ -447,27 +433,13 @@ func (h *ServerHandler) HandlePublicServerHistory(c *gin.Context) {
 		startTime = now - 24*3600
 	case "2d":
 		startTime = now - 2*24*3600
+	case "48h":
+		startTime = now - 48*3600
 	default:
 		startTime = now - 3600
 	}
 
-	// 1h 和 6h 从环形缓冲读取
-	if rangeStr == "1h" || rangeStr == "6h" {
-		if rb := h.monitor.GetRingBuffer(id); rb != nil {
-			points := rb.GetByTimeRange(startTime, now)
-			publicPoints := make([]publicHistoryPoint, 0, len(points))
-			for _, p := range points {
-				publicPoints = append(publicPoints, toPublicHistoryPoint(metricPointToHistoryPoint(p)))
-			}
-			c.JSON(http.StatusOK, gin.H{
-				"source": "ringbuffer",
-				"points": publicPoints,
-			})
-			return
-		}
-	}
-
-	// 12h+ 从 SQLite 读取
+	// 所有历史范围均从 SQLite 读取（聚合数据，每5分钟一条，数据稳定可靠）
 	records, err := h.recordRepo.GetByAgentAndTimeRange(id, startTime, now)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取历史数据失败"})
