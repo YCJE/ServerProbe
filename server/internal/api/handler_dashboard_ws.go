@@ -287,6 +287,8 @@ func (h *DashboardWSHandler) pushPublicDashboardData(ws *wsConn) bool {
 		AgentID      int64                    `json:"agent_id"`
 		Hostname     string                   `json:"hostname"`
 		DisplayName  string                   `json:"display_name"`
+		OS           string                   `json:"os"`
+		Arch         string                   `json:"arch"`
 		Online       bool                     `json:"online"`
 		CPU          float64                  `json:"cpu"`
 		Mem          float64                  `json:"mem"`
@@ -341,6 +343,8 @@ func (h *DashboardWSHandler) pushPublicDashboardData(ws *wsConn) bool {
 			AgentID:      item.AgentID,
 			Hostname:     item.Hostname,
 			DisplayName:  item.DisplayName,
+			OS:           item.OS,
+			Arch:         item.Arch,
 			Online:       item.Online,
 			CPU:          item.CPU,
 			Mem:          item.Mem,

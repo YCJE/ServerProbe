@@ -513,6 +513,8 @@ func (h *ServerHandler) HandlePublicServers(c *gin.Context) {
 		DisplayName  string  `json:"display_name"`
 		Hostname     string  `json:"hostname"`
 		OS           string  `json:"os"`
+		Arch         string  `json:"arch"`
+		AgentVersion string  `json:"agent_version"`
 		Online       bool    `json:"online"`
 		CPU          float64 `json:"cpu"`
 		Mem          float64 `json:"mem"`
@@ -535,11 +537,13 @@ func (h *ServerHandler) HandlePublicServers(c *gin.Context) {
 	items := make([]PublicServerItem, 0, len(agents))
 	for _, agent := range agents {
 		item := PublicServerItem{
-			ID:          agent.ID,
-			DisplayName: agent.DisplayName,
-			Hostname:    agent.Hostname,
-			OS:          agent.OS,
-			Online:      h.monitor.IsOnline(agent.ID),
+			ID:           agent.ID,
+			DisplayName:  agent.DisplayName,
+			Hostname:     agent.Hostname,
+			OS:           agent.OS,
+			Arch:         agent.Arch,
+			AgentVersion: agent.AgentVersion,
+			Online:       h.monitor.IsOnline(agent.ID),
 		}
 
 		if rb := h.monitor.GetRingBuffer(agent.ID); rb != nil {
@@ -586,6 +590,8 @@ func (h *ServerHandler) HandlePublicDashboard(c *gin.Context) {
 		AgentID      int64                    `json:"agent_id"`
 		Hostname     string                   `json:"hostname"`
 		DisplayName  string                   `json:"display_name"`
+		OS           string                   `json:"os"`
+		Arch         string                   `json:"arch"`
 		Online       bool                     `json:"online"`
 		CPU          float64                  `json:"cpu"`
 		Mem          float64                  `json:"mem"`
@@ -640,6 +646,8 @@ func (h *ServerHandler) HandlePublicDashboard(c *gin.Context) {
 			AgentID:      item.AgentID,
 			Hostname:     item.Hostname,
 			DisplayName:  item.DisplayName,
+			OS:           item.OS,
+			Arch:         item.Arch,
 			Online:       item.Online,
 			CPU:          item.CPU,
 			Mem:          item.Mem,

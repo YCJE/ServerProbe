@@ -90,6 +90,9 @@ export interface DashboardItem {
   agent_id: number
   hostname: string
   display_name: string
+  os: string
+  arch: string
+  agent_version: string
   online: boolean
   cpu: number
   mem: number

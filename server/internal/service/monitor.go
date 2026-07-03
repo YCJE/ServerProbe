@@ -460,10 +460,13 @@ func (m *MonitorService) GetDashboardData() []DashboardItem {
 			Timestamp:    p.Timestamp,
 		}
 
-		// 补充 hostname 和 display_name
+		// 补充 hostname, display_name, os, arch, agent_version
 		if agent := agentMap[agentID]; agent != nil {
 			item.Hostname = agent.Hostname
 			item.DisplayName = agent.DisplayName
+			item.OS = agent.OS
+			item.Arch = agent.Arch
+			item.AgentVersion = agent.AgentVersion
 		}
 
 		items = append(items, item)
@@ -501,6 +504,9 @@ type DashboardItem struct {
 	AgentID      int64                    `json:"agent_id"`
 	Hostname     string                   `json:"hostname"`
 	DisplayName  string                   `json:"display_name"`
+	OS           string                   `json:"os"`
+	Arch         string                   `json:"arch"`
+	AgentVersion string                   `json:"agent_version"`
 	Online       bool                     `json:"online"`
 	CPU          float64                  `json:"cpu"`
 	Mem          float64                  `json:"mem"`

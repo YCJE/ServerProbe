@@ -230,6 +230,8 @@ export interface PublicServerItem {
   display_name: string
   hostname: string
   os: string
+  arch: string
+  agent_version: string
   online: boolean
   cpu: number
   mem: number

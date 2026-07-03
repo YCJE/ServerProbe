@@ -317,9 +317,9 @@ export const useServerStore = create<ServerStoreState>((set, get) => ({
           id: item.agent_id,
           hostname: item.hostname || `Agent-${item.agent_id}`,
           display_name: item.display_name || '',
-          os: '',
-          arch: '',
-          agent_version: '',
+          os: item.os || '',
+          arch: item.arch || '',
+          agent_version: item.agent_version || '',
           online: item.online,
           last_seen: item.timestamp,
           cpu: item.cpu,
@@ -373,6 +373,9 @@ export const useServerStore = create<ServerStoreState>((set, get) => ({
           last_seen: live.timestamp,
           hostname: live.hostname || server.hostname,
           display_name: live.display_name || server.display_name,
+          os: live.os || server.os,
+          arch: live.arch || server.arch,
+          agent_version: live.agent_version || server.agent_version,
         }
       }
       return server
