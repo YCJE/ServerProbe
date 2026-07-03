@@ -97,14 +97,3 @@ func parseUptime(data string) (uint64, error) {
 
 	return uint64(uptime), nil
 }
-
-// countProcessDirs 统计 /proc 目录中纯数字目录的数量（即进程数）
-func countProcessDirs(dirs []string) int {
-	count := 0
-	for _, dir := range dirs {
-		if _, err := strconv.Atoi(dir); err == nil {
-			count++
-		}
-	}
-	return count
-}

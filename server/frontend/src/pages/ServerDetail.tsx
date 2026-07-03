@@ -89,7 +89,6 @@ export default function ServerDetail() {
   useEffect(() => {
     if (serverId > 0) {
       fetchServerDetail(serverId).catch(() => {})
-      clearRealtimeHistory()
     }
     return () => {
       clearRealtimeHistory()
@@ -172,7 +171,7 @@ export default function ServerDetail() {
         total_rx: liveData.total_rx ?? currentServer.total_rx ?? 0,
         total_tx: liveData.total_tx ?? currentServer.total_tx ?? 0,
         uptime: liveData.uptime,
-        load_1: liveData.load_1,
+        load_1: liveData.load_1 || 0,
         load_5: liveData.load_5 || 0,
         load_15: liveData.load_15 || 0,
         disk_usage: liveData.disk_usage ?? 0,

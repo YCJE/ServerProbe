@@ -292,7 +292,7 @@ export const useServerStore = create<ServerStoreState>((set, get) => ({
   handleDashboardMessage: (data: DashboardItem[]) => {
     const state = get()
     const newMap = new Map(state.dashboardData)
-    const now = Date.now()
+    const now = Math.floor(Date.now() / 1000)
     const existingIds = new Set(state.servers.map((s) => s.id))
     let newRealtimeHistory = state.realtimeHistory
     const newServersToAdd: ServerData[] = []
@@ -360,6 +360,23 @@ export const useServerStore = create<ServerStoreState>((set, get) => ({
     const updatedServers = allServers.map((server) => {
       const live = newMap.get(server.id)
       if (live) {
+        // 快速检查：若关键字段均未变化，返回原引用避免不必要的重渲染
+        if (
+          server.online === live.online &&
+          server.cpu === (live.cpu || 0) &&
+          server.mem === (live.mem || 0) &&
+          server.mem_total === live.mem_total &&
+          server.mem_used === live.mem_used &&
+          server.net_rx === (live.net_rx || 0) &&
+          server.net_tx === (live.net_tx || 0) &&
+          server.total_rx === (live.total_rx || 0) &&
+          server.total_tx === (live.total_tx || 0) &&
+          server.disk_usage === (live.disk_usage || 0) &&
+          server.uptime === live.uptime &&
+          server.ping_data === (live.ping_data || [])
+        ) {
+          return server
+        }
         return {
           ...server,
           online: live.online,

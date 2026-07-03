@@ -53,6 +53,11 @@ func (r *AlertRepository) Update(rule *model.AlertRule) error {
 	return r.db.Save(rule).Error
 }
 
+// UpdateEnabled 使用 Select 强制更新 enabled 字段，避免 GORM default tag 导致零值被忽略
+func (r *AlertRepository) UpdateEnabled(rule *model.AlertRule, enabled bool) error {
+	return r.db.Model(rule).Select("enabled").Update("enabled", enabled).Error
+}
+
 // Delete 删除告警规则
 func (r *AlertRepository) Delete(id int64) error {
 	return r.db.Delete(&model.AlertRule{}, id).Error
@@ -153,6 +158,11 @@ func (r *PingTargetRepository) ListEnabled() ([]model.PingTarget, error) {
 // Update 更新探测目标
 func (r *PingTargetRepository) Update(target *model.PingTarget) error {
 	return r.db.Save(target).Error
+}
+
+// UpdateEnabled 使用 Select 强制更新 enabled 字段，避免 GORM default tag 导致零值被忽略
+func (r *PingTargetRepository) UpdateEnabled(target *model.PingTarget, enabled bool) error {
+	return r.db.Model(target).Select("enabled").Update("enabled", enabled).Error
 }
 
 // Delete 删除探测目标

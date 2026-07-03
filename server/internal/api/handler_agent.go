@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -13,6 +14,11 @@ import (
 	"github.com/server-probe/server/internal/service"
 	sharedmodel "github.com/server-probe/shared/model"
 )
+
+// 全局 Agent WebSocket 连接计数器，防止连接数过多导致 DoS
+var agentWSConnCount atomic.Int32
+
+const maxAgentWSConnections = 500
 
 // AgentHandler Agent WebSocket 处理器
 type AgentHandler struct {
@@ -96,11 +102,18 @@ func (w *agentWSConn) writeJSON(v interface{}) error {
 // HandleWebSocket Agent WebSocket 接入端点
 // 路由: WS /api/v1/agent/report
 func (h *AgentHandler) HandleWebSocket(c *gin.Context) {
+	// 连接数限制，防止 DoS
+	if agentWSConnCount.Load() >= maxAgentWSConnections {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "服务器连接数已满"})
+		return
+	}
+
 	conn, err := h.upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
 		log.Printf("WebSocket 升级失败: %v", err)
 		return
 	}
+	agentWSConnCount.Add(1) // Upgrade 成功后才递增
 
 	ws := &agentWSConn{conn: conn}
 
@@ -111,7 +124,8 @@ func (h *AgentHandler) HandleWebSocket(c *gin.Context) {
 	done := make(chan struct{})
 
 	defer func() {
-		close(done) // 通知 ping 协程退出
+		agentWSConnCount.Add(-1) // 递减连接计数
+		close(done)              // 通知 ping 协程退出
 		if registered && agentID > 0 {
 			// 条件注销: 仅当注册的连接仍是自己时才注销
 			// 防止旧连接的 defer 关闭新连接
@@ -137,10 +151,14 @@ func (h *AgentHandler) HandleWebSocket(c *gin.Context) {
 	defer pingTicker.Stop()
 
 	// 启动 ping 协程 (使用 select + done channel 避免泄漏)
+	// 未认证连接不发送 ping，避免向未注册的连接发送心跳
 	go func() {
 		for {
 			select {
 			case <-pingTicker.C:
+				if !registered {
+					continue // 未注册不发 ping
+				}
 				if err := ws.writeMessage(websocket.PingMessage, nil); err != nil {
 					return
 				}
@@ -187,8 +205,8 @@ func (h *AgentHandler) HandleWebSocket(c *gin.Context) {
 
 // handleRegister 处理注册消息
 // 两种场景:
-//   1. 新 Agent 注册: 消息携带 Code (注册码)，无 Token
-//   2. 已有 Agent 会话恢复: 消息携带 Token，无 Code (Server 重启后 Agent 重连)
+//  1. 新 Agent 注册: 消息携带 Code (注册码)，无 Token
+//  2. 已有 Agent 会话恢复: 消息携带 Token，无 Code (Server 重启后 Agent 重连)
 func (h *AgentHandler) handleRegister(ws *agentWSConn, msg *sharedmodel.WSMessage, agentID *int64, registered *bool) {
 	// 忽略重复注册消息: Agent 已注册后再次发送 Register 时，
 	// 直接忽略，避免 RegisterConnection 检测到旧连接(自身)并关闭
@@ -295,27 +313,12 @@ func (h *AgentHandler) handleRegister(ws *agentWSConn, msg *sharedmodel.WSMessag
 
 // handleReport 处理数据上报
 func (h *AgentHandler) handleReport(ws *agentWSConn, msg *sharedmodel.WSMessage, agentID *int64, registered *bool) {
+	// Token 逐帧验证优化: 已注册连接使用缓存的 agentID，不再每帧查询数据库验证 Token
+	// Token 和主机指纹已在注册（handleRegister/lazyRegister）时校验
 	if !*registered || *agentID == 0 {
 		// 向后兼容: 旧版 Agent 重连后不发送 register，直接上报数据
-		// 如果携带有效 Token，懒注册会话
+		// lazyRegister 内部会验证 Token 和主机指纹
 		if msg.Token == "" || !h.lazyRegister(ws, msg, agentID, registered) {
-			return
-		}
-	}
-
-	// 验证 Token
-	if msg.Token == "" {
-		return
-	}
-	agent, err := h.registry.ValidateToken(msg.Token)
-	if err != nil || agent.ID != *agentID {
-		return
-	}
-
-	// 校验主机指纹 (存储的指纹非空时，消息指纹必须匹配)
-	if agent.HostFingerprint != "" {
-		if msg.HostFingerprint == "" || agent.HostFingerprint != msg.HostFingerprint {
-			log.Printf("Agent %d 主机指纹不匹配或缺失，拒绝上报", *agentID)
 			return
 		}
 	}

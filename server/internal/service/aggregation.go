@@ -13,13 +13,13 @@ import (
 
 // AggregationService 数据聚合落盘服务
 type AggregationService struct {
-	monitor     *MonitorService
-	recordRepo  *repository.RecordRepository
-	agentRepo   *repository.AgentRepository
-	ticker      *time.Ticker
-	stopCh      chan struct{}
-	stopOnce    sync.Once
-	wg          sync.WaitGroup // 跟踪后台 goroutine
+	monitor    *MonitorService
+	recordRepo *repository.RecordRepository
+	agentRepo  *repository.AgentRepository
+	ticker     *time.Ticker
+	stopCh     chan struct{}
+	stopOnce   sync.Once
+	wg         sync.WaitGroup // 跟踪后台 goroutine
 }
 
 // NewAggregationService 创建数据聚合服务
@@ -115,49 +115,49 @@ func (s *AggregationService) aggregate() {
 				uptimeMax = p.Uptime
 			}
 			// 取最后一个有效的 Ping 数据 (而非第一个)
-		if len(p.PingData) > 0 {
-			pingData = make([]sharedmodel.PingResult, len(p.PingData))
-			copy(pingData, p.PingData)
+			if len(p.PingData) > 0 {
+				pingData = make([]sharedmodel.PingResult, len(p.PingData))
+				copy(pingData, p.PingData)
+			}
 		}
-	}
 
-	count := len(points)
-	cpuAvg := cpuSum / float64(count)
-	memAvg := memSum / float64(count)
-	load1Avg := load1Sum / float64(count)
-	load5Avg := load5Sum / float64(count)
-	load15Avg := load15Sum / float64(count)
-	// 固定值取最后一个有效值，不取平均
-	memTotalFinal := uint64(0)
-	memUsedFinal := uint64(0)
-	swapTotalFinal := uint64(0)
-	swapUsedFinal := uint64(0)
-	for i := len(points) - 1; i >= 0; i-- {
-		if points[i].MemTotal > 0 {
-			memTotalFinal = points[i].MemTotal
-			memUsedFinal = points[i].MemUsed
-			break
+		count := len(points)
+		cpuAvg := cpuSum / float64(count)
+		memAvg := memSum / float64(count)
+		load1Avg := load1Sum / float64(count)
+		load5Avg := load5Sum / float64(count)
+		load15Avg := load15Sum / float64(count)
+		// 固定值取最后一个有效值，不取平均
+		memTotalFinal := uint64(0)
+		memUsedFinal := uint64(0)
+		swapTotalFinal := uint64(0)
+		swapUsedFinal := uint64(0)
+		for i := len(points) - 1; i >= 0; i-- {
+			if points[i].MemTotal > 0 {
+				memTotalFinal = points[i].MemTotal
+				memUsedFinal = points[i].MemUsed
+				break
+			}
 		}
-	}
-	for i := len(points) - 1; i >= 0; i-- {
-		if points[i].SwapTotal > 0 {
-			swapTotalFinal = points[i].SwapTotal
-			swapUsedFinal = points[i].SwapUsed
-			break
+		for i := len(points) - 1; i >= 0; i-- {
+			if points[i].SwapTotal > 0 {
+				swapTotalFinal = points[i].SwapTotal
+				swapUsedFinal = points[i].SwapUsed
+				break
+			}
 		}
-	}
-	netRxAvg := netRxSum / uint64(count)
-	netTxAvg := netTxSum / uint64(count)
-	tcpConnsAvg := tcpConnsSum / count
-	udpConnsAvg := udpConnsSum / count
-	processCountAvg := processCountSum / count
+		netRxAvg := netRxSum / uint64(count)
+		netTxAvg := netTxSum / uint64(count)
+		tcpConnsAvg := tcpConnsSum / count
+		udpConnsAvg := udpConnsSum / count
+		processCountAvg := processCountSum / count
 
 		// 序列化磁盘数据 (使用最新数据点)
-	diskData := ""
-	if len(points) > 0 && len(points[len(points)-1].Disks) > 0 {
-		diskBytes, _ := json.Marshal(points[len(points)-1].Disks)
-		diskData = string(diskBytes)
-	}
+		diskData := ""
+		if len(points) > 0 && len(points[len(points)-1].Disks) > 0 {
+			diskBytes, _ := json.Marshal(points[len(points)-1].Disks)
+			diskData = string(diskBytes)
+		}
 
 		// 序列化 Ping 数据
 		pingStr := ""

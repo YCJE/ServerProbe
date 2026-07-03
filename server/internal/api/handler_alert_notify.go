@@ -15,9 +15,9 @@ import (
 
 // AlertHandler 告警规则处理器
 type AlertHandler struct {
-	repo      *repository.AlertRepository
+	repo       *repository.AlertRepository
 	notifyRepo *repository.NotifyRepository
-	engine    *service.AlertEngine
+	engine     *service.AlertEngine
 }
 
 // NewAlertHandler 创建告警规则处理器
@@ -64,9 +64,9 @@ func (h *AlertHandler) HandleCreateAlert(c *gin.Context) {
 	}
 
 	validMetrics := map[string]bool{
-		model.MetricCPUUsage:    true,
-		model.MetricMemUsage:    true,
-		model.MetricDiskUsage:   true,
+		model.MetricCPUUsage:     true,
+		model.MetricMemUsage:     true,
+		model.MetricDiskUsage:    true,
 		model.MetricAgentOffline: true,
 	}
 	if !validMetrics[req.Metric] {
@@ -115,12 +115,14 @@ func (h *AlertHandler) HandleCreateAlert(c *gin.Context) {
 	}
 
 	// GORM v2 对有 default tag 且字段值为零值(false)的字段会在 INSERT 中省略，
-	// 让数据库使用 DEFAULT 值(true)。用户显式指定 enabled=false 时，需 Create 后用 Update 覆盖。
+	// 让数据库使用 DEFAULT 值(true)。用户显式指定 enabled=false 时，需 Create 后用 Select 强制覆盖。
 	if !req.Enabled {
-		rule.Enabled = false
-		if err := h.repo.Update(rule); err != nil {
-			log.Printf("更新告警规则 Enabled 字段失败: %v", err)
+		if err := h.repo.UpdateEnabled(rule, false); err != nil {
+			log.Printf("[API] Failed to update alert rule enabled field: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "创建告警规则成功但禁用状态更新失败"})
+			return
 		}
+		rule.Enabled = false
 	}
 
 	c.JSON(http.StatusOK, gin.H{"rule": rule})
@@ -166,9 +168,9 @@ func (h *AlertHandler) HandleUpdateAlert(c *gin.Context) {
 	}
 	if req.Metric != nil {
 		validMetrics := map[string]bool{
-			model.MetricCPUUsage:    true,
-			model.MetricMemUsage:    true,
-			model.MetricDiskUsage:   true,
+			model.MetricCPUUsage:     true,
+			model.MetricMemUsage:     true,
+			model.MetricDiskUsage:    true,
 			model.MetricAgentOffline: true,
 		}
 		if !validMetrics[*req.Metric] {

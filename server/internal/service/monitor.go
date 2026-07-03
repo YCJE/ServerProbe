@@ -18,14 +18,6 @@ type AgentConn struct {
 	AgentID  int64
 	Conn     *websocket.Conn
 	LastSeen time.Time
-	mu       sync.Mutex
-}
-
-// Send 向 Agent 发送消息
-func (ac *AgentConn) Send(msg sharedmodel.WSMessage) error {
-	ac.mu.Lock()
-	defer ac.mu.Unlock()
-	return ac.Conn.WriteJSON(msg)
 }
 
 // MonitorService 实时数据管理服务
@@ -40,7 +32,7 @@ type MonitorService struct {
 	ticker       *time.Ticker
 	stopCh       chan struct{}
 	stopOnce     sync.Once
-	wg           sync.WaitGroup // 跟踪后台 goroutine
+	wg           sync.WaitGroup      // 跟踪后台 goroutine
 	lastDBUpdate map[int64]time.Time // 限频更新 last_seen 的记录 (复用 mu 保护)
 }
 
@@ -234,7 +226,17 @@ func (m *MonitorService) BroadcastConfigUpdate(config *sharedmodel.AgentConfig) 
 			onConfigPush(id, config)
 		}(agentID)
 	}
-	wg.Wait()
+	// 等待推送完成，但最多等待 5 秒，避免阻塞 HTTP 响应过久
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		log.Printf("[Monitor] BroadcastConfigUpdate timed out after 5s, some agents may not have received the update")
+	}
 }
 
 // SetConfigPushCallback 设置配置推送回调 (由 handler_agent.go 注册)

@@ -81,11 +81,10 @@ async function request<T>(
   clearTimeout(timeoutId)
 
   if (response.status === 401) {
-    clearToken()
-    // 不在 setup-status、登录和公开 API 请求中跳转
-    // 登录接口返回 401 时不应跳转，否则错误信息会丢失
-    if (!path.includes('/auth/setup-status') && !path.includes('/auth/login') && !path.startsWith('/public/')) {
-      // 使用防重定向标志，避免多次 401 触发多次跳转
+    // 公开 API 路径（公开接口、初始化检查、登录）的 401 不应清除已登录管理员的 Token
+    const isPublicPath = path.startsWith('/public/') || path.includes('/auth/setup-status') || path.includes('/auth/login')
+    if (!isPublicPath) {
+      clearToken()
       if (!isRedirecting) {
         isRedirecting = true
         // 使用 replace 替换当前历史记录，整页刷新后 isRedirecting 会随页面重置

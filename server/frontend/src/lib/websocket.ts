@@ -88,10 +88,10 @@ export class DashboardWebSocket {
       // 认证失败（token 过期/无效）不重连，避免无限重连
       if (event.code === 4001 || event.code === 4003) {
         this.shouldReconnect = false
-        // 认证失败，清除 token 并重定向到登录页
+        // 认证失败，清除 token 并无条件重定向到登录页（除非已在 /login）
         clearToken()
-        if (window.location.pathname !== '/login' && !window.location.pathname.startsWith('/admin')) {
-          window.location.href = '/login'
+        if (window.location.pathname !== '/login') {
+          window.location.replace('/login')
         }
         return
       }

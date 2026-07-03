@@ -296,6 +296,7 @@ export default memo(ServerCard, (prev, next) => {
     a.last_seen === b.last_seen &&
     a.ping_data === b.ping_data &&
     a.display_name === b.display_name &&
-    a.hostname === b.hostname
+    a.hostname === b.hostname &&
+    prev.basePath === next.basePath
   )
 })

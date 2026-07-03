@@ -63,15 +63,3 @@ func TestParseUptime_InvalidFormat(t *testing.T) {
 		t.Error("期望返回错误，但未返回")
 	}
 }
-
-func TestCountProcesses(t *testing.T) {
-	// 模拟 /proc 目录中的进程
-	// 正常的进程目录是纯数字
-	dirs := []string{"1", "2", "10", "100", "self", "cpuinfo", "200", "meminfo"}
-	count := countProcessDirs(dirs)
-
-	// 纯数字目录: 1, 2, 10, 100, 200 = 5 个
-	if count != 5 {
-		t.Errorf("进程数错误: 期望 5, 得到 %d", count)
-	}
-}

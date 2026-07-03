@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useMemo } from 'react'
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom'
 import { useServerStore } from '@/store/useServerStore'
 import ThemeToggle from './ThemeToggle'
@@ -70,7 +70,7 @@ export default function Layout() {
     navigate('/login')
   }
 
-  const onlineCount = servers.filter((s) => s.online).length
+  const onlineCount = useMemo(() => servers.filter((s) => s.online).length, [servers])
   const totalCount = servers.length
 
   const renderNavItems = (onNavigate?: () => void) => (
