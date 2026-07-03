@@ -509,20 +509,27 @@ func (h *ServerHandler) HandlePublicServers(c *gin.Context) {
 	}
 
 	type PublicServerItem struct {
-		ID          int64   `json:"id"`
-		DisplayName string  `json:"display_name"`
-		Hostname    string  `json:"hostname"`
-		OS          string  `json:"os"`
-		Online      bool    `json:"online"`
-		CPU         float64 `json:"cpu"`
-		Mem         float64 `json:"mem"`
-		MemTotal    uint64  `json:"mem_total"`
-		MemUsed     uint64  `json:"mem_used"`
-		NetRx       uint64  `json:"net_rx"`
-		NetTx       uint64  `json:"net_tx"`
-		Uptime      uint64  `json:"uptime"`
-		Load1       float64 `json:"load_1"`
-		DiskUsage   float64 `json:"disk_usage"`
+		ID           int64   `json:"id"`
+		DisplayName  string  `json:"display_name"`
+		Hostname     string  `json:"hostname"`
+		OS           string  `json:"os"`
+		Online       bool    `json:"online"`
+		CPU          float64 `json:"cpu"`
+		Mem          float64 `json:"mem"`
+		MemTotal     uint64  `json:"mem_total"`
+		MemUsed      uint64  `json:"mem_used"`
+		SwapTotal    uint64  `json:"swap_total"`
+		SwapUsed     uint64  `json:"swap_used"`
+		NetRx        uint64  `json:"net_rx"`
+		NetTx        uint64  `json:"net_tx"`
+		Uptime       uint64  `json:"uptime"`
+		Load1        float64 `json:"load_1"`
+		Load5        float64 `json:"load_5"`
+		Load15       float64 `json:"load_15"`
+		DiskUsage    float64 `json:"disk_usage"`
+		TCPConns     int     `json:"tcp_connections"`
+		UDPConns     int     `json:"udp_connections"`
+		ProcessCount int     `json:"process_count"`
 	}
 
 	items := make([]PublicServerItem, 0, len(agents))
@@ -543,11 +550,18 @@ func (h *ServerHandler) HandlePublicServers(c *gin.Context) {
 				item.Mem = p.Mem
 				item.MemTotal = p.MemTotal
 				item.MemUsed = p.MemUsed
+				item.SwapTotal = p.SwapTotal
+				item.SwapUsed = p.SwapUsed
 				item.NetRx = p.NetRx
 				item.NetTx = p.NetTx
 				item.Uptime = p.Uptime
 				item.Load1 = p.Load1
+				item.Load5 = p.Load5
+				item.Load15 = p.Load15
 				item.DiskUsage = calcDiskUsage(p.Disks)
+				item.TCPConns = p.TCPConns
+				item.UDPConns = p.UDPConns
+				item.ProcessCount = p.ProcessCount
 			}
 		}
 
@@ -562,21 +576,36 @@ func (h *ServerHandler) HandlePublicServers(c *gin.Context) {
 func (h *ServerHandler) HandlePublicDashboard(c *gin.Context) {
 	items := h.monitor.GetDashboardData()
 	// 过滤敏感字段，只保留公开展示所需的数据
+	type PublicDiskInfo struct {
+		Total uint64 `json:"total"`
+		Used  uint64 `json:"used"`
+		// Device 字段不包含，防止泄露挂载点信息
+	}
+
 	type PublicDashboardItem struct {
-		AgentID     int64                    `json:"agent_id"`
-		Hostname    string                   `json:"hostname"`
-		DisplayName string                   `json:"display_name"`
-		Online      bool                     `json:"online"`
-		CPU         float64                  `json:"cpu"`
-		Mem         float64                  `json:"mem"`
-		MemTotal    uint64                   `json:"mem_total"`
-		MemUsed     uint64                   `json:"mem_used"`
-		NetRx       uint64                   `json:"net_rx"`
-		NetTx       uint64                   `json:"net_tx"`
-		Load1       float64                  `json:"load_1"`
-		Uptime      uint64                   `json:"uptime"`
-		PingData    []sharedmodel.PingResult `json:"ping_data"`
-		Timestamp   int64                    `json:"timestamp"`
+		AgentID      int64                    `json:"agent_id"`
+		Hostname     string                   `json:"hostname"`
+		DisplayName  string                   `json:"display_name"`
+		Online       bool                     `json:"online"`
+		CPU          float64                  `json:"cpu"`
+		Mem          float64                  `json:"mem"`
+		MemTotal     uint64                   `json:"mem_total"`
+		MemUsed      uint64                   `json:"mem_used"`
+		SwapTotal    uint64                   `json:"swap_total"`
+		SwapUsed     uint64                   `json:"swap_used"`
+		NetRx        uint64                   `json:"net_rx"`
+		NetTx        uint64                   `json:"net_tx"`
+		Load1        float64                  `json:"load_1"`
+		Load5        float64                  `json:"load_5"`
+		Load15       float64                  `json:"load_15"`
+		Uptime       uint64                   `json:"uptime"`
+		DiskUsage    float64                  `json:"disk_usage"`
+		Disks        []PublicDiskInfo         `json:"disks"`
+		TCPConns     int                      `json:"tcp_connections"`
+		UDPConns     int                      `json:"udp_connections"`
+		ProcessCount int                      `json:"process_count"`
+		PingData     []sharedmodel.PingResult `json:"ping_data"`
+		Timestamp    int64                    `json:"timestamp"`
 	}
 
 	publicItems := make([]PublicDashboardItem, 0, len(items))
@@ -598,21 +627,39 @@ func (h *ServerHandler) HandlePublicDashboard(c *gin.Context) {
 			})
 		}
 
+		// 过滤磁盘 Device 字段 (敏感信息)，仅保留容量数据
+		safeDisks := make([]PublicDiskInfo, 0, len(item.Disks))
+		for _, d := range item.Disks {
+			safeDisks = append(safeDisks, PublicDiskInfo{
+				Total: d.Total,
+				Used:  d.Used,
+			})
+		}
+
 		publicItems = append(publicItems, PublicDashboardItem{
-			AgentID:     item.AgentID,
-			Hostname:    item.Hostname,
-			DisplayName: item.DisplayName,
-			Online:      item.Online,
-			CPU:         item.CPU,
-			Mem:         item.Mem,
-			MemTotal:    item.MemTotal,
-			MemUsed:     item.MemUsed,
-			NetRx:       item.NetRx,
-			NetTx:       item.NetTx,
-			Load1:       item.Load1,
-			Uptime:      item.Uptime,
-			PingData:    safePingData,
-			Timestamp:   item.Timestamp,
+			AgentID:      item.AgentID,
+			Hostname:     item.Hostname,
+			DisplayName:  item.DisplayName,
+			Online:       item.Online,
+			CPU:          item.CPU,
+			Mem:          item.Mem,
+			MemTotal:     item.MemTotal,
+			MemUsed:      item.MemUsed,
+			SwapTotal:    item.SwapTotal,
+			SwapUsed:     item.SwapUsed,
+			NetRx:        item.NetRx,
+			NetTx:        item.NetTx,
+			Load1:        item.Load1,
+			Load5:        item.Load5,
+			Load15:       item.Load15,
+			Uptime:       item.Uptime,
+			DiskUsage:    item.DiskUsage,
+			Disks:        safeDisks,
+			TCPConns:     item.TCPConns,
+			UDPConns:     item.UDPConns,
+			ProcessCount: item.ProcessCount,
+			PingData:     safePingData,
+			Timestamp:    item.Timestamp,
 		})
 	}
 

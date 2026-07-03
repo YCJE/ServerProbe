@@ -32,8 +32,6 @@ function StatCard({
 export default function PublicDashboard() {
   const servers = useServerStore((s) => s.servers)
   const publicWsConnected = useServerStore((s) => s.publicWsConnected)
-  const connectPublicDashboardWS = useServerStore((s) => s.connectPublicDashboardWS)
-  const disconnectPublicDashboardWS = useServerStore((s) => s.disconnectPublicDashboardWS)
 
   const [selectedRegion, setSelectedRegion] = useState<string>('')
   const [searchQuery, setSearchQuery] = useState('')
@@ -44,12 +42,6 @@ export default function PublicDashboard() {
     const t = setTimeout(() => setDebouncedQuery(searchQuery), 200)
     return () => clearTimeout(t)
   }, [searchQuery])
-
-  // 连接公开 WebSocket
-  useEffect(() => {
-    connectPublicDashboardWS()
-    return () => disconnectPublicDashboardWS()
-  }, [connectPublicDashboardWS, disconnectPublicDashboardWS])
 
   // 聚合统计信息
   const stats = useMemo(() => {

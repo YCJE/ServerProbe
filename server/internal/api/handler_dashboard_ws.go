@@ -277,21 +277,36 @@ func (h *DashboardWSHandler) pushPublicDashboardData(ws *wsConn) bool {
 	items := h.monitor.GetDashboardData()
 
 	// 过滤敏感字段
+	type PublicDiskInfo struct {
+		Total uint64 `json:"total"`
+		Used  uint64 `json:"used"`
+		// Device 字段不包含，防止泄露挂载点信息
+	}
+
 	type PublicItem struct {
-		AgentID     int64                    `json:"agent_id"`
-		Hostname    string                   `json:"hostname"`
-		DisplayName string                   `json:"display_name"`
-		Online      bool                     `json:"online"`
-		CPU         float64                  `json:"cpu"`
-		Mem         float64                  `json:"mem"`
-		MemTotal    uint64                   `json:"mem_total"`
-		MemUsed     uint64                   `json:"mem_used"`
-		NetRx       uint64                   `json:"net_rx"`
-		NetTx       uint64                   `json:"net_tx"`
-		Load1       float64                  `json:"load_1"`
-		Uptime      uint64                   `json:"uptime"`
-		PingData    []sharedmodel.PingResult `json:"ping_data"`
-		Timestamp   int64                    `json:"timestamp"`
+		AgentID      int64                    `json:"agent_id"`
+		Hostname     string                   `json:"hostname"`
+		DisplayName  string                   `json:"display_name"`
+		Online       bool                     `json:"online"`
+		CPU          float64                  `json:"cpu"`
+		Mem          float64                  `json:"mem"`
+		MemTotal     uint64                   `json:"mem_total"`
+		MemUsed      uint64                   `json:"mem_used"`
+		SwapTotal    uint64                   `json:"swap_total"`
+		SwapUsed     uint64                   `json:"swap_used"`
+		NetRx        uint64                   `json:"net_rx"`
+		NetTx        uint64                   `json:"net_tx"`
+		Load1        float64                  `json:"load_1"`
+		Load5        float64                  `json:"load_5"`
+		Load15       float64                  `json:"load_15"`
+		Uptime       uint64                   `json:"uptime"`
+		DiskUsage    float64                  `json:"disk_usage"`
+		Disks        []PublicDiskInfo         `json:"disks"`
+		TCPConns     int                      `json:"tcp_connections"`
+		UDPConns     int                      `json:"udp_connections"`
+		ProcessCount int                      `json:"process_count"`
+		PingData     []sharedmodel.PingResult `json:"ping_data"`
+		Timestamp    int64                    `json:"timestamp"`
 	}
 
 	publicItems := make([]PublicItem, 0, len(items))
@@ -313,21 +328,39 @@ func (h *DashboardWSHandler) pushPublicDashboardData(ws *wsConn) bool {
 			})
 		}
 
+		// 过滤磁盘 Device 字段 (敏感信息)，仅保留容量数据
+		publicDisks := make([]PublicDiskInfo, 0, len(item.Disks))
+		for _, d := range item.Disks {
+			publicDisks = append(publicDisks, PublicDiskInfo{
+				Total: d.Total,
+				Used:  d.Used,
+			})
+		}
+
 		publicItems = append(publicItems, PublicItem{
-			AgentID:     item.AgentID,
-			Hostname:    item.Hostname,
-			DisplayName: item.DisplayName,
-			Online:      item.Online,
-			CPU:         item.CPU,
-			Mem:         item.Mem,
-			MemTotal:    item.MemTotal,
-			MemUsed:     item.MemUsed,
-			NetRx:       item.NetRx,
-			NetTx:       item.NetTx,
-			Load1:       item.Load1,
-			Uptime:      item.Uptime,
-			PingData:    publicPing,
-			Timestamp:   item.Timestamp,
+			AgentID:      item.AgentID,
+			Hostname:     item.Hostname,
+			DisplayName:  item.DisplayName,
+			Online:       item.Online,
+			CPU:          item.CPU,
+			Mem:          item.Mem,
+			MemTotal:     item.MemTotal,
+			MemUsed:      item.MemUsed,
+			SwapTotal:    item.SwapTotal,
+			SwapUsed:     item.SwapUsed,
+			NetRx:        item.NetRx,
+			NetTx:        item.NetTx,
+			Load1:        item.Load1,
+			Load5:        item.Load5,
+			Load15:       item.Load15,
+			Uptime:       item.Uptime,
+			DiskUsage:    item.DiskUsage,
+			Disks:        publicDisks,
+			TCPConns:     item.TCPConns,
+			UDPConns:     item.UDPConns,
+			ProcessCount: item.ProcessCount,
+			PingData:     publicPing,
+			Timestamp:    item.Timestamp,
 		})
 	}
 

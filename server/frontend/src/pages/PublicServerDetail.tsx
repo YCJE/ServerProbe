@@ -88,8 +88,6 @@ export default function PublicServerDetail() {
   const dashboardData = useServerStore((s) => s.dashboardData)
   const servers = useServerStore((s) => s.servers)
   const realtimeHistory = useServerStore((s) => s.realtimeHistory)
-  const connectPublicDashboardWS = useServerStore((s) => s.connectPublicDashboardWS)
-  const disconnectPublicDashboardWS = useServerStore((s) => s.disconnectPublicDashboardWS)
   const clearRealtimeHistory = useServerStore((s) => s.clearRealtimeHistory)
 
   const [loading, setLoading] = useState(true)
@@ -110,12 +108,6 @@ export default function PublicServerDetail() {
   // 防止快速切换时间范围时旧请求覆盖新数据
   const historyRequestIdRef = useRef(0)
 
-  // 连接公开 WebSocket
-  useEffect(() => {
-    connectPublicDashboardWS()
-    return () => disconnectPublicDashboardWS()
-  }, [connectPublicDashboardWS, disconnectPublicDashboardWS])
-
   // 首次加载：获取公开服务器列表
   useEffect(() => {
     if (servers.length === 0) {
@@ -134,19 +126,19 @@ export default function PublicServerDetail() {
               mem: s.mem,
               mem_total: s.mem_total,
               mem_used: s.mem_used,
-              swap_total: 0,
-              swap_used: 0,
+              swap_total: s.swap_total || 0,
+              swap_used: s.swap_used || 0,
               net_rx: s.net_rx,
               net_tx: s.net_tx,
               load_1: s.load_1 || 0,
-              load_5: 0,
-              load_15: 0,
+              load_5: s.load_5 || 0,
+              load_15: s.load_15 || 0,
               uptime: s.uptime,
               disk_usage: s.disk_usage || 0,
               disks: [],
-              tcp_connections: 0,
-              udp_connections: 0,
-              process_count: 0,
+              tcp_connections: s.tcp_connections || 0,
+              udp_connections: s.udp_connections || 0,
+              process_count: s.process_count || 0,
               ping_data: [],
               timestamp: Math.floor(Date.now() / 1000),
             }))

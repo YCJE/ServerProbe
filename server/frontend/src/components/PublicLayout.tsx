@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo } from 'react'
 import { Outlet } from 'react-router-dom'
 import { useServerStore } from '@/store/useServerStore'
 import ThemeToggle from './ThemeToggle'
@@ -13,6 +13,14 @@ export default function PublicLayout() {
   const isAuthenticated = useServerStore((s) => s.isAuthenticated)
   const publicWsConnected = useServerStore((s) => s.publicWsConnected)
   const servers = useServerStore((s) => s.servers)
+  const connectPublicDashboardWS = useServerStore((s) => s.connectPublicDashboardWS)
+  const disconnectPublicDashboardWS = useServerStore((s) => s.disconnectPublicDashboardWS)
+
+  // 在 Layout 层管理 WS 连接，确保页面切换时 WS 不会被断开
+  useEffect(() => {
+    connectPublicDashboardWS()
+    return () => disconnectPublicDashboardWS()
+  }, [connectPublicDashboardWS, disconnectPublicDashboardWS])
 
   const onlineCount = useMemo(() => servers.filter((s) => s.online).length, [servers])
 
