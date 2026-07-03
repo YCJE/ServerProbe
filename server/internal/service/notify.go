@@ -104,8 +104,8 @@ func (s *NotifyService) sendTelegram(channel *model.NotifyChannel, title, conten
 	// Telegram API 是公网地址，通过 SSRF 防护器发送
 	statusCode, respBody, err := s.ssrf.SendWebhook(apiURL, body)
 	if err != nil {
-		// 完整错误可能包含带 token 的 URL，仅记录日志，不返回给调用方
-		log.Printf("Telegram 发送失败: %v", err)
+		// 错误可能包含带 Token 的完整 URL，不记录原始错误
+		log.Printf("Telegram 发送失败: 网络请求错误")
 		return fmt.Errorf("Telegram 发送失败")
 	}
 

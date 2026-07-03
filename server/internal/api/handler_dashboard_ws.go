@@ -81,22 +81,23 @@ func (h *DashboardWSHandler) HandleDashboardWS(c *gin.Context) {
 	}
 	_ = claims
 
-	// 升级前检查连接数，防止 DoS
-	if h.monitor.GetDashboardWSCount() >= maxDashboardWSConnections {
+	// 连接数限制：先递增再检查（原子操作，消除 TOCTOU 竞态）
+	newCount := h.monitor.IncDashboardWS()
+	if newCount > maxDashboardWSConnections {
+		h.monitor.DecDashboardWS()
 		c.JSON(http.StatusTooManyRequests, gin.H{"error": "连接数已满"})
 		return
 	}
+	defer h.monitor.DecDashboardWS()
 
 	// 升级为 WebSocket 连接
 	conn, err := h.upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
+		h.monitor.DecDashboardWS()
 		log.Printf("Dashboard WebSocket 升级失败: %v", err)
 		return
 	}
 	defer conn.Close()
-
-	h.monitor.IncDashboardWS()
-	defer h.monitor.DecDashboardWS()
 
 	ws := &wsConn{conn: conn}
 
@@ -191,23 +192,23 @@ func (h *DashboardWSHandler) pushDashboardData(ws *wsConn) bool {
 // HandlePublicDashboardWS 公开仪表盘 WebSocket 端点 (无需登录)
 // 路由: GET /ws/public/dashboard
 func (h *DashboardWSHandler) HandlePublicDashboardWS(c *gin.Context) {
-	// 升级前检查连接数，防止 DoS
-	if h.monitor.GetDashboardWSCount() >= maxDashboardWSConnections {
+	// 连接数限制：先递增再检查（原子操作，消除 TOCTOU 竞态）
+	newCount := h.monitor.IncDashboardWS()
+	if newCount > maxDashboardWSConnections {
+		h.monitor.DecDashboardWS()
 		c.JSON(http.StatusTooManyRequests, gin.H{"error": "连接数已满"})
 		return
 	}
+	defer h.monitor.DecDashboardWS()
 
 	// 升级为 WebSocket 连接
 	conn, err := h.upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
+		h.monitor.DecDashboardWS()
 		log.Printf("Public Dashboard WebSocket 升级失败: %v", err)
 		return
 	}
 	defer conn.Close()
-
-	// 连接计数 (与认证 WS 一致)
-	h.monitor.IncDashboardWS()
-	defer h.monitor.DecDashboardWS()
 
 	ws := &wsConn{conn: conn}
 

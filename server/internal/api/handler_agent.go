@@ -80,9 +80,10 @@ func NewAgentHandler(
 
 // agentWSConn 封装 Agent WebSocket 连接，添加写锁
 type agentWSConn struct {
-	conn          *websocket.Conn
-	mu            sync.Mutex
-	lastHeartbeat time.Time
+	conn             *websocket.Conn
+	mu               sync.Mutex
+	lastHeartbeat    time.Time
+	lastLazyRegister time.Time // 限制 lazyRegister 调用频率，防止未注册连接 DoS
 }
 
 func (w *agentWSConn) writeMessage(messageType int, data []byte) error {
@@ -318,6 +319,11 @@ func (h *AgentHandler) handleReport(ws *agentWSConn, msg *sharedmodel.WSMessage,
 	// Token 逐帧验证优化: 已注册连接使用缓存的 agentID，不再每帧查询数据库验证 Token
 	// Token 和主机指纹已在注册（handleRegister/lazyRegister）时校验
 	if !registered.Load() || agentID.Load() == 0 {
+		// 速率限制：距上次 lazyRegister 不足 5 秒则忽略，防止未注册连接 DoS
+		if time.Since(ws.lastLazyRegister) < 5*time.Second {
+			return
+		}
+		ws.lastLazyRegister = time.Now()
 		// 向后兼容: 旧版 Agent 重连后不发送 register，直接上报数据
 		// lazyRegister 内部会验证 Token 和主机指纹
 		if msg.Token == "" || !h.lazyRegister(ws, msg, agentID, registered) {
@@ -366,6 +372,11 @@ func (h *AgentHandler) handleReport(ws *agentWSConn, msg *sharedmodel.WSMessage,
 // handlePingResult 处理 Ping 结果
 func (h *AgentHandler) handlePingResult(ws *agentWSConn, msg *sharedmodel.WSMessage, agentID *atomic.Int64, registered *atomic.Bool) {
 	if !registered.Load() || agentID.Load() == 0 {
+		// 速率限制：距上次 lazyRegister 不足 5 秒则忽略
+		if time.Since(ws.lastLazyRegister) < 5*time.Second {
+			return
+		}
+		ws.lastLazyRegister = time.Now()
 		if msg.Token == "" || !h.lazyRegister(ws, msg, agentID, registered) {
 			return
 		}

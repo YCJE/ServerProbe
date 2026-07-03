@@ -156,9 +156,14 @@ export default function NetworkQualityChart({ timestamps, series, height = 280, 
 
   useEffect(() => () => { if (rafRef.current) cancelAnimationFrame(rafRef.current) }, [])
 
+  // 数据点数量变化时 clamp hoverIdx，而非重置为 null（避免 WS 推送时 tooltip 闪烁消失）
   useEffect(() => {
-    setHoverIdx(null)
-  }, [timestamps])
+    setHoverIdx((prev) => {
+      if (prev === null) return prev
+      if (n === 0) return null
+      return prev >= n ? n - 1 : prev
+    })
+  }, [n])
 
   const toggleSeries = (name: string) => {
     setHiddenSeries((prev) => {

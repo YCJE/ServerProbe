@@ -94,7 +94,9 @@ function pingDataEqual(a: DashboardItem['ping_data'], b: DashboardItem['ping_dat
     const pa = a[i], pb = b[i]
     if (pa.target !== pb.target || pa.name !== pb.name ||
         pa.avg_latency !== pb.avg_latency || pa.loss !== pb.loss ||
-        pa.min_latency !== pb.min_latency || pa.max_latency !== pb.max_latency) {
+        pa.min_latency !== pb.min_latency || pa.max_latency !== pb.max_latency ||
+        pa.jitter !== pb.jitter || pa.method !== pb.method ||
+        pa.packets_sent !== pb.packets_sent || pa.packets_recv !== pb.packets_recv) {
       return false
     }
   }
@@ -240,7 +242,7 @@ export const useServerStore = create<ServerStoreState>((set, get) => ({
   // 中止当前飞行中的 fetchServerDetail 请求（用于组件卸载时）
   abortCurrentFetch: () => {
     fetchServerDetailRequestId++
-    set({ currentServer: null })
+    set({ currentServer: null, currentServerLoading: false })
   },
 
   // 删除 Agent，并刷新服务器列表（从仪表盘移除已删除的 Agent）

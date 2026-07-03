@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"io"
 	"math"
 	"net"
 	"net/http"
@@ -412,6 +413,8 @@ func (c *PingCollector) doHTTPPing(result *sharedmodel.PingResult, target string
 		elapsed := time.Since(start)
 
 		if err == nil {
+			// 排空响应体以便复用 TCP 连接（减少 TLS 握手开销）
+			io.Copy(io.Discard, resp.Body)
 			resp.Body.Close()
 			// 仅 2xx/3xx 视为成功，4xx/5xx 计为失败
 			if resp.StatusCode >= 200 && resp.StatusCode < 400 {

@@ -69,9 +69,9 @@ func (m *MonitorService) GetDashboardWSCount() int {
 	return int(atomic.LoadInt32(&m.dashWSCount))
 }
 
-// IncDashboardWS 面板 WS 连接数 +1
-func (m *MonitorService) IncDashboardWS() {
-	atomic.AddInt32(&m.dashWSCount, 1)
+// IncDashboardWS 面板 WS 连接数 +1，返回递增后的值（用于原子性检查）
+func (m *MonitorService) IncDashboardWS() int {
+	return int(atomic.AddInt32(&m.dashWSCount, 1))
 }
 
 // DecDashboardWS 面板 WS 连接数 -1 (防止下溢)

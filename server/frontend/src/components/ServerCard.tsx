@@ -2,7 +2,6 @@ import { memo, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { ServerData, PingResult } from '@/types'
 import {
-  formatBytes,
   formatSpeed,
   formatTraffic,
   formatUptime,

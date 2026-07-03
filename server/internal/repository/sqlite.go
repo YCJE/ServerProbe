@@ -27,28 +27,19 @@ func NewSQLiteDB(dataDir string) (*SQLiteDB, error) {
 
 	dbPath := filepath.Join(dataDir, "probe.db")
 
-	// 打开 SQLite 连接
-	db, err := gorm.Open(sqlite.Open(dbPath), &gorm.Config{
+	// 打开 SQLite 连接，通过 DSN 参数设置 PRAGMA（确保重连后也生效）
+	dsn := dbPath + "?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)"
+	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Warn),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("打开 SQLite 失败: %w", err)
 	}
 
-	// 启用 WAL 模式，提高并发读写性能
+	// 获取 SQL DB 用于连接池配置
 	sqlDB, err := db.DB()
 	if err != nil {
 		return nil, fmt.Errorf("获取 SQL DB 失败: %w", err)
-	}
-	if _, err := sqlDB.Exec("PRAGMA journal_mode=WAL;"); err != nil {
-		log.Printf("警告: 设置 WAL 模式失败: %v", err)
-	}
-	if _, err := sqlDB.Exec("PRAGMA busy_timeout=5000;"); err != nil {
-		log.Printf("警告: 设置 busy_timeout 失败: %v", err)
-	}
-	// 启用外键约束，确保引用完整性
-	if _, err := sqlDB.Exec("PRAGMA foreign_keys=ON;"); err != nil {
-		log.Printf("警告: 启用外键约束失败: %v", err)
 	}
 	// 设置连接池
 	sqlDB.SetMaxOpenConns(1) // SQLite 单写多读，限制连接数避免锁冲突

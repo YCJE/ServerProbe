@@ -191,6 +191,7 @@ export default function ServerDetail() {
   }, [currentServer, liveData])
 
   // 从历史数据或实时数据中提取网络质量图表数据
+  // 拆分实时/历史分支依赖，避免历史模式下 realtimeHistory 变化触发无意义重计算
   const networkChartData = useMemo<{
     timestamps: number[]
     series: ChartSeries[]
@@ -251,18 +252,34 @@ export default function ServerDetail() {
     })
 
     return { timestamps, series }
-  }, [timeRange, realtimeHistory, historyData])
+    // 实时模式依赖 realtimeHistory，历史模式依赖 historyData，避免交叉触发
+  }, [timeRange, isRealtimeRange(timeRange) ? realtimeHistory : historyData])
 
-  // 从 realtimeHistory 中提取 Sparkline 数据（取最近 N 个点）
+  // Sparkline 数据：实时模式取 realtimeHistory，历史模式取 historyData
   const sparklineData = useMemo(() => {
-    const recent = realtimeHistory.slice(-MAX_SPARK_POINTS)
-    return {
-      cpu: recent.map((p) => p.cpu),
-      mem: recent.map((p) => p.mem),
-      netRx: recent.map((p) => p.net_rx),
-      netTx: recent.map((p) => p.net_tx),
+    if (isRealtimeRange(timeRange)) {
+      const recent = realtimeHistory.slice(-MAX_SPARK_POINTS)
+      return {
+        cpu: recent.map((p) => p.cpu),
+        mem: recent.map((p) => p.mem),
+        netRx: recent.map((p) => p.net_rx),
+        netTx: recent.map((p) => p.net_tx),
+      }
     }
-  }, [realtimeHistory])
+    // 历史模式：从 historyData 提取，均匀采样到最多 MAX_SPARK_POINTS 个点
+    if (!historyData || !historyData.points || historyData.points.length === 0) {
+      return { cpu: [], mem: [], netRx: [], netTx: [] }
+    }
+    const points = historyData.points
+    const step = Math.max(1, Math.ceil(points.length / MAX_SPARK_POINTS))
+    const sampled = points.filter((_, i) => i % step === 0)
+    return {
+      cpu: sampled.map((p) => p.cpu_usage),
+      mem: sampled.map((p) => p.mem_usage),
+      netRx: sampled.map((p) => p.net_rx),
+      netTx: sampled.map((p) => p.net_tx),
+    }
+  }, [timeRange, realtimeHistory, historyData])
 
   // 平均丢包率
   const pingData = displayServer?.ping_data
