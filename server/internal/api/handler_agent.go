@@ -499,17 +499,14 @@ func (h *AgentHandler) sendConfigUpdate(ws *agentWSConn, agentID int64) {
 // HandleGetAgentConfig 处理 Agent 配置拉取
 // 路由: GET /api/v1/agent/config
 func (h *AgentHandler) HandleGetAgentConfig(c *gin.Context) {
-	// 优先从 Authorization header 获取 Token，兼容 query 参数
+	// 从 Authorization header 获取 Token（不再支持 query 参数，防止日志泄露）
 	token := ""
 	authHeader := c.GetHeader("Authorization")
 	if strings.HasPrefix(authHeader, "Bearer ") {
 		token = strings.TrimPrefix(authHeader, "Bearer ")
 	}
 	if token == "" {
-		token = c.Query("token")
-	}
-	if token == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "缺少 Token"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "缺少 Token，请使用 Authorization: Bearer <token>"})
 		return
 	}
 

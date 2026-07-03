@@ -1,4 +1,4 @@
-import type { ServerData } from '@/types'
+import type { ServerData, PingResult } from '@/types'
 
 /** 格式化字节大小为人类可读字符串 */
 export function formatBytes(bytes: number, decimals = 2): string {
@@ -96,6 +96,21 @@ export function formatRelativeTime(timestamp: number): string {
   const months = Math.floor(days / 30)
   if (months < 12) return `${months}个月前`
   return `${Math.floor(months / 12)}年前`
+}
+
+/** 解析 ping_data，兼容 ringbuffer (数组) 和 sqlite (JSON 字符串) 两种格式 */
+export function parsePingData(raw: unknown): PingResult[] {
+  if (!raw) return []
+  if (Array.isArray(raw)) return raw as PingResult[]
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw)
+      return Array.isArray(parsed) ? parsed : []
+    } catch {
+      return []
+    }
+  }
+  return []
 }
 
 /** 地区关键词到 ISO 国家代码的映射 */

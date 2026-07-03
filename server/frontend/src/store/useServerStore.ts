@@ -181,6 +181,9 @@ export const useServerStore = create<ServerStoreState>((set, get) => ({
       dashboardData: new Map(),
       currentServer: null,
       realtimeHistory: [],
+      currentServerLoading: false,
+      serversLoading: false,
+      authLoading: false,
     })
   },
 
@@ -373,6 +376,14 @@ export const useServerStore = create<ServerStoreState>((set, get) => ({
           server.total_tx === (live.total_tx || 0) &&
           server.disk_usage === (live.disk_usage || 0) &&
           server.uptime === live.uptime &&
+          server.swap_total === (live.swap_total || 0) &&
+          server.swap_used === (live.swap_used || 0) &&
+          server.load_1 === (live.load_1 || 0) &&
+          server.load_5 === (live.load_5 || 0) &&
+          server.load_15 === (live.load_15 || 0) &&
+          server.tcp_connections === (live.tcp_connections || 0) &&
+          server.udp_connections === (live.udp_connections || 0) &&
+          server.process_count === (live.process_count || 0) &&
           server.ping_data === (live.ping_data || [])
         ) {
           return server
@@ -419,6 +430,15 @@ export const useServerStore = create<ServerStoreState>((set, get) => ({
       if (!serverIds.has(key)) {
         newMap.delete(key)
       }
+    }
+
+    // 检查是否有实际变化，若所有引用都未变则跳过 set 避免不必要重渲染
+    const hasChanges = newServersToAdd.length > 0
+      || updatedServers.length !== state.servers.length
+      || updatedServers.some((s, i) => s !== state.servers[i])
+
+    if (!hasChanges && newRealtimeHistory === state.realtimeHistory) {
+      return
     }
 
     set({

@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"sync"
@@ -213,20 +214,31 @@ func (m *MonitorService) BroadcastConfigUpdate(config *sharedmodel.AgentConfig) 
 		return
 	}
 
-	// 并发推送配置，避免单个慢 Agent 阻塞其他
-	// 回调内部使用 agentWSConn.mu 锁保护写入，可安全并发调用
+	// 并发推送配置，使用 context 超时控制，超时后不再启动新的推送 goroutine
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, 10) // 限制并发数为 10
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 	for _, agentID := range agentIDs {
 		wg.Add(1)
 		go func(id int64) {
 			defer wg.Done()
-			sem <- struct{}{}
-			defer func() { <-sem }()
-			onConfigPush(id, config)
+			select {
+			case sem <- struct{}{}:
+				defer func() { <-sem }()
+				// 获取信号后再次检查是否已超时
+				select {
+				case <-ctx.Done():
+					return
+				default:
+					onConfigPush(id, config)
+				}
+			case <-ctx.Done():
+				return // 超时后跳过推送
+			}
 		}(agentID)
 	}
-	// 等待推送完成，但最多等待 5 秒，避免阻塞 HTTP 响应过久
+	// 等待推送完成或超时
 	done := make(chan struct{})
 	go func() {
 		wg.Wait()
@@ -234,7 +246,7 @@ func (m *MonitorService) BroadcastConfigUpdate(config *sharedmodel.AgentConfig) 
 	}()
 	select {
 	case <-done:
-	case <-time.After(5 * time.Second):
+	case <-ctx.Done():
 		log.Printf("[Monitor] BroadcastConfigUpdate timed out after 5s, some agents may not have received the update")
 	}
 }

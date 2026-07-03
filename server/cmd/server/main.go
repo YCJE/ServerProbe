@@ -4,11 +4,13 @@ import (
 	"context"
 	"crypto/tls"
 	"flag"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -162,8 +164,10 @@ func main() {
 
 	// 创建 HTTP Server
 	httpServer := &http.Server{
-		Addr:    *listen,
-		Handler: router.GetRouter(),
+		Addr:              *listen,
+		Handler:           router.GetRouter(),
+		ReadHeaderTimeout: 10 * time.Second, // 防止 Slowloris 慢速头部 DoS 攻击
+		IdleTimeout:       120 * time.Second, // 空闲连接超时，释放闲置资源
 		TLSConfig: &tls.Config{
 			MinVersion: tls.VersionTLS12,
 		},
@@ -232,7 +236,11 @@ func loadConfig(path string) ServerConfig {
 func loadOrCreateSecret(path string) (string, error) {
 	// 尝试读取
 	if data, err := os.ReadFile(path); err == nil {
-		return string(data), nil
+		secret := strings.TrimSpace(string(data))
+		if len(secret) < 32 {
+			return "", fmt.Errorf("JWT 密钥长度不足 (%d < 32)，请删除密钥文件以重新生成", len(secret))
+		}
+		return secret, nil
 	}
 
 	// 生成新密钥

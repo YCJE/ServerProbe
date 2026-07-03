@@ -155,11 +155,67 @@ func (s *NotifyService) sendEmail(channel *model.NotifyChannel, title, content s
 		return s.sendEmailWithTLS(addr, auth, config, body)
 	}
 
-	// 标准模式: smtp.SendMail 内部会尝试 STARTTLS
-	err := smtp.SendMail(addr, auth, config.From, recipients, []byte(body))
+	// 标准模式: 手动建立带超时的连接，尝试 STARTTLS 后发送
+	return s.sendEmailStandard(addr, auth, config, body, recipients)
+}
+
+// sendEmailStandard 使用标准 SMTP（带 STARTTLS）发送邮件，所有阶段都有超时保护
+func (s *NotifyService) sendEmailStandard(addr string, auth smtp.Auth, config model.EmailConfig, body string, recipients []string) error {
+	// 使用带超时的 TCP 连接
+	conn, err := net.DialTimeout("tcp", addr, 10*time.Second)
 	if err != nil {
-		return fmt.Errorf("邮件发送失败: %w", err)
+		return fmt.Errorf("连接 SMTP 服务器失败: %w", err)
 	}
+	defer conn.Close()
+
+	// 设置总超时，防止任何阶段长时间阻塞
+	conn.SetDeadline(time.Now().Add(30 * time.Second))
+
+	client, err := smtp.NewClient(conn, config.SMTPHost)
+	if err != nil {
+		return fmt.Errorf("创建 SMTP 客户端失败: %w", err)
+	}
+	defer client.Close()
+
+	// 尝试 STARTTLS（如果服务器支持）
+	if ok, _ := client.Extension("STARTTLS"); ok {
+		if err := client.StartTLS(&tls.Config{ServerName: config.SMTPHost}); err != nil {
+			return fmt.Errorf("STARTTLS 失败: %w", err)
+		}
+	}
+
+	// 认证
+	if auth != nil {
+		if err := client.Auth(auth); err != nil {
+			return fmt.Errorf("SMTP 认证失败: %w", err)
+		}
+	}
+
+	// 设置发件人
+	if err := client.Mail(config.From); err != nil {
+		return fmt.Errorf("设置发件人失败: %w", err)
+	}
+
+	// 设置收件人
+	for _, rcpt := range recipients {
+		if err := client.Rcpt(rcpt); err != nil {
+			return fmt.Errorf("设置收件人失败: %w", err)
+		}
+	}
+
+	// 发送邮件内容
+	w, err := client.Data()
+	if err != nil {
+		return fmt.Errorf("打开数据通道失败: %w", err)
+	}
+	if _, err := w.Write([]byte(body)); err != nil {
+		return fmt.Errorf("写入邮件内容失败: %w", err)
+	}
+	if err := w.Close(); err != nil {
+		return fmt.Errorf("关闭数据通道失败: %w", err)
+	}
+
+	client.Quit()
 
 	log.Printf("邮件通知发送成功: %s -> %s", config.From, config.To)
 	return nil

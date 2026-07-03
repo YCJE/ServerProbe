@@ -80,6 +80,7 @@ func (s *AggregationService) aggregate() {
 	}
 
 	now := time.Now().Unix()
+	records := make([]model.MetricRecord, 0, len(agents))
 
 	for _, agent := range agents {
 		rb := s.monitor.GetRingBuffer(agent.ID)
@@ -166,8 +167,8 @@ func (s *AggregationService) aggregate() {
 			pingStr = string(pingBytes)
 		}
 
-		// 创建聚合记录（保存完整字段）
-		record := &model.MetricRecord{
+		// 收集聚合记录（批量写入，避免逐条 INSERT）
+		records = append(records, model.MetricRecord{
 			AgentID:      agent.ID,
 			Timestamp:    now,
 			CPUUsage:     cpuAvg,
@@ -187,10 +188,13 @@ func (s *AggregationService) aggregate() {
 			Uptime:       uptimeMax,
 			ProcessCount: processCountAvg,
 			PingData:     pingStr,
-		}
+		})
+	}
 
-		if err := s.recordRepo.Create(record); err != nil {
-			log.Printf("Agent %d 聚合数据写入失败: %v", agent.ID, err)
+	// 批量写入聚合记录
+	if len(records) > 0 {
+		if err := s.recordRepo.CreateBatch(records); err != nil {
+			log.Printf("批量写入聚合数据失败: %v", err)
 		}
 	}
 }

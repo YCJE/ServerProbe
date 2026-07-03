@@ -14,6 +14,7 @@ import {
   formatLoss,
   getUsageTextColor,
   getLossColor,
+  parsePingData,
 } from '@/lib/utils'
 
 /** 时间范围选项 */
@@ -29,21 +30,6 @@ const TIME_RANGES: { value: TimeRange; label: string }[] = [
 /** 判断是否为实时范围（使用 WebSocket 数据） */
 function isRealtimeRange(range: TimeRange): boolean {
   return range === 'realtime'
-}
-
-/** 解析 ping_data，兼容 ringbuffer (数组) 和 sqlite (JSON 字符串) 两种格式 */
-function parsePingData(raw: unknown): PingResult[] {
-  if (!raw) return []
-  if (Array.isArray(raw)) return raw as PingResult[]
-  if (typeof raw === 'string') {
-    try {
-      const parsed = JSON.parse(raw)
-      return Array.isArray(parsed) ? parsed : []
-    } catch {
-      return []
-    }
-  }
-  return []
 }
 
 /** 服务器详情页 */
@@ -79,14 +65,27 @@ export default function ServerDetail() {
   // 跟踪历史数据请求 ID，防止快速切换时间范围时旧请求覆盖新数据
   const historyRequestIdRef = useRef(0)
 
+  // 监听系统主题变化（system 模式下图表颜色需跟随更新）
+  const [systemDark, setSystemDark] = useState(() =>
+    window.matchMedia('(prefers-color-scheme: dark)').matches,
+  )
+  useEffect(() => {
+    const mql = window.matchMedia('(prefers-color-scheme: dark)')
+    const handler = (e: MediaQueryListEvent) => setSystemDark(e.matches)
+    mql.addEventListener('change', handler)
+    return () => mql.removeEventListener('change', handler)
+  }, [])
+
   const isDark = useMemo(() => {
     if (theme === 'dark') return true
     if (theme === 'light') return false
-    return window.matchMedia('(prefers-color-scheme: dark)').matches
-  }, [theme])
+    return systemDark
+  }, [theme, systemDark])
 
   // 加载服务器详情
   useEffect(() => {
+    // 切换服务器时清除旧的历史数据，防止图表短暂显示上一台服务器的数据
+    setHistoryData(null)
     if (serverId > 0) {
       fetchServerDetail(serverId).catch(() => {})
     }
@@ -133,15 +132,28 @@ export default function ServerDetail() {
     loadHistory(timeRange)
   }, [timeRange, loadHistory])
 
-  // 定时刷新历史数据（非实时范围时，每 5 分钟刷新）
+  // 定时刷新历史数据（非实时范围时，每 5 分钟刷新；标签页隐藏时暂停）
   useEffect(() => {
     if (isRealtimeRange(timeRange)) return
 
-    const interval = setInterval(() => {
+    let interval = setInterval(() => {
       loadHistory(timeRange)
     }, 5 * 60 * 1000)
 
-    return () => clearInterval(interval)
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        clearInterval(interval)
+      } else {
+        loadHistory(timeRange)
+        interval = setInterval(() => loadHistory(timeRange), 5 * 60 * 1000)
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
+    return () => {
+      clearInterval(interval)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
   }, [timeRange, loadHistory])
 
   // 实时数据来自 WebSocket 的 dashboardData

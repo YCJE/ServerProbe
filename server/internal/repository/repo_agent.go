@@ -99,6 +99,13 @@ func (r *AgentRepository) Update(agent *model.Agent) error {
 	return r.db.Save(agent).Error
 }
 
+// UpdateDisplayName 仅更新显示名称，避免 Save 覆盖 Online/LastSeen 等字段导致竞态
+func (r *AgentRepository) UpdateDisplayName(id int64, displayName string) error {
+	return r.db.Model(&model.Agent{}).
+		Where("id = ?", id).
+		Update("display_name", displayName).Error
+}
+
 // Delete 删除 Agent
 func (r *AgentRepository) Delete(id int64) error {
 	return r.db.Delete(&model.Agent{}, id).Error

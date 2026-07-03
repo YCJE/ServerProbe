@@ -53,7 +53,6 @@ function niceCeil(v: number): number {
 }
 
 const fmtTime = (ts: number) => new Date(ts * 1000).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
-const AXIS_FILL = 'rgba(255,255,255,0.45)'
 
 /** 纯 SVG 面积折线图：用于详情页网络延迟趋势（平滑曲线 + 渐变面积 + 悬停 tooltip） */
 export default function NetworkQualityChart({ timestamps, series, height = 200, showGrid = true, showLegend = true, timeRange }: NetworkQualityChartProps) {
@@ -66,6 +65,13 @@ export default function NetworkQualityChart({ timestamps, series, height = 200, 
   const [hoverX, setHoverX] = useState(0)
   // 被隐藏的系列名称集合（点击图例切换）
   const [hiddenSeries, setHiddenSeries] = useState<Set<string>>(() => new Set())
+
+  // 从 DOM 检测当前是否为深色主题（主题切换后会在下次数据更新时刷新）
+  const isDark = document.documentElement.classList.contains('dark')
+  const AXIS_FILL = isDark ? 'rgba(255,255,255,0.45)' : 'rgba(0,0,0,0.55)'
+  const GRID_STROKE = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.06)'
+  const TOOLTIP_BG = isDark ? 'bg-gray-900/95' : 'bg-white/95'
+  const TOOLTIP_BORDER = isDark ? 'border-white/10' : 'border-black/10'
 
   // 监听容器宽度以实现响应式
   useLayoutEffect(() => {
@@ -185,7 +191,7 @@ export default function NetworkQualityChart({ timestamps, series, height = 200, 
           </defs>
           {/* 网格线（虚线） */}
           {showGrid && yTicks.map((t, i) => (
-            <line key={`g${i}`} x1={padL} y1={t.y} x2={chartWidth - padR} y2={t.y} stroke="rgba(255,255,255,0.05)" strokeWidth={1} strokeDasharray="3 3" />
+            <line key={`g${i}`} x1={padL} y1={t.y} x2={chartWidth - padR} y2={t.y} stroke={GRID_STROKE} strokeWidth={1} strokeDasharray="3 3" />
           ))}
           {/* Y 轴标题（旋转）与刻度 */}
           <text x={12} y={padT + innerH / 2} fontSize={11} fill={AXIS_FILL} textAnchor="middle" transform={`rotate(-90 12 ${padT + innerH / 2})`}>延迟 (ms)</text>
@@ -218,7 +224,7 @@ export default function NetworkQualityChart({ timestamps, series, height = 200, 
         </svg>
         {/* Tooltip */}
         {hoverIdx !== null && hoverTs != null && (
-          <div className="pointer-events-none absolute top-1 z-10 rounded-md border border-white/10 bg-gray-900/95 px-2.5 py-1.5 text-xs text-gray-200 shadow-lg" style={{ left: tipLeft, transform: 'translateX(-50%)' }}>
+          <div className={`pointer-events-none absolute top-1 z-10 rounded-md border ${TOOLTIP_BORDER} ${TOOLTIP_BG} px-2.5 py-1.5 text-xs text-gray-200 shadow-lg`} style={{ left: tipLeft, transform: 'translateX(-50%)' }}>
             <div className="mb-1 font-medium text-gray-300">{fmtTime(hoverTs)}</div>
             {series.filter((s) => !hiddenSeries.has(s.name)).map((s) => {
               const v = s.data[hoverIdx]

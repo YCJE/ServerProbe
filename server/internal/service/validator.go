@@ -77,6 +77,14 @@ func (v *DataValidator) ValidateMetricData(agentID int64, data *sharedmodel.Metr
 		return fmt.Errorf("CPU 使用率超出范围: %f", data.CPU.Usage)
 	}
 
+	// 校验 CPU 型号长度和核心数范围
+	if len(data.CPU.Model) > 128 {
+		return fmt.Errorf("CPU 型号过长: %d", len(data.CPU.Model))
+	}
+	if data.CPU.Cores < 0 || data.CPU.Cores > 1024 {
+		return fmt.Errorf("CPU 核心数异常: %d", data.CPU.Cores)
+	}
+
 	// 校验内存使用率
 	if data.Memory.Total > 0 {
 		memUsage := float64(data.Memory.Used) / float64(data.Memory.Total) * 100
@@ -93,8 +101,16 @@ func (v *DataValidator) ValidateMetricData(agentID int64, data *sharedmodel.Metr
 		return fmt.Errorf("Swap 已用大于总量")
 	}
 
+	// 校验磁盘条目数量和字段长度
+	if len(data.Disks) > 64 {
+		return fmt.Errorf("磁盘条目过多: %d", len(data.Disks))
+	}
+
 	// 校验磁盘使用率
 	for _, disk := range data.Disks {
+		if len(disk.Device) > 256 {
+			return fmt.Errorf("磁盘设备名过长: %d", len(disk.Device))
+		}
 		if disk.Total > 0 && disk.Used > disk.Total {
 			return fmt.Errorf("磁盘 %s 已用大于总量", disk.Device)
 		}

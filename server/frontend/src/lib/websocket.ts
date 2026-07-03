@@ -35,6 +35,8 @@ export class DashboardWebSocket {
     }
 
     this.shouldReconnect = true
+    // 新连接重置退避索引，避免上次断连累积的长延迟影响首次重连
+    this.reconnectIndex = 0
 
     let wsUrl = this.url
 

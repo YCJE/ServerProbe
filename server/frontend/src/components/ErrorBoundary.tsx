@@ -67,7 +67,7 @@ export default class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBo
             <p className="mt-2 text-sm text-muted-foreground">
               应用遇到了意外错误，请尝试刷新页面。如果问题持续出现，请联系管理员。
             </p>
-            {this.state.error && (
+            {this.state.error && import.meta.env.DEV && (
               <pre className="mt-3 max-h-32 overflow-auto rounded-lg bg-secondary/50 p-3 text-left text-xs text-muted-foreground">
                 {this.state.error.message}
               </pre>

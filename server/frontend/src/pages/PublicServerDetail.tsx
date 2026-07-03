@@ -6,7 +6,6 @@ import { getPublicServers, getPublicServerHistory } from '@/lib/api'
 import type {
   ServerData,
   DashboardItem,
-  PingResult,
   TimeRange,
   HistoryData,
 } from '@/types'
@@ -19,6 +18,8 @@ import {
   formatLoss,
   getUsageTextColor,
   getLossColor,
+  parsePingData,
+  getFlagEmoji,
 } from '@/lib/utils'
 
 /** 扩展类型：访问可能由后端附加但尚未在 ServerData 中声明的字段 */
@@ -51,29 +52,6 @@ const MAX_SPARK_POINTS = 60
 
 /** 历史数据定时刷新间隔 */
 const HISTORY_REFRESH_INTERVAL = 5 * 60 * 1000
-
-/** 解析 ping_data（兼容字符串与数组两种格式） */
-function parsePingData(raw: unknown): PingResult[] {
-  if (!raw) return []
-  if (Array.isArray(raw)) return raw as PingResult[]
-  if (typeof raw === 'string') {
-    try {
-      const parsed = JSON.parse(raw)
-      return Array.isArray(parsed) ? parsed : []
-    } catch {
-      return []
-    }
-  }
-  return []
-}
-
-/** 将国家代码转为 emoji 国旗 */
-function countryToFlag(code: string): string {
-  if (!code || code.length !== 2) return ''
-  const cc = code.toUpperCase()
-  if (!/^[A-Z]{2}$/.test(cc)) return ''
-  return String.fromCodePoint(...[...cc].map((c) => 0x1f1e6 + c.charCodeAt(0) - 65))
-}
 
 // ============================================================
 //  主组件
@@ -292,12 +270,26 @@ export default function PublicServerDetail() {
     loadHistory(timeRange)
   }, [timeRange, loadHistory])
 
-  // 定时刷新历史数据
+  // 定时刷新历史数据（标签页隐藏时暂停以节省带宽）
   useEffect(() => {
-    const interval = setInterval(() => {
+    let interval = setInterval(() => {
       loadHistory(timeRange)
     }, HISTORY_REFRESH_INTERVAL)
-    return () => clearInterval(interval)
+
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        clearInterval(interval)
+      } else {
+        loadHistory(timeRange)
+        interval = setInterval(() => loadHistory(timeRange), HISTORY_REFRESH_INTERVAL)
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
+    return () => {
+      clearInterval(interval)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
   }, [timeRange, loadHistory])
 
   // 从历史数据中提取网络质量图表数据
@@ -406,7 +398,7 @@ export default function PublicServerDetail() {
   const diskTotal =
     displayServer.disks?.reduce((sum, d) => sum + d.total, 0) || 0
   const hasPrice = ext.monthly_fee != null || ext.expires_at != null
-  const flag = ext.country_code ? countryToFlag(ext.country_code) : ''
+  const flag = ext.country_code ? getFlagEmoji(ext.country_code) : ''
 
   // ==================== 渲染 ====================
 

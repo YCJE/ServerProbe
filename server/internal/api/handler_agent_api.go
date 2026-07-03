@@ -181,15 +181,16 @@ func (h *AgentAPIHandler) HandleUpdateAgent(c *gin.Context) {
 		return
 	}
 
-	agent, err := h.agentRepo.GetByID(agentID)
-	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Agent 不存在"})
+	// 仅更新 display_name 字段，避免 Save 覆盖 Online/LastSeen 等并发修改的字段
+	if err := h.agentRepo.UpdateDisplayName(agentID, req.DisplayName); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "更新 Agent 失败"})
 		return
 	}
 
-	agent.DisplayName = req.DisplayName
-	if err := h.agentRepo.Update(agent); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "更新 Agent 失败"})
+	// 重新查询返回更新后的完整 Agent 信息
+	agent, err := h.agentRepo.GetByID(agentID)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": true})
 		return
 	}
 

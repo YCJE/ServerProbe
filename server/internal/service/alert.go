@@ -117,32 +117,36 @@ func (e *AlertEngine) checkAlerts() {
 		return
 	}
 
-	// 获取所有在线 Agent
-	onlineAgents := e.monitor.GetOnlineAgentIDs()
 	// 获取所有 Agent（包括离线的），用于 agent_offline 指标检查
 	allAgents := e.monitor.GetAllAgentIDs()
 
-	for _, rule := range rules {
-		// agent_offline 指标需要检查所有 Agent（包括离线的），
-		// 其他指标只需检查在线 Agent
-		var agentIDs []int64
-		if rule.Metric == model.MetricAgentOffline {
-			agentIDs = allAgents
-		} else {
-			agentIDs = onlineAgents
+	// 按 Agent 分组检查，每个 Agent 只读一次 RingBuffer（避免 N+1 读取）
+	for _, agentID := range allAgents {
+		isOnline := e.monitor.IsAgentOnline(agentID)
+		var points []repository.MetricPoint
+		if isOnline {
+			rb := e.monitor.GetRingBuffer(agentID)
+			if rb != nil {
+				points = rb.Latest(1)
+			}
 		}
-		for _, agentID := range agentIDs {
-			e.checkRuleForAgent(rule, agentID)
+		for _, rule := range rules {
+			if rule.Metric == model.MetricAgentOffline {
+				// agent_offline 检查所有 Agent（包括在线的）
+				e.checkRuleForAgent(rule, agentID, nil)
+			} else if isOnline && len(points) > 0 {
+				e.checkRuleForAgent(rule, agentID, points)
+			}
 		}
 	}
 }
 
-// checkRuleForAgent 检查单个 Agent 的单条规则
-func (e *AlertEngine) checkRuleForAgent(rule model.AlertRule, agentID int64) {
+// checkRuleForAgent 检查单个 Agent 的单条规则（接受预读取的数据点，避免重复读取 RingBuffer）
+func (e *AlertEngine) checkRuleForAgent(rule model.AlertRule, agentID int64, points []repository.MetricPoint) {
 	key := fmt.Sprintf("%d:%d", agentID, rule.ID)
 
 	// 获取当前指标值
-	value := e.getMetricValue(agentID, rule.Metric)
+	value := e.getMetricValue(agentID, rule.Metric, points)
 	if value < 0 {
 		return
 	}
@@ -222,8 +226,8 @@ func (e *AlertEngine) checkRuleForAgent(rule model.AlertRule, agentID int64) {
 	}
 }
 
-// getMetricValue 获取指标值
-func (e *AlertEngine) getMetricValue(agentID int64, metric string) float64 {
+// getMetricValue 获取指标值（使用预读取的数据点，避免重复读取 RingBuffer）
+func (e *AlertEngine) getMetricValue(agentID int64, metric string, points []repository.MetricPoint) float64 {
 	// agent_offline 特殊处理: 在线返回 0，离线返回 1
 	if metric == model.MetricAgentOffline {
 		if e.monitor.IsAgentOnline(agentID) {
@@ -232,12 +236,6 @@ func (e *AlertEngine) getMetricValue(agentID int64, metric string) float64 {
 		return 1
 	}
 
-	rb := e.monitor.GetRingBuffer(agentID)
-	if rb == nil {
-		return -1
-	}
-
-	points := rb.Latest(1)
 	if len(points) == 0 {
 		return -1
 	}
