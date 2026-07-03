@@ -39,7 +39,7 @@ const TIME_RANGES: { value: TimeRange; label: string }[] = [
   { value: '12h', label: '12小时' },
   { value: '1d', label: '24小时' },
   { value: '2d', label: '2天' },
-  { value: '48h', label: '3天' },
+  { value: '3d', label: '3天' },
 ]
 
 /** ping 目标线条颜色池（Apple 强调色） */
@@ -132,6 +132,44 @@ export default function PublicServerDetail() {
               ping_data: [],
               timestamp: Math.floor(Date.now() / 1000),
             }))
+            // 先设置 currentServer，再处理 WS 数据，确保首条数据能进入 realtimeHistory
+            const targetItem = dashboardItems.find((item) => item.agent_id === serverId)
+            if (targetItem) {
+              useServerStore.setState({
+                currentServer: {
+                  id: targetItem.agent_id,
+                  hostname: targetItem.hostname || `Agent-${targetItem.agent_id}`,
+                  display_name: targetItem.display_name || '',
+                  os: targetItem.os || '',
+                  arch: targetItem.arch || '',
+                  agent_version: targetItem.agent_version || '',
+                  online: targetItem.online,
+                  last_seen: targetItem.timestamp,
+                  cpu: targetItem.cpu,
+                  cpu_model: targetItem.cpu_model || '',
+                  cpu_cores: targetItem.cpu_cores || 0,
+                  mem: targetItem.mem,
+                  mem_total: targetItem.mem_total,
+                  mem_used: targetItem.mem_used,
+                  swap_total: targetItem.swap_total || 0,
+                  swap_used: targetItem.swap_used || 0,
+                  net_rx: targetItem.net_rx,
+                  net_tx: targetItem.net_tx,
+                  total_rx: targetItem.total_rx || 0,
+                  total_tx: targetItem.total_tx || 0,
+                  uptime: targetItem.uptime,
+                  load_1: targetItem.load_1 || 0,
+                  load_5: targetItem.load_5 || 0,
+                  load_15: targetItem.load_15 || 0,
+                  disk_usage: targetItem.disk_usage || 0,
+                  disks: targetItem.disks || [],
+                  tcp_connections: targetItem.tcp_connections || 0,
+                  udp_connections: targetItem.udp_connections || 0,
+                  process_count: targetItem.process_count || 0,
+                  ping_data: targetItem.ping_data || [],
+                },
+              })
+            }
             useServerStore.getState().handleDashboardMessage(dashboardItems)
             setLoading(false)
           } else {
@@ -172,8 +210,8 @@ export default function PublicServerDetail() {
         swap_used: liveData.swap_used || 0,
         net_rx: liveData.net_rx,
         net_tx: liveData.net_tx,
-        total_rx: liveData.total_rx || 0,
-        total_tx: liveData.total_tx || 0,
+        total_rx: liveData.total_rx ?? baseServer.total_rx ?? 0,
+        total_tx: liveData.total_tx ?? baseServer.total_tx ?? 0,
         uptime: liveData.uptime,
         load_1: liveData.load_1 || 0,
         load_5: liveData.load_5 || 0,
@@ -184,6 +222,7 @@ export default function PublicServerDetail() {
         udp_connections: liveData.udp_connections || 0,
         process_count: liveData.process_count || 0,
         ping_data: liveData.ping_data || [],
+        last_seen: liveData.timestamp,
       }
     }
     if (liveData) {
@@ -283,8 +322,10 @@ export default function PublicServerDetail() {
     loadHistory(timeRange)
   }, [timeRange, loadHistory])
 
-  // 定时刷新历史数据（标签页隐藏时暂停以节省带宽）
+  // 定时刷新历史数据（标签页隐藏时暂停以节省带宽，实时模式跳过）
   useEffect(() => {
+    if (timeRange === 'realtime') return // 实时模式使用 WebSocket，不需要定时刷新
+
     let interval = setInterval(() => {
       loadHistory(timeRange)
     }, HISTORY_REFRESH_INTERVAL)
@@ -400,7 +441,7 @@ export default function PublicServerDetail() {
     })
 
     return { timestamps, series }
-  }, [timeRange, historyData, realtimeHistory])
+  }, [timeRange, timeRange === 'realtime' ? realtimeHistory : historyData])
 
   // 从 realtimeHistory 中提取 Sparkline 数据（取最近 N 个点）
   const sparklineData = useMemo(() => {

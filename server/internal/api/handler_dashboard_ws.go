@@ -88,7 +88,6 @@ func (h *DashboardWSHandler) HandleDashboardWS(c *gin.Context) {
 		c.JSON(http.StatusTooManyRequests, gin.H{"error": "连接数已满"})
 		return
 	}
-	defer h.monitor.DecDashboardWS()
 
 	// 升级为 WebSocket 连接
 	conn, err := h.upgrader.Upgrade(c.Writer, c.Request, nil)
@@ -97,6 +96,7 @@ func (h *DashboardWSHandler) HandleDashboardWS(c *gin.Context) {
 		log.Printf("Dashboard WebSocket 升级失败: %v", err)
 		return
 	}
+	defer h.monitor.DecDashboardWS()
 	defer conn.Close()
 
 	ws := &wsConn{conn: conn}
@@ -199,7 +199,6 @@ func (h *DashboardWSHandler) HandlePublicDashboardWS(c *gin.Context) {
 		c.JSON(http.StatusTooManyRequests, gin.H{"error": "连接数已满"})
 		return
 	}
-	defer h.monitor.DecDashboardWS()
 
 	// 升级为 WebSocket 连接
 	conn, err := h.upgrader.Upgrade(c.Writer, c.Request, nil)
@@ -208,6 +207,7 @@ func (h *DashboardWSHandler) HandlePublicDashboardWS(c *gin.Context) {
 		log.Printf("Public Dashboard WebSocket 升级失败: %v", err)
 		return
 	}
+	defer h.monitor.DecDashboardWS()
 	defer conn.Close()
 
 	ws := &wsConn{conn: conn}

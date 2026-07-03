@@ -24,7 +24,7 @@ const TIME_RANGES: { value: TimeRange; label: string }[] = [
   { value: '12h', label: '12小时' },
   { value: '1d', label: '24小时' },
   { value: '2d', label: '2天' },
-  { value: '48h', label: '3天' },
+  { value: '3d', label: '3天' },
 ]
 
 /** 判断是否为实时范围（使用 WebSocket 数据） */
@@ -280,7 +280,7 @@ export default function ServerDetail() {
       netRx: sampled.map((p) => p.net_rx),
       netTx: sampled.map((p) => p.net_tx),
     }
-  }, [timeRange, realtimeHistory, historyData])
+  }, [timeRange, isRealtimeRange(timeRange) ? realtimeHistory : historyData])
 
   // 平均丢包率
   const pingData = displayServer?.ping_data

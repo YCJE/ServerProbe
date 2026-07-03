@@ -39,40 +39,6 @@ type historyPoint struct {
 	PingData     []sharedmodel.PingResult `json:"ping_data"`
 }
 
-// metricPointToHistoryPoint 将 ringbuffer 的 MetricPoint 转换为统一的历史数据点响应格式
-func metricPointToHistoryPoint(p repository.MetricPoint) historyPoint {
-	hp := historyPoint{
-		Timestamp:    p.Timestamp,
-		CPUUsage:     p.CPU,
-		CPUModel:     p.CPUModel,
-		CPUCores:     p.CPUCores,
-		MemUsage:     p.Mem,
-		MemTotal:     p.MemTotal,
-		MemUsed:      p.MemUsed,
-		SwapTotal:    p.SwapTotal,
-		SwapUsed:     p.SwapUsed,
-		NetRx:        p.NetRx,
-		NetTx:        p.NetTx,
-		TCPConns:     p.TCPConns,
-		UDPConns:     p.UDPConns,
-		Load1:        p.Load1,
-		Load5:        p.Load5,
-		Load15:       p.Load15,
-		Uptime:       p.Uptime,
-		ProcessCount: p.ProcessCount,
-		PingData:     p.PingData,
-	}
-
-	// 序列化磁盘数据为 JSON 字符串，与 MetricRecord.DiskUsage 格式保持一致
-	if len(p.Disks) > 0 {
-		if diskBytes, err := json.Marshal(p.Disks); err == nil {
-			hp.DiskUsage = string(diskBytes)
-		}
-	}
-
-	return hp
-}
-
 // ServerHandler 服务器信息处理器
 type ServerHandler struct {
 	agentRepo  *repository.AgentRepository
@@ -287,8 +253,8 @@ func (h *ServerHandler) HandleGetServerHistory(c *gin.Context) {
 		startTime = now - 24*3600
 	case "2d":
 		startTime = now - 2*24*3600
-	case "48h":
-		startTime = now - 48*3600
+	case "3d":
+		startTime = now - 3*24*3600
 	default:
 		startTime = now - 3600
 	}
@@ -433,8 +399,8 @@ func (h *ServerHandler) HandlePublicServerHistory(c *gin.Context) {
 		startTime = now - 24*3600
 	case "2d":
 		startTime = now - 2*24*3600
-	case "48h":
-		startTime = now - 48*3600
+	case "3d":
+		startTime = now - 3*24*3600
 	default:
 		startTime = now - 3600
 	}

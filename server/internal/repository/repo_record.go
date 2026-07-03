@@ -56,10 +56,10 @@ func (r *RecordRepository) DeleteByAgentID(agentID int64) error {
 	return r.db.Where("agent_id = ?", agentID).Delete(&model.MetricRecord{}).Error
 }
 
-// CleanupExpired 清理过期数据（默认保留 2 天）
+// CleanupExpired 清理过期数据（默认保留 4 天，覆盖 3 天查询范围）
 func (r *RecordRepository) CleanupExpired(retentionDays int) (int64, error) {
 	if retentionDays <= 0 {
-		retentionDays = 2 // 默认保留 2 天
+		retentionDays = 4 // 默认保留 4 天
 	}
 	cutoff := time.Now().AddDate(0, 0, -retentionDays).Unix()
 	deleted, err := r.DeleteOlderThan(cutoff)
