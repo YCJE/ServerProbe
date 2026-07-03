@@ -88,9 +88,8 @@ async function request<T>(
       // 使用防重定向标志，避免多次 401 触发多次跳转
       if (!isRedirecting) {
         isRedirecting = true
-        window.location.href = '/login'
-        // 保险：若导航被阻止（如被浏览器扩展拦截），5 秒后重置标志，避免永久卡住
-        setTimeout(() => { isRedirecting = false }, 5000)
+        // 使用 replace 替换当前历史记录，整页刷新后 isRedirecting 会随页面重置
+        window.location.replace('/login')
       }
     }
     throw new ApiError(401, '未授权，请重新登录')

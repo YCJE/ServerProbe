@@ -14,16 +14,17 @@ export default function Dashboard() {
   // 统计信息
   const stats = useMemo(() => {
     const total = servers.length
-    const online = servers.filter((s) => s.online).length
+    const onlineServers = servers.filter((s) => s.online)
+    const online = onlineServers.length
     const offline = total - online
     const avgCpu = online > 0
-      ? servers.filter((s) => s.online).reduce((sum, s) => sum + (s.cpu || 0), 0) / online
+      ? onlineServers.reduce((sum, s) => sum + (s.cpu || 0), 0) / online
       : 0
     const avgMem = online > 0
-      ? servers.filter((s) => s.online).reduce((sum, s) => sum + (s.mem || 0), 0) / online
+      ? onlineServers.reduce((sum, s) => sum + (s.mem || 0), 0) / online
       : 0
-    const totalRx = servers.filter((s) => s.online).reduce((sum, s) => sum + (s.net_rx || 0), 0)
-    const totalTx = servers.filter((s) => s.online).reduce((sum, s) => sum + (s.net_tx || 0), 0)
+    const totalRx = onlineServers.reduce((sum, s) => sum + (s.net_rx || 0), 0)
+    const totalTx = onlineServers.reduce((sum, s) => sum + (s.net_tx || 0), 0)
 
     return { total, online, offline, avgCpu, avgMem, totalRx, totalTx }
   }, [servers])

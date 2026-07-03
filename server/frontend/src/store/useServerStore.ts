@@ -64,6 +64,7 @@ interface ServerStoreState {
   logout: () => Promise<void>
   fetchServers: () => Promise<void>
   fetchServerDetail: (id: number) => Promise<void>
+  abortCurrentFetch: () => void
   deleteAgent: (id: number) => Promise<void>
   connectWebSocket: () => void
   disconnectWebSocket: () => void
@@ -215,6 +216,12 @@ export const useServerStore = create<ServerStoreState>((set, get) => ({
       }
       throw err
     }
+  },
+
+  // 中止当前飞行中的 fetchServerDetail 请求（用于组件卸载时）
+  abortCurrentFetch: () => {
+    fetchServerDetailRequestId++
+    set({ currentServer: null })
   },
 
   // 删除 Agent，并刷新服务器列表（从仪表盘移除已删除的 Agent）
@@ -388,6 +395,14 @@ export const useServerStore = create<ServerStoreState>((set, get) => ({
       }
       return server
     })
+
+    // 清理不在服务器列表中的过期数据
+    const serverIds = new Set(allServers.map((s) => s.id))
+    for (const key of newMap.keys()) {
+      if (!serverIds.has(key)) {
+        newMap.delete(key)
+      }
+    }
 
     set({
       dashboardData: newMap,

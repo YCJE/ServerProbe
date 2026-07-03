@@ -154,6 +154,9 @@ func (c *PingCollector) detectBestMethod() PingMethod {
 // Go resolver 在返回多 IP 时顺序不稳定（会重排），若直接取 ips[0] 会导致
 // 每个采集周期 ping 到不同 IP，结果跳变。排序后保证每次取到同一 IP。
 func pickStableIP(ips []net.IPAddr) string {
+	if len(ips) == 0 {
+		return ""
+	}
 	sort.Slice(ips, func(i, j int) bool {
 		return bytes.Compare(ips[i].IP.To16(), ips[j].IP.To16()) < 0
 	})

@@ -56,6 +56,7 @@ export default function ServerDetail() {
   const currentServer = useServerStore((s) => s.currentServer)
   const currentServerLoading = useServerStore((s) => s.currentServerLoading)
   const fetchServerDetail = useServerStore((s) => s.fetchServerDetail)
+  const abortCurrentFetch = useServerStore((s) => s.abortCurrentFetch)
   const realtimeHistory = useServerStore((s) => s.realtimeHistory)
   const clearRealtimeHistory = useServerStore((s) => s.clearRealtimeHistory)
   const theme = useServerStore((s) => s.theme)
@@ -92,10 +93,11 @@ export default function ServerDetail() {
     }
     return () => {
       clearRealtimeHistory()
-      // 卸载时清除 currentServer，防止 realtimeHistory 持续增长
-      useServerStore.setState({ currentServer: null })
+      // 卸载时中止飞行中的 fetch 请求并清除 currentServer，
+      // 防止请求完成后重新设置 currentServer 导致 realtimeHistory 持续增长
+      abortCurrentFetch()
     }
-  }, [serverId, fetchServerDetail, clearRealtimeHistory])
+  }, [serverId, fetchServerDetail, abortCurrentFetch, clearRealtimeHistory])
 
   // 加载历史数据（非实时范围时）
   const loadHistory = useCallback(async (range: TimeRange) => {
@@ -178,7 +180,7 @@ export default function ServerDetail() {
         tcp_connections: liveData.tcp_connections || 0,
         udp_connections: liveData.udp_connections || 0,
         process_count: liveData.process_count || 0,
-        ping_data: liveData.ping_data,
+        ping_data: liveData.ping_data || [],
       }
     }
     return currentServer

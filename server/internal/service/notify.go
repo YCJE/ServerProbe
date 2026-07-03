@@ -138,6 +138,12 @@ func (s *NotifyService) sendEmail(channel *model.NotifyChannel, title, content s
 	contentType := "Content-Type: text/plain; charset=UTF-8\r\n"
 	body := fmt.Sprintf("%s%s\r\n\r\n%s", subject, contentType, safeContent)
 
+	// 解析收件人列表（支持逗号分隔的多个地址）
+	recipients := splitRecipients(config.To)
+	if len(recipients) == 0 {
+		return fmt.Errorf("收件人列表为空")
+	}
+
 	// SMTP 认证
 	auth := smtp.PlainAuth("", config.Username, config.Password, config.SMTPHost)
 
@@ -150,7 +156,7 @@ func (s *NotifyService) sendEmail(channel *model.NotifyChannel, title, content s
 	}
 
 	// 标准模式: smtp.SendMail 内部会尝试 STARTTLS
-	err := smtp.SendMail(addr, auth, config.From, []string{config.To}, []byte(body))
+	err := smtp.SendMail(addr, auth, config.From, recipients, []byte(body))
 	if err != nil {
 		return fmt.Errorf("邮件发送失败: %w", err)
 	}
@@ -190,9 +196,11 @@ func (s *NotifyService) sendEmailWithTLS(addr string, auth smtp.Auth, config mod
 		return fmt.Errorf("设置发件人失败: %w", err)
 	}
 
-	// 设置收件人
-	if err := client.Rcpt(config.To); err != nil {
-		return fmt.Errorf("设置收件人失败: %w", err)
+	// 设置收件人（支持逗号分隔的多个地址）
+	for _, rcpt := range splitRecipients(config.To) {
+		if err := client.Rcpt(rcpt); err != nil {
+			return fmt.Errorf("设置收件人失败: %w", err)
+		}
 	}
 
 	// 发送邮件内容
@@ -268,6 +276,19 @@ func (s *NotifyService) ValidateChannelConfig(channelType, config string) error 
 	}
 
 	return nil
+}
+
+// splitRecipients 将逗号分隔的收件人字符串拆分为地址列表，去除空白并忽略空串
+func splitRecipients(to string) []string {
+	parts := strings.Split(to, ",")
+	recipients := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			recipients = append(recipients, p)
+		}
+	}
+	return recipients
 }
 
 // isValidEmail 验证邮箱地址的基本格式

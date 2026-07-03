@@ -275,4 +275,27 @@ function ServerCard({ server, basePath = '/admin' }: ServerCardProps) {
   )
 }
 
-export default memo(ServerCard)
+export default memo(ServerCard, (prev, next) => {
+  const a = prev.server
+  const b = next.server
+  return (
+    a.id === b.id &&
+    a.online === b.online &&
+    a.cpu === b.cpu &&
+    a.cpu_model === b.cpu_model &&
+    a.cpu_cores === b.cpu_cores &&
+    a.mem === b.mem &&
+    a.mem_total === b.mem_total &&
+    a.mem_used === b.mem_used &&
+    a.net_rx === b.net_rx &&
+    a.net_tx === b.net_tx &&
+    a.total_rx === b.total_rx &&
+    a.total_tx === b.total_tx &&
+    a.disk_usage === b.disk_usage &&
+    a.uptime === b.uptime &&
+    a.last_seen === b.last_seen &&
+    a.ping_data === b.ping_data &&
+    a.display_name === b.display_name &&
+    a.hostname === b.hostname
+  )
+})

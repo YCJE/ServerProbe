@@ -1,5 +1,5 @@
 import type { DashboardMessage } from '@/types'
-import { getToken } from './api'
+import { getToken, clearToken } from './api'
 
 /** WebSocket 重连配置 */
 const RECONNECT_DELAYS = [1000, 2000, 4000, 8000, 16000, 30000, 60000]
@@ -88,6 +88,11 @@ export class DashboardWebSocket {
       // 认证失败（token 过期/无效）不重连，避免无限重连
       if (event.code === 4001 || event.code === 4003) {
         this.shouldReconnect = false
+        // 认证失败，清除 token 并重定向到登录页
+        clearToken()
+        if (window.location.pathname !== '/login' && !window.location.pathname.startsWith('/admin')) {
+          window.location.href = '/login'
+        }
         return
       }
       if (this.shouldReconnect) {

@@ -74,8 +74,9 @@ func NewAgentHandler(
 
 // agentWSConn 封装 Agent WebSocket 连接，添加写锁
 type agentWSConn struct {
-	conn *websocket.Conn
-	mu   sync.Mutex
+	conn          *websocket.Conn
+	mu            sync.Mutex
+	lastHeartbeat time.Time
 }
 
 func (w *agentWSConn) writeMessage(messageType int, data []byte) error {
@@ -401,6 +402,14 @@ func (h *AgentHandler) handlePingResult(ws *agentWSConn, msg *sharedmodel.WSMess
 
 // handleHeartbeat 处理心跳
 func (h *AgentHandler) handleHeartbeat(ws *agentWSConn, msg *sharedmodel.WSMessage, agentID *int64, registered *bool) {
+	// 速率限制：距上次 heartbeat 不足 5 秒则忽略，防止高频心跳导致资源耗尽
+	// lastHeartbeat 仅在连接的读循环 goroutine 中访问，无需额外同步
+	now := time.Now()
+	if now.Sub(ws.lastHeartbeat) < 5*time.Second {
+		return
+	}
+	ws.lastHeartbeat = now
+
 	if !*registered || *agentID == 0 {
 		// 向后兼容: 旧版 Agent 重连后不发送 register，直接发心跳
 		if msg.Token == "" || !h.lazyRegister(ws, msg, agentID, registered) {

@@ -67,6 +67,17 @@ func validateUsername(username string) error {
 	return nil
 }
 
+// dummyPasswordHash 用于在用户名不存在时执行一次等价耗时的 bcrypt 比较，
+// 消除基于响应时间的用户名枚举时序侧信道。cost 与真实管理员密码哈希一致 (12)，
+// 在包初始化时生成一次。
+var dummyPasswordHash = func() []byte {
+	hash, err := bcrypt.GenerateFromPassword([]byte("dummy"), 12)
+	if err != nil {
+		panic(err)
+	}
+	return hash
+}()
+
 // HandleLogin 处理登录
 // 路由: POST /api/v1/auth/login
 func (h *AuthHandler) HandleLogin(c *gin.Context) {
@@ -87,6 +98,8 @@ func (h *AuthHandler) HandleLogin(c *gin.Context) {
 
 	admin, err := h.adminRepo.GetByUsername(req.Username)
 	if err != nil {
+		// 执行 dummy bcrypt 比较以消除时序侧信道，使“用户名不存在”与“密码错误”的响应时间一致
+		_ = bcrypt.CompareHashAndPassword(dummyPasswordHash, []byte("dummy"))
 		c.JSON(http.StatusUnauthorized, LoginResponse{
 			Success: false,
 			Message: "用户名或密码错误",

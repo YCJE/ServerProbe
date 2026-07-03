@@ -201,7 +201,7 @@ export default function PublicServerDetail() {
         tcp_connections: liveData.tcp_connections || 0,
         udp_connections: liveData.udp_connections || 0,
         process_count: liveData.process_count || 0,
-        ping_data: liveData.ping_data,
+        ping_data: liveData.ping_data || [],
       }
     }
     if (liveData) {

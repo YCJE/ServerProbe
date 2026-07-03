@@ -198,7 +198,9 @@ func (m *MonitorService) UnregisterAgent(agentID int64) {
 	delete(m.lastDBUpdate, agentID)
 
 	// 更新数据库在线状态
-	_ = m.agentRepo.UpdateOnlineStatus(agentID, false)
+	if err := m.agentRepo.UpdateOnlineStatus(agentID, false); err != nil {
+		log.Printf("[Monitor] UpdateOnlineStatus failed for agent %d: %v", agentID, err)
+	}
 
 	log.Printf("Agent %d 已完全移除 (连接+ringBuffer)", agentID)
 }
@@ -215,16 +217,30 @@ func (m *MonitorService) BroadcastConfigUpdate(config *sharedmodel.AgentConfig) 
 	onConfigPush := m.onConfigPush
 	m.mu.RUnlock()
 
-	// 通过 OnConfigPush 回调推送 (使用 handler_agent.go 中的 agentWSConn.mu 锁)
-	if onConfigPush != nil {
-		for _, agentID := range agentIDs {
-			onConfigPush(agentID, config)
-		}
+	if onConfigPush == nil {
+		return
 	}
+
+	// 并发推送配置，避免单个慢 Agent 阻塞其他
+	// 回调内部使用 agentWSConn.mu 锁保护写入，可安全并发调用
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, 10) // 限制并发数为 10
+	for _, agentID := range agentIDs {
+		wg.Add(1)
+		go func(id int64) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			onConfigPush(id, config)
+		}(agentID)
+	}
+	wg.Wait()
 }
 
 // SetConfigPushCallback 设置配置推送回调 (由 handler_agent.go 注册)
 func (m *MonitorService) SetConfigPushCallback(cb func(agentID int64, config *sharedmodel.AgentConfig)) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.onConfigPush = cb
 }
 
@@ -385,7 +401,9 @@ func (m *MonitorService) CheckHeartbeatTimeout(timeout time.Duration) {
 
 	// 在锁外执行数据库写入，避免持锁阻塞监控服务
 	for _, agentID := range timedOut {
-		_ = m.agentRepo.UpdateOnlineStatus(agentID, false)
+		if err := m.agentRepo.UpdateOnlineStatus(agentID, false); err != nil {
+			log.Printf("[Monitor] UpdateOnlineStatus failed for agent %d: %v", agentID, err)
+		}
 		// 更新 last_seen 时间戳（标记离线）
 		_ = m.agentRepo.UpdateLastSeen(agentID, false)
 	}
