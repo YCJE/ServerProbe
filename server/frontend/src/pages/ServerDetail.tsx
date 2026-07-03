@@ -1,23 +1,22 @@
-import { useEffect, useState, useMemo, useCallback, useRef } from 'react'
+import { useEffect, useMemo, useState, useCallback, useRef } from 'react'
+import type { ReactNode } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useServerStore } from '@/store/useServerStore'
 import { getServerHistory } from '@/lib/api'
-import type { TimeRange, HistoryData, PingResult } from '@/types'
-import CpuChart from '@/components/CpuChart'
-import MemoryChart from '@/components/MemoryChart'
-import PingChart from '@/components/PingChart'
+import type { TimeRange, HistoryData } from '@/types'
+import NetworkQualityChart, { type ChartSeries } from '@/components/NetworkQualityChart'
+import Sparkline from '@/components/Sparkline'
 import {
   formatBytes,
   formatSpeed,
   formatUptime,
-  formatLatency,
   formatLoss,
   getUsageTextColor,
   getLossColor,
   parsePingData,
 } from '@/lib/utils'
 
-/** 时间范围选项 */
+/** 时间范围选项（管理端含实时模式 + 更多范围） */
 const TIME_RANGES: { value: TimeRange; label: string }[] = [
   { value: 'realtime', label: '实时' },
   { value: '1h', label: '1小时' },
@@ -32,7 +31,22 @@ function isRealtimeRange(range: TimeRange): boolean {
   return range === 'realtime'
 }
 
-/** 服务器详情页 */
+/** ping 目标线条颜色池（Apple 强调色） */
+const PING_COLORS = ['#5AC8FA', '#34C759', '#FF9500', '#AF52DE', '#FF2D55', '#FFCC00']
+
+/** Sparkline 配色 */
+const SPARK_CPU = '#007AFF'
+const SPARK_MEM = '#34C759'
+const SPARK_RX = '#5AC8FA'
+const SPARK_TX = '#AF52DE'
+
+/** Sparkline / 实时图表最多展示的数据点数 */
+const MAX_SPARK_POINTS = 60
+
+/** 历史数据定时刷新间隔 */
+const HISTORY_REFRESH_INTERVAL = 5 * 60 * 1000
+
+/** 服务器详情页（管理端，布局与公开页统一） */
 export default function ServerDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
@@ -45,7 +59,6 @@ export default function ServerDetail() {
   const abortCurrentFetch = useServerStore((s) => s.abortCurrentFetch)
   const realtimeHistory = useServerStore((s) => s.realtimeHistory)
   const clearRealtimeHistory = useServerStore((s) => s.clearRealtimeHistory)
-  const theme = useServerStore((s) => s.theme)
   const dashboardData = useServerStore((s) => s.dashboardData)
 
   // 本地状态
@@ -53,7 +66,7 @@ export default function ServerDetail() {
   const [historyData, setHistoryData] = useState<HistoryData | null>(null)
   const [historyLoading, setHistoryLoading] = useState(false)
 
-  // 跟踪组件是否已挂载，防止卸载后 setState
+  // 防止卸载后 setState
   const mountedRef = useRef(true)
   useEffect(() => {
     mountedRef.current = true
@@ -62,42 +75,22 @@ export default function ServerDetail() {
     }
   }, [])
 
-  // 跟踪历史数据请求 ID，防止快速切换时间范围时旧请求覆盖新数据
+  // 防止快速切换时间范围时旧请求覆盖新数据
   const historyRequestIdRef = useRef(0)
-
-  // 监听系统主题变化（system 模式下图表颜色需跟随更新）
-  const [systemDark, setSystemDark] = useState(() =>
-    window.matchMedia('(prefers-color-scheme: dark)').matches,
-  )
-  useEffect(() => {
-    const mql = window.matchMedia('(prefers-color-scheme: dark)')
-    const handler = (e: MediaQueryListEvent) => setSystemDark(e.matches)
-    mql.addEventListener('change', handler)
-    return () => mql.removeEventListener('change', handler)
-  }, [])
-
-  const isDark = useMemo(() => {
-    if (theme === 'dark') return true
-    if (theme === 'light') return false
-    return systemDark
-  }, [theme, systemDark])
 
   // 加载服务器详情
   useEffect(() => {
-    // 切换服务器时清除旧的历史数据，防止图表短暂显示上一台服务器的数据
     setHistoryData(null)
     if (serverId > 0) {
       fetchServerDetail(serverId).catch(() => {})
     }
     return () => {
       clearRealtimeHistory()
-      // 卸载时中止飞行中的 fetch 请求并清除 currentServer，
-      // 防止请求完成后重新设置 currentServer 导致 realtimeHistory 持续增长
       abortCurrentFetch()
     }
   }, [serverId, fetchServerDetail, abortCurrentFetch, clearRealtimeHistory])
 
-  // 加载历史数据（非实时范围时）
+  // 加载历史数据
   const loadHistory = useCallback(async (range: TimeRange) => {
     const requestId = ++historyRequestIdRef.current
     if (isRealtimeRange(range)) {
@@ -128,25 +121,24 @@ export default function ServerDetail() {
     }
   }, [serverId])
 
-  // 时间范围变化时加载历史数据
   useEffect(() => {
     loadHistory(timeRange)
   }, [timeRange, loadHistory])
 
-  // 定时刷新历史数据（非实时范围时，每 5 分钟刷新；标签页隐藏时暂停）
+  // 定时刷新历史数据（非实时范围时，标签页隐藏时暂停）
   useEffect(() => {
     if (isRealtimeRange(timeRange)) return
 
     let interval = setInterval(() => {
       loadHistory(timeRange)
-    }, 5 * 60 * 1000)
+    }, HISTORY_REFRESH_INTERVAL)
 
     const handleVisibilityChange = () => {
       if (document.hidden) {
         clearInterval(interval)
       } else {
         loadHistory(timeRange)
-        interval = setInterval(() => loadHistory(timeRange), 5 * 60 * 1000)
+        interval = setInterval(() => loadHistory(timeRange), HISTORY_REFRESH_INTERVAL)
       }
     }
     document.addEventListener('visibilitychange', handleVisibilityChange)
@@ -157,7 +149,7 @@ export default function ServerDetail() {
     }
   }, [timeRange, loadHistory])
 
-  // 实时数据来自 WebSocket 的 dashboardData
+  // 实时数据来自 WebSocket
   const liveData = dashboardData.get(serverId)
 
   // 合并当前服务器信息和实时数据
@@ -198,40 +190,92 @@ export default function ServerDetail() {
     return currentServer
   }, [currentServer, liveData])
 
-  // 图表数据
-  const chartData = useMemo(() => {
+  // 从历史数据或实时数据中提取网络质量图表数据
+  const networkChartData = useMemo<{
+    timestamps: number[]
+    series: ChartSeries[]
+  }>(() => {
+    let timestamps: number[] = []
+    let allPings: ReturnType<typeof parsePingData>[] = []
+
     if (isRealtimeRange(timeRange)) {
-      // 使用实时历史数据 (最近 1 小时)
-      const points = realtimeHistory
-      const cutoffTime = Date.now() / 1000 - 3600
+      // 实时模式：从 realtimeHistory 提取
+      const points = realtimeHistory.slice(-120)
+      timestamps = points.map((p) => p.timestamp)
+      allPings = points.map((p) => parsePingData(p.ping_data))
+    } else {
+      // 历史模式：从 historyData 提取
+      if (!historyData || !historyData.points || historyData.points.length === 0) {
+        return { timestamps: [], series: [] }
+      }
+      timestamps = historyData.points.map((p) => p.timestamp)
+      allPings = historyData.points.map((p) => parsePingData(p.ping_data))
+    }
 
-      const filtered = points.filter((p) => p.timestamp >= cutoffTime)
+    if (timestamps.length === 0) return { timestamps: [], series: [] }
 
-      return {
-        timestamps: filtered.map((p) => p.timestamp),
-        cpuData: filtered.map((p) => p.cpu),
-        memData: filtered.map((p) => p.mem),
-        pingData: filtered.map((p) => p.ping_data || []),
+    // 收集所有唯一的 ping 目标名称（保持出现顺序）
+    const targetNames: string[] = []
+    const seen = new Set<string>()
+    for (const pings of allPings) {
+      for (const ping of pings) {
+        if (!seen.has(ping.name)) {
+          seen.add(ping.name)
+          targetNames.push(ping.name)
+        }
       }
     }
 
-    // 使用历史 API 数据
-    if (!historyData || !historyData.points) {
-      return { timestamps: [], cpuData: [], memData: [], pingData: [] }
-    }
+    const series: ChartSeries[] = targetNames.map((name, i) => {
+      let latestLoss: number | undefined
+      for (let j = allPings.length - 1; j >= 0; j--) {
+        const ping = allPings[j].find((pp) => pp.name === name)
+        if (ping && ping.loss >= 0) {
+          latestLoss = ping.loss
+          break
+        }
+      }
+      return {
+        name,
+        color: PING_COLORS[i % PING_COLORS.length],
+        data: allPings.map((pings) => {
+          const ping = pings.find((pp) => pp.name === name)
+          return ping ? ping.avg_latency : null
+        }),
+        loss: latestLoss,
+        lossData: allPings.map((pings) => {
+          const ping = pings.find((pp) => pp.name === name)
+          return ping ? ping.loss : null
+        }),
+      }
+    })
 
-    return {
-      timestamps: historyData.points.map((p) => p.timestamp),
-      cpuData: historyData.points.map((p) => p.cpu_usage),
-      memData: historyData.points.map((p) => p.mem_usage),
-      pingData: historyData.points.map((p) => parsePingData(p.ping_data)),
-    }
+    return { timestamps, series }
   }, [timeRange, realtimeHistory, historyData])
 
-  // 加载中
+  // 从 realtimeHistory 中提取 Sparkline 数据（取最近 N 个点）
+  const sparklineData = useMemo(() => {
+    const recent = realtimeHistory.slice(-MAX_SPARK_POINTS)
+    return {
+      cpu: recent.map((p) => p.cpu),
+      mem: recent.map((p) => p.mem),
+      netRx: recent.map((p) => p.net_rx),
+      netTx: recent.map((p) => p.net_tx),
+    }
+  }, [realtimeHistory])
+
+  // 平均丢包率
+  const pingData = displayServer?.ping_data
+  const avgLoss = useMemo(() => {
+    if (!pingData || pingData.length === 0) return 0
+    return pingData.reduce((sum, p) => sum + (p.loss || 0), 0) / pingData.length
+  }, [pingData])
+
+  // ==================== 加载 / 错误状态 ====================
+
   if (currentServerLoading && !currentServer) {
     return (
-      <div className="flex h-full items-center justify-center">
+      <div className="flex h-full items-center justify-center py-20">
         <div className="flex flex-col items-center gap-3">
           <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
           <p className="text-sm text-muted-foreground">加载中...</p>
@@ -254,233 +298,115 @@ export default function ServerDetail() {
     )
   }
 
-  const memUsagePercent = displayServer.mem_total > 0
-    ? (displayServer.mem_used / displayServer.mem_total) * 100
-    : (displayServer.mem || 0)
+  // ==================== 派生数据 ====================
+
+  const memUsagePercent =
+    displayServer.mem_total > 0
+      ? (displayServer.mem_used / displayServer.mem_total) * 100
+      : displayServer.mem || 0
+  const diskTotal =
+    displayServer.disks?.reduce((sum, d) => sum + d.total, 0) || 0
+
+  // ==================== 渲染 ====================
 
   return (
-    <div className="space-y-4">
-      {/* 页面头部 */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => navigate('/admin')}
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border bg-card text-foreground transition-colors hover:bg-accent"
-          >
-            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-            </svg>
-          </button>
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <h1 className="truncate text-lg font-bold text-foreground sm:text-xl">{displayServer.hostname}</h1>
-              <span
-                className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${
-                  displayServer.online
-                    ? 'bg-success/10 text-success'
-                    : 'bg-destructive/10 text-destructive'
-                }`}
-              >
-                <span
-                  className={`inline-block h-1.5 w-1.5 rounded-full ${
-                    displayServer.online ? 'bg-success' : 'bg-destructive'
-                  }`}
-                />
-                {displayServer.online ? '在线' : '离线'}
-              </span>
-            </div>
-            <p className="mt-0.5 truncate text-xs text-muted-foreground sm:text-sm">
-              {displayServer.os} · {displayServer.arch} · Agent v{displayServer.agent_version}
-            </p>
+    <div className="flex flex-col gap-4 lg:flex-row">
+      {/* ============ 左侧边栏 ============ */}
+      <aside className="w-full shrink-0 space-y-4 lg:w-[260px]">
+        {/* 返回按钮 */}
+        <button
+          onClick={() => navigate('/admin')}
+          className="flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
+        >
+          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M10 19l-7-7m0 0l7-7m-7 7h18"
+            />
+          </svg>
+          返回仪表盘
+        </button>
+
+        {/* 服务器头部 */}
+        <div className="rounded-2xl border border-border bg-card p-4">
+          <div className="flex items-center gap-2">
+            <span
+              className={`inline-block h-2.5 w-2.5 shrink-0 rounded-full ${
+                displayServer.online
+                  ? 'bg-success animate-pulse'
+                  : 'bg-destructive'
+              }`}
+            />
+            <h1 className="min-w-0 flex-1 truncate text-base font-bold text-foreground">
+              {displayServer.display_name || displayServer.hostname}
+            </h1>
+          </div>
+          <div className="mt-2 flex items-center gap-2">
+            <span
+              className={`badge-pill ${
+                displayServer.online ? 'badge-success' : 'badge-destructive'
+              }`}
+            >
+              {displayServer.online ? '在线' : '离线'}
+            </span>
+            <span className="truncate text-xs text-muted-foreground">
+              {displayServer.hostname}
+            </span>
           </div>
         </div>
 
-        {/* 时间范围切换 */}
-        <div className="flex items-center gap-1 overflow-x-auto rounded-lg border border-border bg-card p-1 scrollbar-thin">
-          {TIME_RANGES.map((range) => (
-            <button
-              key={range.value}
-              onClick={() => setTimeRange(range.value)}
-              className={`shrink-0 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors sm:px-3 ${
-                timeRange === range.value
-                  ? 'bg-primary text-primary-foreground'
-                  : 'text-muted-foreground hover:bg-accent hover:text-foreground'
-              }`}
-            >
-              {range.label}
-            </button>
-          ))}
+        {/* 硬件信息卡片 */}
+        <div className="rounded-2xl border border-border bg-card p-4">
+          <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            硬件信息
+          </h3>
+          <div className="space-y-2.5">
+            <InfoRow label="CPU 型号" value={displayServer.cpu_model || '-'} />
+            <InfoRow
+              label="核心数"
+              value={displayServer.cpu_cores != null ? `${displayServer.cpu_cores} 核` : '-'}
+            />
+            <InfoRow label="内存" value={formatBytes(displayServer.mem_total)} />
+            <InfoRow label="硬盘" value={diskTotal > 0 ? formatBytes(diskTotal) : '-'} />
+            <InfoRow label="系统" value={displayServer.os || '-'} />
+            <InfoRow label="架构" value={displayServer.arch || '-'} />
+            <InfoRow label="Agent 版本" value={displayServer.agent_version || '-'} />
+          </div>
         </div>
-      </div>
 
-      {/* 实时指标卡片 */}
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
-        {/* CPU */}
-        <MetricCard
-          label="CPU"
-          value={`${(displayServer.cpu || 0).toFixed(1)}%`}
-          color={getUsageTextColor(displayServer.cpu)}
-        />
-        {/* 内存 */}
-        <MetricCard
-          label="内存"
-          value={`${memUsagePercent.toFixed(1)}%`}
-          subValue={`${formatBytes(displayServer.mem_used)} / ${formatBytes(displayServer.mem_total)}`}
-          color={getUsageTextColor(memUsagePercent)}
-        />
-        {/* 磁盘 */}
-        <MetricCard
-          label="磁盘"
-          value={`${(displayServer.disk_usage || 0).toFixed(1)}%`}
-          color={getUsageTextColor(displayServer.disk_usage || 0)}
-        />
-        {/* 下行 */}
-        <MetricCard
-          label="下行"
-          value={displayServer.online ? formatSpeed(displayServer.net_rx) : '---'}
-        />
-        {/* 上行 */}
-        <MetricCard
-          label="上行"
-          value={displayServer.online ? formatSpeed(displayServer.net_tx) : '---'}
-        />
-        {/* 运行时间 */}
-        <MetricCard
-          label="运行时间"
-          value={displayServer.online ? formatUptime(displayServer.uptime) : '---'}
-        />
-      </div>
-
-      {/* 扩展指标卡片 */}
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
-        {/* TCP 连接数 */}
-        <MetricCard
-          label="TCP 连接"
-          value={displayServer.online ? String(displayServer.tcp_connections || 0) : '---'}
-        />
-        {/* UDP 连接数 */}
-        <MetricCard
-          label="UDP 连接"
-          value={displayServer.online ? String(displayServer.udp_connections || 0) : '---'}
-        />
-        {/* 进程数 */}
-        <MetricCard
-          label="进程数"
-          value={displayServer.online ? String(displayServer.process_count || 0) : '---'}
-        />
-        {/* Swap 使用 */}
-        <MetricCard
-          label="Swap"
-          value={
-            displayServer.online
-              ? displayServer.swap_total > 0
-                ? `${((displayServer.swap_used / displayServer.swap_total) * 100).toFixed(1)}%`
-                : '无'
-              : '---'
-          }
-          subValue={
-            displayServer.online && displayServer.swap_total > 0
-              ? `${formatBytes(displayServer.swap_used)} / ${formatBytes(displayServer.swap_total)}`
-              : undefined
-          }
-        />
-        {/* 负载 (1/5/15 分钟) */}
-        <MetricCard
-          label="系统负载"
-          value={
-            displayServer.online
-              ? `${displayServer.load_1?.toFixed(2) || '0.00'} / ${displayServer.load_5?.toFixed(2) || '0.00'} / ${displayServer.load_15?.toFixed(2) || '0.00'}`
-              : '---'
-          }
-          subValue={displayServer.online ? '1分 / 5分 / 15分' : undefined}
-        />
-        {/* 1分钟负载（单独显示，便于快速查看） */}
-        <MetricCard
-          label="1分钟负载"
-          value={displayServer.online ? (displayServer.load_1?.toFixed(2) || '0.00') : '---'}
-        />
-      </div>
-
-      {/* CPU 图表 */}
-      <div className="rounded-xl border border-border bg-card p-4">
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-foreground">CPU 使用率</h2>
-          <span className="text-xs text-muted-foreground">
-            {isRealtimeRange(timeRange) ? '实时数据' : '历史数据'}
-          </span>
-        </div>
-        {chartData.timestamps.length > 0 ? (
-          <CpuChart
-            timestamps={chartData.timestamps}
-            cpuData={chartData.cpuData}
-            isDark={isDark}
-            height={260}
-          />
-        ) : (
-          <EmptyChart loading={historyLoading} />
-        )}
-      </div>
-
-      {/* 内存图表 */}
-      <div className="rounded-xl border border-border bg-card p-4">
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-foreground">内存使用率</h2>
-          <span className="text-xs text-muted-foreground">
-            {isRealtimeRange(timeRange) ? '实时数据' : '历史数据'}
-          </span>
-        </div>
-        {chartData.timestamps.length > 0 ? (
-          <MemoryChart
-            timestamps={chartData.timestamps}
-            memData={chartData.memData}
-            isDark={isDark}
-            height={260}
-          />
-        ) : (
-          <EmptyChart loading={historyLoading} />
-        )}
-      </div>
-
-      {/* 延迟与丢包率融合图 */}
-      <div className="rounded-xl border border-border bg-card p-4">
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-foreground">三网延迟与丢包率</h2>
-          <span className="text-xs text-muted-foreground">
-            {isRealtimeRange(timeRange) ? '实时数据' : '历史数据'}
-          </span>
-        </div>
-        {chartData.timestamps.length > 0 ? (
-          <PingChart
-            timestamps={chartData.timestamps}
-            pingData={chartData.pingData}
-            isDark={isDark}
-            height={400}
-          />
-        ) : (
-          <EmptyChart loading={historyLoading} />
-        )}
-      </div>
-
-      {/* 系统信息 + 三网详情 */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        {/* 系统信息 */}
-        <div className="rounded-xl border border-border bg-card p-4">
-          <h2 className="mb-3 text-sm font-semibold text-foreground">系统信息</h2>
-          <div className="grid grid-cols-2 gap-3 text-sm">
-            <InfoItem label="主机名" value={displayServer.hostname} />
-            <InfoItem label="操作系统" value={displayServer.os} />
-            <InfoItem label="架构" value={displayServer.arch} />
-            <InfoItem label="CPU 型号" value={displayServer.cpu_model || '-'} />
-            <InfoItem label="核心数" value={displayServer.cpu_cores ? `${displayServer.cpu_cores} 核` : '-'} />
-            <InfoItem label="Agent 版本" value={displayServer.agent_version} />
-            <InfoItem label="运行时间" value={displayServer.online ? formatUptime(displayServer.uptime) : '---'} />
-            <InfoItem label="进程数" value={displayServer.online ? String(displayServer.process_count || 0) : '---'} />
-            <InfoItem label="负载(1分)" value={displayServer.load_1?.toFixed(2) || '---'} />
-            <InfoItem label="负载(5分)" value={displayServer.load_5?.toFixed(2) || '---'} />
-            <InfoItem label="负载(15分)" value={displayServer.load_15?.toFixed(2) || '---'} />
-            <InfoItem label="TCP 连接" value={displayServer.online ? String(displayServer.tcp_connections || 0) : '---'} />
-            <InfoItem label="UDP 连接" value={displayServer.online ? String(displayServer.udp_connections || 0) : '---'} />
-            <InfoItem
+        {/* 系统信息卡片 */}
+        <div className="rounded-2xl border border-border bg-card p-4">
+          <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            系统信息
+          </h3>
+          <div className="space-y-2.5">
+            <InfoRow
+              label="运行时间"
+              value={displayServer.online ? formatUptime(displayServer.uptime) : '---'}
+            />
+            <InfoRow
+              label="负载 (1/5/15分)"
+              value={
+                displayServer.online
+                  ? `${(displayServer.load_1 || 0).toFixed(2)} / ${(displayServer.load_5 || 0).toFixed(2)} / ${(displayServer.load_15 || 0).toFixed(2)}`
+                  : '---'
+              }
+            />
+            <InfoRow
+              label="TCP 连接"
+              value={displayServer.online ? String(displayServer.tcp_connections || 0) : '---'}
+            />
+            <InfoRow
+              label="UDP 连接"
+              value={displayServer.online ? String(displayServer.udp_connections || 0) : '---'}
+            />
+            <InfoRow
+              label="进程数"
+              value={displayServer.online ? String(displayServer.process_count || 0) : '---'}
+            />
+            <InfoRow
               label="Swap"
               value={
                 displayServer.online
@@ -491,122 +417,217 @@ export default function ServerDetail() {
               }
             />
           </div>
+        </div>
 
-          {/* 磁盘总使用率 */}
-          {displayServer.disks && displayServer.disks.length > 0 && (
-            <div className="mt-4 border-t border-border pt-3">
-              <h3 className="mb-2 text-xs font-medium text-muted-foreground">磁盘使用</h3>
-              <div className="rounded-lg bg-secondary/50 px-3 py-2">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-foreground">总使用率</span>
-                  <span className={`font-medium ${getUsageTextColor(displayServer.disk_usage || 0)}`}>
-                    {(displayServer.disk_usage || 0).toFixed(1)}%
-                  </span>
-                </div>
-                <div className="mt-1 text-xs text-muted-foreground">
-                  已用 {formatBytes(displayServer.disks.reduce((sum, d) => sum + d.used, 0))} / 总{' '}
-                  {formatBytes(displayServer.disks.reduce((sum, d) => sum + d.total, 0))}
-                </div>
+        {/* 磁盘使用详情（仅有数据时显示） */}
+        {displayServer.disks && displayServer.disks.length > 0 && (
+          <div className="rounded-2xl border border-border bg-card p-4">
+            <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              磁盘使用
+            </h3>
+            <div className="space-y-2">
+              {displayServer.disks.map((disk, i) => {
+                const usage = disk.total > 0 ? (disk.used / disk.total) * 100 : 0
+                return (
+                  <div key={i} className="space-y-1">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="truncate text-muted-foreground">{disk.device || `磁盘 ${i + 1}`}</span>
+                      <span className={`font-medium ${getUsageTextColor(usage)}`}>
+                        {usage.toFixed(1)}%
+                      </span>
+                    </div>
+                    <div className="h-1 w-full overflow-hidden rounded-full bg-secondary">
+                      <div
+                        className="h-full rounded-full transition-all duration-500"
+                        style={{
+                          width: `${Math.min(usage, 100)}%`,
+                          backgroundColor: usage > 90 ? '#FF3B30' : usage > 70 ? '#FF9500' : '#34C759',
+                        }}
+                      />
+                    </div>
+                    <div className="text-[10px] text-muted-foreground">
+                      {formatBytes(disk.used)} / {formatBytes(disk.total)}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
+      </aside>
+
+      {/* ============ 右侧主内容区 ============ */}
+      <div className="min-w-0 flex-1 space-y-4">
+        {/* 标题行 + 时间范围选择器 */}
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <h2 className="text-lg font-semibold text-foreground">网络质量</h2>
+          <div className="flex items-center gap-1 overflow-x-auto rounded-full border border-border bg-card p-1 scrollbar-thin">
+            {TIME_RANGES.map((range) => (
+              <button
+                key={range.value}
+                onClick={() => setTimeRange(range.value)}
+                className={`shrink-0 rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                  timeRange === range.value
+                    ? 'bg-primary text-primary-foreground'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                {range.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* 网络质量图表 */}
+        <div className="rounded-2xl border border-border bg-card p-4">
+          {historyLoading && networkChartData.timestamps.length === 0 ? (
+            <div
+              style={{ height: 360 }}
+              className="flex items-center justify-center"
+            >
+              <div className="flex flex-col items-center gap-2">
+                <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                <span className="text-xs text-muted-foreground">加载中...</span>
               </div>
             </div>
+          ) : (
+            <NetworkQualityChart
+              timestamps={networkChartData.timestamps}
+              series={networkChartData.series}
+              height={360}
+              timeRange={isRealtimeRange(timeRange) ? '实时数据' : undefined}
+            />
           )}
         </div>
 
-        {/* 三网延迟详情 */}
-        <div className="rounded-xl border border-border bg-card p-4">
-          <h2 className="mb-3 text-sm font-semibold text-foreground">三网延迟详情</h2>
-          {displayServer.ping_data && displayServer.ping_data.length > 0 ? (
-            <div className="space-y-2">
-              {displayServer.ping_data.map((ping: PingResult) => (
-                <div
-                  key={ping.name}
-                  className="flex items-center justify-between rounded-lg bg-secondary/50 px-3 py-2"
-                >
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium text-foreground">{ping.name}</span>
-                    <span className="text-xs text-muted-foreground">{ping.method}</span>
-                  </div>
-                  <div className="flex items-center gap-4 text-sm">
-                    <div className="text-right">
-                      <span className="text-xs text-muted-foreground">延迟</span>
-                      <div className="font-medium text-foreground">
-                        {displayServer.online ? formatLatency(ping.avg_latency) : '---'}
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <span className="text-xs text-muted-foreground">丢包率</span>
-                      <div className={`font-medium ${displayServer.online ? getLossColor(ping.loss) : 'text-muted-foreground'}`}>
-                        {displayServer.online ? formatLoss(ping.loss) : '---'}
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <span className="text-xs text-muted-foreground">抖动</span>
-                      <div className="font-medium text-foreground">
-                        {displayServer.online ? `${(ping.jitter || 0).toFixed(1)} ms` : '---'}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="py-6 text-center text-sm text-muted-foreground">
-              暂无 Ping 探测数据
-            </div>
-          )}
+        {/* 状态标签行 */}
+        <div className="flex flex-wrap gap-2">
+          <StatusBadge
+            label="CPU"
+            value={`${(displayServer.cpu || 0).toFixed(1)}%`}
+            colorClass={getUsageTextColor(displayServer.cpu || 0)}
+          />
+          <StatusBadge
+            label="内存"
+            value={`${memUsagePercent.toFixed(1)}%`}
+            colorClass={getUsageTextColor(memUsagePercent)}
+          />
+          <StatusBadge
+            label="磁盘"
+            value={`${(displayServer.disk_usage || 0).toFixed(1)}%`}
+            colorClass={getUsageTextColor(displayServer.disk_usage || 0)}
+          />
+          <StatusBadge
+            label="丢包率"
+            value={formatLoss(avgLoss)}
+            colorClass={getLossColor(avgLoss)}
+          />
+        </div>
+
+        {/* 资源监控卡片网格 */}
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <ResourceCard
+            label="CPU 使用率"
+            value={`${(displayServer.cpu || 0).toFixed(1)}%`}
+            color={SPARK_CPU}
+          >
+            <Sparkline data={sparklineData.cpu} color={SPARK_CPU} height={40} />
+          </ResourceCard>
+
+          <ResourceCard
+            label="内存使用率"
+            value={`${memUsagePercent.toFixed(1)}%`}
+            subValue={`${formatBytes(displayServer.mem_used)} / ${formatBytes(displayServer.mem_total)}`}
+            color={SPARK_MEM}
+          >
+            <Sparkline data={sparklineData.mem} color={SPARK_MEM} height={40} />
+          </ResourceCard>
+
+          <ResourceCard
+            label="网络下行"
+            value={displayServer.online ? formatSpeed(displayServer.net_rx) : '---'}
+            color={SPARK_RX}
+          >
+            <Sparkline data={sparklineData.netRx} color={SPARK_RX} height={40} />
+          </ResourceCard>
+
+          <ResourceCard
+            label="网络上行"
+            value={displayServer.online ? formatSpeed(displayServer.net_tx) : '---'}
+            color={SPARK_TX}
+          >
+            <Sparkline data={sparklineData.netTx} color={SPARK_TX} height={40} />
+          </ResourceCard>
         </div>
       </div>
     </div>
   )
 }
 
-/** 指标卡片 */
-function MetricCard({
+// ============================================================
+//  子组件（与 PublicServerDetail 保持一致）
+// ============================================================
+
+/** 信息行（label + value 左右对齐） */
+function InfoRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between gap-2 text-sm">
+      <span className="shrink-0 text-muted-foreground">{label}</span>
+      <span className="min-w-0 truncate text-right font-medium text-foreground">
+        {value}
+      </span>
+    </div>
+  )
+}
+
+/** 状态药丸标签 */
+function StatusBadge({
+  label,
+  value,
+  colorClass,
+}: {
+  label: string
+  value: string
+  colorClass: string
+}) {
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1.5 text-xs">
+      <span className="text-muted-foreground">{label}</span>
+      <span className={`font-semibold ${colorClass}`}>{value}</span>
+    </span>
+  )
+}
+
+/** 资源监控卡片（当前值 + Sparkline） */
+function ResourceCard({
   label,
   value,
   subValue,
   color,
+  children,
 }: {
   label: string
   value: string
   subValue?: string
-  color?: string
+  color: string
+  children?: ReactNode
 }) {
   return (
-    <div className="rounded-xl border border-border bg-card p-3">
-      <div className="text-xs text-muted-foreground">{label}</div>
-      <div className={`mt-1 text-lg font-bold ${color || 'text-foreground'}`}>
-        {value}
+    <div className="rounded-2xl border border-border bg-card p-4">
+      <div className="mb-2 flex items-center justify-between">
+        <span className="text-xs text-muted-foreground">{label}</span>
+        <span
+          className="h-2 w-2 rounded-full"
+          style={{ backgroundColor: color }}
+        />
       </div>
-      {subValue && (
-        <div className="mt-0.5 text-xs text-muted-foreground">{subValue}</div>
-      )}
-    </div>
-  )
-}
-
-/** 信息项 */
-function InfoItem({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <div className="text-xs text-muted-foreground">{label}</div>
-      <div className="mt-0.5 font-medium text-foreground">{value}</div>
-    </div>
-  )
-}
-
-/** 空图表占位 */
-function EmptyChart({ loading }: { loading: boolean }) {
-  return (
-    <div className="flex h-[260px] items-center justify-center">
-      {loading ? (
-        <div className="flex flex-col items-center gap-2">
-          <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-          <span className="text-xs text-muted-foreground">加载中...</span>
-        </div>
-      ) : (
-        <span className="text-sm text-muted-foreground">暂无数据</span>
-      )}
+      <div className="mb-2">
+        <span className="text-xl font-bold text-foreground">{value}</span>
+        {subValue && (
+          <span className="ml-1.5 text-xs text-muted-foreground">{subValue}</span>
+        )}
+      </div>
+      {children}
     </div>
   )
 }
