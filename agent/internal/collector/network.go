@@ -95,6 +95,8 @@ func (c *NetworkCollector) Collect() (interface{}, error) {
 	return model.NetworkInfo{
 		RxSpeed:        rxSpeed,
 		TxSpeed:        txSpeed,
+		TotalRx:        currentRx,
+		TotalTx:        currentTx,
 		TCPConnections: tcpCount,
 		UDPConnections: udpCount,
 	}, nil

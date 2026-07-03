@@ -275,6 +275,8 @@ func (m *MonitorService) WriteMetricData(agentID int64, data *sharedmodel.Metric
 	point := repository.MetricPoint{
 		Timestamp:    time.Now().Unix(),
 		CPU:          data.CPU.Usage,
+		CPUModel:     data.CPU.Model,
+		CPUCores:     data.CPU.Cores,
 		Mem:          memUsage,
 		MemTotal:     data.Memory.Total,
 		MemUsed:      data.Memory.Used,
@@ -283,6 +285,8 @@ func (m *MonitorService) WriteMetricData(agentID int64, data *sharedmodel.Metric
 		Disks:        data.Disks,
 		NetRx:        data.Network.RxSpeed,
 		NetTx:        data.Network.TxSpeed,
+		TotalRx:      data.Network.TotalRx,
+		TotalTx:      data.Network.TotalTx,
 		TCPConns:     data.Network.TCPConnections,
 		UDPConns:     data.Network.UDPConnections,
 		Load1:        data.CPU.Load1,
@@ -440,6 +444,8 @@ func (m *MonitorService) GetDashboardData() []DashboardItem {
 			AgentID:      agentID,
 			Online:       m.isOnlineLocked(agentID),
 			CPU:          p.CPU,
+			CPUModel:     p.CPUModel,
+			CPUCores:     p.CPUCores,
 			Mem:          p.Mem,
 			MemTotal:     p.MemTotal,
 			MemUsed:      p.MemUsed,
@@ -447,6 +453,8 @@ func (m *MonitorService) GetDashboardData() []DashboardItem {
 			SwapUsed:     p.SwapUsed,
 			NetRx:        p.NetRx,
 			NetTx:        p.NetTx,
+			TotalRx:      p.TotalRx,
+			TotalTx:      p.TotalTx,
 			Load1:        p.Load1,
 			Load5:        p.Load5,
 			Load15:       p.Load15,
@@ -509,6 +517,8 @@ type DashboardItem struct {
 	AgentVersion string                   `json:"agent_version"`
 	Online       bool                     `json:"online"`
 	CPU          float64                  `json:"cpu"`
+	CPUModel     string                   `json:"cpu_model"`
+	CPUCores     int                      `json:"cpu_cores"`
 	Mem          float64                  `json:"mem"`
 	MemTotal     uint64                   `json:"mem_total"`
 	MemUsed      uint64                   `json:"mem_used"`
@@ -516,6 +526,8 @@ type DashboardItem struct {
 	SwapUsed     uint64                   `json:"swap_used"`
 	NetRx        uint64                   `json:"net_rx"`
 	NetTx        uint64                   `json:"net_tx"`
+	TotalRx      uint64                   `json:"total_rx"`
+	TotalTx      uint64                   `json:"total_tx"`
 	Load1        float64                  `json:"load_1"`
 	Load5        float64                  `json:"load_5"`
 	Load15       float64                  `json:"load_15"`

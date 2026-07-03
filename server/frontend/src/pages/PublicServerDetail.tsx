@@ -126,6 +126,8 @@ export default function PublicServerDetail() {
               agent_version: s.agent_version || '',
               online: s.online,
               cpu: s.cpu,
+              cpu_model: s.cpu_model || '',
+              cpu_cores: s.cpu_cores || 0,
               mem: s.mem,
               mem_total: s.mem_total,
               mem_used: s.mem_used,
@@ -133,6 +135,8 @@ export default function PublicServerDetail() {
               swap_used: s.swap_used || 0,
               net_rx: s.net_rx,
               net_tx: s.net_tx,
+              total_rx: s.total_rx || 0,
+              total_tx: s.total_tx || 0,
               load_1: s.load_1 || 0,
               load_5: s.load_5 || 0,
               load_15: s.load_15 || 0,
@@ -176,6 +180,8 @@ export default function PublicServerDetail() {
         ...baseServer,
         online: liveData.online,
         cpu: liveData.cpu,
+        cpu_model: liveData.cpu_model || baseServer?.cpu_model || '',
+        cpu_cores: liveData.cpu_cores || baseServer?.cpu_cores || 0,
         mem: liveData.mem,
         mem_total: liveData.mem_total,
         mem_used: liveData.mem_used,
@@ -183,6 +189,8 @@ export default function PublicServerDetail() {
         swap_used: liveData.swap_used || 0,
         net_rx: liveData.net_rx,
         net_tx: liveData.net_tx,
+        total_rx: liveData.total_rx || 0,
+        total_tx: liveData.total_tx || 0,
         uptime: liveData.uptime,
         load_1: liveData.load_1,
         load_5: liveData.load_5 || 0,
@@ -206,6 +214,8 @@ export default function PublicServerDetail() {
         online: liveData.online,
         last_seen: liveData.timestamp,
         cpu: liveData.cpu,
+        cpu_model: liveData.cpu_model || baseServer?.cpu_model || '',
+        cpu_cores: liveData.cpu_cores || baseServer?.cpu_cores || 0,
         mem: liveData.mem,
         mem_total: liveData.mem_total,
         mem_used: liveData.mem_used,
@@ -213,6 +223,8 @@ export default function PublicServerDetail() {
         swap_used: liveData.swap_used || 0,
         net_rx: liveData.net_rx,
         net_tx: liveData.net_tx,
+        total_rx: liveData.total_rx || 0,
+        total_tx: liveData.total_tx || 0,
         uptime: liveData.uptime,
         load_1: liveData.load_1,
         load_5: liveData.load_5 || 0,
@@ -312,14 +324,26 @@ export default function PublicServerDetail() {
       }
     }
 
-    const series: ChartSeries[] = targetNames.map((name, i) => ({
-      name,
-      color: PING_COLORS[i % PING_COLORS.length],
-      data: allPings.map((pings) => {
-        const ping = pings.find((pp) => pp.name === name)
-        return ping ? ping.avg_latency : null
-      }),
-    }))
+    const series: ChartSeries[] = targetNames.map((name, i) => {
+      // 取最新一个有效数据点的丢包率
+      let latestLoss: number | undefined
+      for (let j = allPings.length - 1; j >= 0; j--) {
+        const ping = allPings[j].find((pp) => pp.name === name)
+        if (ping && ping.loss >= 0) {
+          latestLoss = ping.loss
+          break
+        }
+      }
+      return {
+        name,
+        color: PING_COLORS[i % PING_COLORS.length],
+        data: allPings.map((pings) => {
+          const ping = pings.find((pp) => pp.name === name)
+          return ping ? ping.avg_latency : null
+        }),
+        loss: latestLoss,
+      }
+    })
 
     return { timestamps, series }
   }, [historyData])

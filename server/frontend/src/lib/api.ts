@@ -234,6 +234,8 @@ export interface PublicServerItem {
   agent_version: string
   online: boolean
   cpu: number
+  cpu_model: string
+  cpu_cores: number
   mem: number
   mem_total: number
   mem_used: number
@@ -241,6 +243,8 @@ export interface PublicServerItem {
   swap_used: number
   net_rx: number
   net_tx: number
+  total_rx: number
+  total_tx: number
   uptime: number
   load_1: number
   load_5: number

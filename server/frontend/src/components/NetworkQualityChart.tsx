@@ -1,5 +1,5 @@
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import type { MouseEvent } from 'react'
+import type { KeyboardEvent, MouseEvent } from 'react'
 
 export interface ChartSeries {
   name: string
@@ -7,6 +7,8 @@ export interface ChartSeries {
   color: string
   /** 数据点，null表示缺失 */
   data: (number | null)[]
+  /** 当前丢包率（0-100），可选 */
+  loss?: number
 }
 
 interface NetworkQualityChartProps {
@@ -62,6 +64,8 @@ export default function NetworkQualityChart({ timestamps, series, height = 200, 
   const [containerW, setContainerW] = useState(640)
   const [hoverIdx, setHoverIdx] = useState<number | null>(null)
   const [hoverX, setHoverX] = useState(0)
+  // 被隐藏的系列名称集合（点击图例切换）
+  const [hiddenSeries, setHiddenSeries] = useState<Set<string>>(() => new Set())
 
   // 监听容器宽度以实现响应式
   useLayoutEffect(() => {
@@ -75,7 +79,7 @@ export default function NetworkQualityChart({ timestamps, series, height = 200, 
   }, [])
 
   const n = timestamps.length
-  const padL = 42, padR = 16, padT = 16, padB = 26, pointSpacing = 10
+  const padL = 52, padR = 16, padT = 16, padB = 38, pointSpacing = 10
   // 数据少时填满容器，数据多时横向滚动
   const chartWidth = Math.max(containerW, (n > 1 ? (n - 1) * pointSpacing : 0) + padL + padR)
   const innerW = Math.max(0, chartWidth - padL - padR)
@@ -83,9 +87,12 @@ export default function NetworkQualityChart({ timestamps, series, height = 200, 
 
   const yMax = useMemo(() => {
     let m = 0
-    for (const s of series) for (const v of s.data) if (v !== null && v !== undefined && v > m) m = v
+    for (const s of series) {
+      if (hiddenSeries.has(s.name)) continue
+      for (const v of s.data) if (v !== null && v !== undefined && v > m) m = v
+    }
     return niceCeil(m || 10)
-  }, [series])
+  }, [series, hiddenSeries])
 
   const xFor = (i: number) => (n <= 1 ? padL : padL + (i / (n - 1)) * innerW)
   const yFor = (v: number) => padT + innerH - (v / yMax) * innerH
@@ -117,6 +124,16 @@ export default function NetworkQualityChart({ timestamps, series, height = 200, 
   // 清理未完成的 rAF，避免组件卸载后 setState
   useEffect(() => () => { if (rafRef.current) cancelAnimationFrame(rafRef.current) }, [])
 
+  // 点击图例切换系列显示/隐藏
+  const toggleSeries = (name: string) => {
+    setHiddenSeries((prev) => {
+      const next = new Set(prev)
+      if (next.has(name)) next.delete(name)
+      else next.add(name)
+      return next
+    })
+  }
+
   const hoverTs = hoverIdx !== null ? timestamps[hoverIdx] : null
   // tooltip 横向定位夹在容器内，避免溢出
   const tipLeft = Math.min(Math.max(hoverX, 70), Math.max(70, containerW - 70))
@@ -125,11 +142,29 @@ export default function NetworkQualityChart({ timestamps, series, height = 200, 
     <div className="w-full">
       {(showLegend || timeRange) && (
         <div className="mb-2 flex flex-wrap items-center gap-3">
-          {showLegend && series.map((s) => (
-            <div key={s.name} className="flex items-center gap-1.5 text-xs text-gray-400">
-              <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: s.color }} />{s.name}
-            </div>
-          ))}
+          {showLegend && series.map((s) => {
+            const hidden = hiddenSeries.has(s.name)
+            const loss = s.loss
+            const hasLoss = loss !== undefined && loss > 0
+            return (
+              <div
+                key={s.name}
+                role="button"
+                tabIndex={0}
+                title="点击切换显示/隐藏"
+                onClick={() => toggleSeries(s.name)}
+                onKeyDown={(e: KeyboardEvent<HTMLDivElement>) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleSeries(s.name) } }}
+                className="flex cursor-pointer select-none items-center gap-1.5 text-xs transition-opacity hover:opacity-80"
+                style={{ opacity: hidden ? 0.4 : 1 }}
+              >
+                <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: hidden ? '#6b7280' : s.color }} />
+                <span className={hidden ? 'text-gray-500 line-through' : 'text-gray-400'}>{s.name}</span>
+                {loss !== undefined && (
+                  <span className={hasLoss ? 'text-amber-400' : 'text-gray-500'}>{loss.toFixed(1)}%</span>
+                )}
+              </div>
+            )
+          })}
           {timeRange && <span className="ml-auto text-xs text-gray-500">{timeRange}</span>}
         </div>
       )}
@@ -147,17 +182,19 @@ export default function NetworkQualityChart({ timestamps, series, height = 200, 
           {showGrid && yTicks.map((t, i) => (
             <line key={`g${i}`} x1={padL} y1={t.y} x2={chartWidth - padR} y2={t.y} stroke="rgba(255,255,255,0.05)" strokeWidth={1} strokeDasharray="3 3" />
           ))}
-          {/* Y 轴单位与刻度 */}
-          <text x={4} y={padT + 6} fontSize={10} fill={AXIS_FILL}>ms</text>
+          {/* Y 轴标题（旋转）与刻度 */}
+          <text x={12} y={padT + innerH / 2} fontSize={11} fill={AXIS_FILL} textAnchor="middle" transform={`rotate(-90 12 ${padT + innerH / 2})`}>延迟 (ms)</text>
           {yTicks.map((t, i) => (
             <text key={`y${i}`} x={padL - 6} y={t.y + 3} textAnchor="end" fontSize={10} fill={AXIS_FILL}>{Math.round(t.v)}</text>
           ))}
           {/* X 轴时间标签（智能间隔） */}
           {timestamps.map((ts, i) => i % xStep === 0 ? (
-            <text key={`x${i}`} x={xFor(i)} y={height - 8} textAnchor="middle" fontSize={10} fill={AXIS_FILL}>{fmtTime(ts)}</text>
+            <text key={`x${i}`} x={xFor(i)} y={bottomY + 14} textAnchor="middle" fontSize={10} fill={AXIS_FILL}>{fmtTime(ts)}</text>
           ) : null)}
-          {/* 面积 + 折线 */}
-          {seriesRender.map((s) => (
+          {/* X 轴标题 */}
+          <text x={padL + innerW / 2} y={height - 6} textAnchor="middle" fontSize={11} fill={AXIS_FILL}>时间</text>
+          {/* 面积 + 折线（隐藏的系列不渲染） */}
+          {seriesRender.filter((s) => !hiddenSeries.has(s.name)).map((s) => (
             <g key={s.name}>
               {s.areas.map((d, i) => (d ? <path key={`a${i}`} d={d} fill={`url(#${s.gradId})`} /> : null))}
               {s.lines.map((d, i) => (d ? <path key={`l${i}`} d={d} fill="none" stroke={s.color} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" /> : null))}
@@ -167,7 +204,7 @@ export default function NetworkQualityChart({ timestamps, series, height = 200, 
           {hoverIdx !== null && (
             <line x1={xFor(hoverIdx)} y1={padT} x2={xFor(hoverIdx)} y2={bottomY} stroke="rgba(255,255,255,0.25)" strokeWidth={1} strokeDasharray="3 3" />
           )}
-          {hoverIdx !== null && seriesRender.map((s) => {
+          {hoverIdx !== null && seriesRender.filter((s) => !hiddenSeries.has(s.name)).map((s) => {
             const v = s.data[hoverIdx]
             if (v === null || v === undefined || Number.isNaN(v)) return null
             return <circle key={s.name} cx={xFor(hoverIdx)} cy={yFor(v)} r={3} fill={s.color} stroke="#fff" strokeWidth={1} />
@@ -178,11 +215,18 @@ export default function NetworkQualityChart({ timestamps, series, height = 200, 
         {hoverIdx !== null && hoverTs !== null && (
           <div className="pointer-events-none absolute top-1 z-10 rounded-md border border-white/10 bg-gray-900/95 px-2.5 py-1.5 text-xs text-gray-200 shadow-lg" style={{ left: tipLeft, transform: 'translateX(-50%)' }}>
             <div className="mb-1 font-medium text-gray-300">{fmtTime(hoverTs)}</div>
-            {series.map((s) => {
+            {series.filter((s) => !hiddenSeries.has(s.name)).map((s) => {
               const v = s.data[hoverIdx]
+              const loss = s.loss
+              const hasLoss = loss !== undefined && loss > 0
               return (
                 <div key={s.name} className="flex items-center gap-1.5 whitespace-nowrap">
-                  <span className="inline-block h-2 w-2 rounded-full" style={{ backgroundColor: s.color }} /><span className="text-gray-400">{s.name}</span><span className="ml-auto pl-2 font-medium">{v != null ? `${v.toFixed(1)} ms` : '-'}</span>
+                  <span className="inline-block h-2 w-2 rounded-full" style={{ backgroundColor: s.color }} />
+                  <span className="text-gray-400">{s.name}</span>
+                  <span className="ml-auto flex items-center gap-2 pl-2">
+                    {loss !== undefined && <span className={hasLoss ? 'text-amber-400' : 'text-gray-500'}>丢包 {loss.toFixed(1)}%</span>}
+                    <span className="font-medium">{v != null ? `${v.toFixed(1)} ms` : '-'}</span>
+                  </span>
                 </div>
               )
             })}

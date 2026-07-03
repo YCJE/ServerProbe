@@ -19,6 +19,8 @@ var startTime = time.Now()
 type historyPoint struct {
 	Timestamp    int64                    `json:"timestamp"`
 	CPUUsage     float64                  `json:"cpu_usage"`
+	CPUModel     string                   `json:"cpu_model"`
+	CPUCores     int                      `json:"cpu_cores"`
 	MemUsage     float64                  `json:"mem_usage"`
 	MemTotal     uint64                   `json:"mem_total"`
 	MemUsed      uint64                   `json:"mem_used"`
@@ -42,6 +44,8 @@ func metricPointToHistoryPoint(p repository.MetricPoint) historyPoint {
 	hp := historyPoint{
 		Timestamp:    p.Timestamp,
 		CPUUsage:     p.CPU,
+		CPUModel:     p.CPUModel,
+		CPUCores:     p.CPUCores,
 		MemUsage:     p.Mem,
 		MemTotal:     p.MemTotal,
 		MemUsed:      p.MemUsed,
@@ -71,8 +75,8 @@ func metricPointToHistoryPoint(p repository.MetricPoint) historyPoint {
 
 // ServerHandler 服务器信息处理器
 type ServerHandler struct {
-	agentRepo *repository.AgentRepository
-	monitor   *service.MonitorService
+	agentRepo  *repository.AgentRepository
+	monitor    *service.MonitorService
 	recordRepo *repository.RecordRepository
 }
 
@@ -95,32 +99,32 @@ func (h *ServerHandler) HandleListServers(c *gin.Context) {
 	}
 
 	type ServerListItem struct {
-		ID            int64                    `json:"id"`
-		Hostname      string                   `json:"hostname"`
-		DisplayName   string                   `json:"display_name"`
-		OS            string                   `json:"os"`
-		Arch          string                   `json:"arch"`
-		AgentVersion  string                   `json:"agent_version"`
-		Online        bool                     `json:"online"`
-		LastSeen      string                   `json:"last_seen"`
-		CPU           float64                  `json:"cpu"`
-		Mem           float64                  `json:"mem"`
-		MemTotal      uint64                   `json:"mem_total"`
-		MemUsed       uint64                   `json:"mem_used"`
-		SwapTotal     uint64                   `json:"swap_total"`
-		SwapUsed      uint64                   `json:"swap_used"`
-		NetRx         uint64                   `json:"net_rx"`
-		NetTx         uint64                   `json:"net_tx"`
-		Uptime        uint64                   `json:"uptime"`
-		Load1         float64                  `json:"load_1"`
-		Load5         float64                  `json:"load_5"`
-		Load15        float64                  `json:"load_15"`
-		DiskUsage     float64                  `json:"disk_usage"`
-		Disks         []sharedmodel.DiskInfo   `json:"disks"`
-		TCPConns      int                      `json:"tcp_connections"`
-		UDPConns      int                      `json:"udp_connections"`
-		ProcessCount  int                      `json:"process_count"`
-		PingData      []sharedmodel.PingResult `json:"ping_data"`
+		ID           int64                    `json:"id"`
+		Hostname     string                   `json:"hostname"`
+		DisplayName  string                   `json:"display_name"`
+		OS           string                   `json:"os"`
+		Arch         string                   `json:"arch"`
+		AgentVersion string                   `json:"agent_version"`
+		Online       bool                     `json:"online"`
+		LastSeen     string                   `json:"last_seen"`
+		CPU          float64                  `json:"cpu"`
+		Mem          float64                  `json:"mem"`
+		MemTotal     uint64                   `json:"mem_total"`
+		MemUsed      uint64                   `json:"mem_used"`
+		SwapTotal    uint64                   `json:"swap_total"`
+		SwapUsed     uint64                   `json:"swap_used"`
+		NetRx        uint64                   `json:"net_rx"`
+		NetTx        uint64                   `json:"net_tx"`
+		Uptime       uint64                   `json:"uptime"`
+		Load1        float64                  `json:"load_1"`
+		Load5        float64                  `json:"load_5"`
+		Load15       float64                  `json:"load_15"`
+		DiskUsage    float64                  `json:"disk_usage"`
+		Disks        []sharedmodel.DiskInfo   `json:"disks"`
+		TCPConns     int                      `json:"tcp_connections"`
+		UDPConns     int                      `json:"udp_connections"`
+		ProcessCount int                      `json:"process_count"`
+		PingData     []sharedmodel.PingResult `json:"ping_data"`
 	}
 
 	items := make([]ServerListItem, 0, len(agents))
@@ -206,14 +210,14 @@ func (h *ServerHandler) HandleGetServer(c *gin.Context) {
 
 	// 构建扁平化的响应，与前端 ServerData 类型匹配
 	resp := gin.H{
-		"id":             agent.ID,
-		"hostname":       agent.Hostname,
-		"display_name":   agent.DisplayName,
-		"os":             agent.OS,
-		"arch":           agent.Arch,
-		"agent_version":  agent.AgentVersion,
-		"online":         h.monitor.IsOnline(id),
-		"last_seen":      agent.LastSeen.Unix(),
+		"id":            agent.ID,
+		"hostname":      agent.Hostname,
+		"display_name":  agent.DisplayName,
+		"os":            agent.OS,
+		"arch":          agent.Arch,
+		"agent_version": agent.AgentVersion,
+		"online":        h.monitor.IsOnline(id),
+		"last_seen":     agent.LastSeen.Unix(),
 	}
 
 	// 获取实时数据，补充监控字段
@@ -222,6 +226,8 @@ func (h *ServerHandler) HandleGetServer(c *gin.Context) {
 		if len(points) > 0 {
 			p := points[0]
 			resp["cpu"] = p.CPU
+			resp["cpu_model"] = p.CPUModel
+			resp["cpu_cores"] = p.CPUCores
 			resp["mem"] = p.Mem
 			resp["mem_total"] = p.MemTotal
 			resp["mem_used"] = p.MemUsed
@@ -229,6 +235,8 @@ func (h *ServerHandler) HandleGetServer(c *gin.Context) {
 			resp["swap_used"] = p.SwapUsed
 			resp["net_rx"] = p.NetRx
 			resp["net_tx"] = p.NetTx
+			resp["total_rx"] = p.TotalRx
+			resp["total_tx"] = p.TotalTx
 			resp["load_1"] = p.Load1
 			resp["load_5"] = p.Load5
 			resp["load_15"] = p.Load15
@@ -525,6 +533,10 @@ func (h *ServerHandler) HandlePublicServers(c *gin.Context) {
 		NetRx        uint64  `json:"net_rx"`
 		NetTx        uint64  `json:"net_tx"`
 		Uptime       uint64  `json:"uptime"`
+		CPUModel     string  `json:"cpu_model"`
+		CPUCores     int     `json:"cpu_cores"`
+		TotalRx      uint64  `json:"total_rx"`
+		TotalTx      uint64  `json:"total_tx"`
 		Load1        float64 `json:"load_1"`
 		Load5        float64 `json:"load_5"`
 		Load15       float64 `json:"load_15"`
@@ -566,6 +578,10 @@ func (h *ServerHandler) HandlePublicServers(c *gin.Context) {
 				item.TCPConns = p.TCPConns
 				item.UDPConns = p.UDPConns
 				item.ProcessCount = p.ProcessCount
+				item.CPUModel = p.CPUModel
+				item.CPUCores = p.CPUCores
+				item.TotalRx = p.TotalRx
+				item.TotalTx = p.TotalTx
 			}
 		}
 
@@ -605,6 +621,10 @@ func (h *ServerHandler) HandlePublicDashboard(c *gin.Context) {
 		Load5        float64                  `json:"load_5"`
 		Load15       float64                  `json:"load_15"`
 		Uptime       uint64                   `json:"uptime"`
+		CPUModel     string                   `json:"cpu_model"`
+		CPUCores     int                      `json:"cpu_cores"`
+		TotalRx      uint64                   `json:"total_rx"`
+		TotalTx      uint64                   `json:"total_tx"`
 		DiskUsage    float64                  `json:"disk_usage"`
 		Disks        []PublicDiskInfo         `json:"disks"`
 		TCPConns     int                      `json:"tcp_connections"`
@@ -661,6 +681,10 @@ func (h *ServerHandler) HandlePublicDashboard(c *gin.Context) {
 			Load5:        item.Load5,
 			Load15:       item.Load15,
 			Uptime:       item.Uptime,
+			CPUModel:     item.CPUModel,
+			CPUCores:     item.CPUCores,
+			TotalRx:      item.TotalRx,
+			TotalTx:      item.TotalTx,
 			DiskUsage:    item.DiskUsage,
 			Disks:        safeDisks,
 			TCPConns:     item.TCPConns,
@@ -698,16 +722,16 @@ func (h *ServerHandler) HandleSystemStatus(c *gin.Context) {
 	diskFree, diskTotal = getDiskSpace(h.monitor.GetDataDir())
 
 	c.JSON(http.StatusOK, gin.H{
-		"uptime":           int64(time.Since(startTime).Seconds()),
-		"mem_alloc":        memStats.Alloc,
-		"mem_sys":          memStats.Sys,
-		"mem_num_gc":       memStats.NumGC,
-		"db_size":          dbSize,
-		"online_agents":    onlineCount,
-		"ws_connections":   wsConnCount,
-		"goroutines":       runtime.NumGoroutine(),
-		"disk_total":       diskTotal,
-		"disk_free":        diskFree,
-		"version":          "1.0.0",
+		"uptime":         int64(time.Since(startTime).Seconds()),
+		"mem_alloc":      memStats.Alloc,
+		"mem_sys":        memStats.Sys,
+		"mem_num_gc":     memStats.NumGC,
+		"db_size":        dbSize,
+		"online_agents":  onlineCount,
+		"ws_connections": wsConnCount,
+		"goroutines":     runtime.NumGoroutine(),
+		"disk_total":     diskTotal,
+		"disk_free":      diskFree,
+		"version":        "1.0.0",
 	})
 }

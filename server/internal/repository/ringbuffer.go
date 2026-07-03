@@ -10,6 +10,8 @@ import (
 type MetricPoint struct {
 	Timestamp    int64                       // Unix 时间戳
 	CPU          float64                     // CPU 使用率
+	CPUModel     string                      // CPU 型号
+	CPUCores     int                         // CPU 核心数
 	Mem          float64                     // 内存使用率
 	MemTotal     uint64                      // 内存总量
 	MemUsed      uint64                      // 内存已用
@@ -18,6 +20,8 @@ type MetricPoint struct {
 	Disks        []sharedmodel.DiskInfo      // 磁盘信息
 	NetRx        uint64                      // 下行速率
 	NetTx        uint64                      // 上行速率
+	TotalRx      uint64                      // 累计下行流量（字节）
+	TotalTx      uint64                      // 累计上行流量（字节）
 	TCPConns     int                         // TCP 连接数
 	UDPConns     int                         // UDP 连接数
 	Load1        float64                     // 1 分钟负载

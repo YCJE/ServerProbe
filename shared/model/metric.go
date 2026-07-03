@@ -40,6 +40,8 @@ type DiskInfo struct {
 type NetworkInfo struct {
 	RxSpeed        uint64 `json:"rx_speed"`         // 下行速率（字节/秒）
 	TxSpeed        uint64 `json:"tx_speed"`         // 上行速率（字节/秒）
+	TotalRx        uint64 `json:"total_rx"`         // 累计下行流量（字节）
+	TotalTx        uint64 `json:"total_tx"`         // 累计上行流量（字节）
 	TCPConnections int    `json:"tcp_connections"`  // TCP 连接数
 	UDPConnections int    `json:"udp_connections"`  // UDP 连接数
 }

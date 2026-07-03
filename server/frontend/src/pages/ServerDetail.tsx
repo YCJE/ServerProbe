@@ -154,6 +154,8 @@ export default function ServerDetail() {
         ...currentServer,
         online: liveData.online,
         cpu: liveData.cpu,
+        cpu_model: liveData.cpu_model || currentServer.cpu_model,
+        cpu_cores: liveData.cpu_cores || currentServer.cpu_cores,
         mem: liveData.mem,
         mem_total: liveData.mem_total,
         mem_used: liveData.mem_used,
@@ -161,6 +163,8 @@ export default function ServerDetail() {
         swap_used: liveData.swap_used || 0,
         net_rx: liveData.net_rx,
         net_tx: liveData.net_tx,
+        total_rx: liveData.total_rx || 0,
+        total_tx: liveData.total_tx || 0,
         uptime: liveData.uptime,
         load_1: liveData.load_1,
         load_5: liveData.load_5 || 0,
@@ -448,6 +452,8 @@ export default function ServerDetail() {
             <InfoItem label="主机名" value={displayServer.hostname} />
             <InfoItem label="操作系统" value={displayServer.os} />
             <InfoItem label="架构" value={displayServer.arch} />
+            <InfoItem label="CPU 型号" value={displayServer.cpu_model || '-'} />
+            <InfoItem label="核心数" value={displayServer.cpu_cores ? `${displayServer.cpu_cores} 核` : '-'} />
             <InfoItem label="Agent 版本" value={displayServer.agent_version} />
             <InfoItem label="运行时间" value={displayServer.online ? formatUptime(displayServer.uptime) : '---'} />
             <InfoItem label="进程数" value={displayServer.online ? String(displayServer.process_count || 0) : '---'} />

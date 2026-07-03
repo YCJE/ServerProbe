@@ -302,6 +302,10 @@ func (h *DashboardWSHandler) pushPublicDashboardData(ws *wsConn) bool {
 		Load5        float64                  `json:"load_5"`
 		Load15       float64                  `json:"load_15"`
 		Uptime       uint64                   `json:"uptime"`
+		CPUModel     string                   `json:"cpu_model"`
+		CPUCores     int                      `json:"cpu_cores"`
+		TotalRx      uint64                   `json:"total_rx"`
+		TotalTx      uint64                   `json:"total_tx"`
 		DiskUsage    float64                  `json:"disk_usage"`
 		Disks        []PublicDiskInfo         `json:"disks"`
 		TCPConns     int                      `json:"tcp_connections"`
@@ -358,6 +362,10 @@ func (h *DashboardWSHandler) pushPublicDashboardData(ws *wsConn) bool {
 			Load5:        item.Load5,
 			Load15:       item.Load15,
 			Uptime:       item.Uptime,
+			CPUModel:     item.CPUModel,
+			CPUCores:     item.CPUCores,
+			TotalRx:      item.TotalRx,
+			TotalTx:      item.TotalTx,
 			DiskUsage:    item.DiskUsage,
 			Disks:        publicDisks,
 			TCPConns:     item.TCPConns,

@@ -34,6 +34,15 @@ export function formatUptime(seconds: number): string {
   return `${minutes}m`
 }
 
+/** 格式化累计流量（字节 -> 人类可读，如 "1.5 GB"） */
+export function formatTraffic(bytes: number): string {
+  if (bytes == null || bytes <= 0 || !isFinite(bytes)) return '0 B'
+  const k = 1024
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB', 'PB']
+  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(k)), sizes.length - 1)
+  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`
+}
+
 /** 根据使用率返回颜色 class */
 export function getUsageColor(usage: number): string {
   if (usage >= 90) return 'bg-destructive'
