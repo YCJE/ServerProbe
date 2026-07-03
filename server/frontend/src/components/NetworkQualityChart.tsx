@@ -125,13 +125,15 @@ export default function NetworkQualityChart({ timestamps, series, height = 280, 
   }), [series, yMax, chartWidth, n, innerW, innerH, uid])
 
   // 丢包率图渲染数据
+  // 注意：lossTop 和 lossBottom 必须在依赖列表中，
+  // 否则 innerH 变化时 lossYFor 闭包捕获了过期的 lossTop 值
   const lossRender = useMemo(() => series.map((s, idx) => {
     if (!s.lossData) return null
     const segs = toSegments(s.lossData, xFor, lossYFor)
     const lines = segs.map(createSmoothPath)
     const areas = segs.map((seg) => seg.length < 2 ? '' : `${createSmoothPath(seg)} L ${seg[seg.length - 1].x} ${lossBottom} L ${seg[0].x} ${lossBottom} Z`)
     return { name: s.name, color: s.color, data: s.lossData, lines, areas, gradId: `nqc-loss-${uid.replace(/[^a-zA-Z0-9]/g, '')}-${idx}` }
-  }), [series, chartWidth, n, innerW, lossInnerH, uid])
+  }), [series, chartWidth, n, innerW, lossInnerH, lossTop, lossBottom, uid])
 
   const handleMove = (e: MouseEvent<SVGRectElement>) => {
     const svg = svgRef.current
@@ -140,10 +142,15 @@ export default function NetworkQualityChart({ timestamps, series, height = 280, 
     if (rafRef.current) cancelAnimationFrame(rafRef.current)
     rafRef.current = requestAnimationFrame(() => {
       const rect = svg.getBoundingClientRect()
+      // SVG 坐标：鼠标视口坐标 → SVG 内容坐标
       const sx = (clientX - rect.left) * (chartWidth / rect.width)
       const idx = n <= 1 ? 0 : Math.round(((sx - padL) / innerW) * (n - 1))
       setHoverIdx(Math.max(0, Math.min(n - 1, idx)))
-      if (wrapRef.current) setHoverX(clientX - wrapRef.current.getBoundingClientRect().left)
+      // Tooltip 定位：需要加上 scrollLeft，因为 tooltip 是 absolute 定位在滚动容器内部
+      if (wrapRef.current) {
+        const wrapRect = wrapRef.current.getBoundingClientRect()
+        setHoverX(clientX - wrapRect.left + wrapRef.current.scrollLeft)
+      }
     })
   }
 
@@ -163,7 +170,9 @@ export default function NetworkQualityChart({ timestamps, series, height = 280, 
   }
 
   const hoverTs = hoverIdx !== null ? timestamps[hoverIdx] : null
-  const tipLeft = Math.min(Math.max(hoverX, 70), Math.max(70, containerW - 70))
+  // Tooltip clamp：考虑滚动位置，确保 tooltip 始终在可见区域内
+  const scrollLeft = wrapRef.current?.scrollLeft || 0
+  const tipLeft = Math.min(Math.max(hoverX, scrollLeft + 70), Math.max(scrollLeft + 70, scrollLeft + containerW - 70))
   const visibleLossBottom = hasLossData ? lossBottom : bottomY
 
   // 空数据占位
