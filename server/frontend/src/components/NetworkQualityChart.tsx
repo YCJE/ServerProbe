@@ -1,4 +1,4 @@
-import { useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { MouseEvent } from 'react'
 
 export interface ChartSeries {
@@ -55,8 +55,10 @@ const AXIS_FILL = 'rgba(255,255,255,0.45)'
 
 /** 纯 SVG 面积折线图：用于详情页网络延迟趋势（平滑曲线 + 渐变面积 + 悬停 tooltip） */
 export default function NetworkQualityChart({ timestamps, series, height = 200, showGrid = true, showLegend = true, timeRange }: NetworkQualityChartProps) {
+  const uid = useId()
   const wrapRef = useRef<HTMLDivElement>(null)
   const svgRef = useRef<SVGSVGElement>(null)
+  const rafRef = useRef(0)
   const [containerW, setContainerW] = useState(640)
   const [hoverIdx, setHoverIdx] = useState<number | null>(null)
   const [hoverX, setHoverX] = useState(0)
@@ -95,18 +97,25 @@ export default function NetworkQualityChart({ timestamps, series, height = 200, 
     const segs = toSegments(s.data, xFor, yFor)
     const lines = segs.map(createSmoothPath)
     const areas = segs.map((seg) => seg.length < 2 ? '' : `${createSmoothPath(seg)} L ${seg[seg.length - 1].x} ${bottomY} L ${seg[0].x} ${bottomY} Z`)
-    return { name: s.name, color: s.color, data: s.data, lines, areas, gradId: `nqc-grad-${idx}` }
-  }), [series, yMax, chartWidth, n, innerW, innerH])
+    return { name: s.name, color: s.color, data: s.data, lines, areas, gradId: `nqc-grad-${uid.replace(/[^a-zA-Z0-9]/g, '')}-${idx}` }
+  }), [series, yMax, chartWidth, n, innerW, innerH, uid])
 
   const handleMove = (e: MouseEvent<SVGRectElement>) => {
     const svg = svgRef.current
-    if (!svg || n === 0) return
-    const rect = svg.getBoundingClientRect()
-    const sx = (e.clientX - rect.left) * (chartWidth / rect.width)
-    const idx = n <= 1 ? 0 : Math.round(((sx - padL) / innerW) * (n - 1))
-    setHoverIdx(Math.max(0, Math.min(n - 1, idx)))
-    if (wrapRef.current) setHoverX(e.clientX - wrapRef.current.getBoundingClientRect().left)
+    if (!svg || n === 0 || innerW <= 0) return
+    const clientX = e.clientX
+    if (rafRef.current) cancelAnimationFrame(rafRef.current)
+    rafRef.current = requestAnimationFrame(() => {
+      const rect = svg.getBoundingClientRect()
+      const sx = (clientX - rect.left) * (chartWidth / rect.width)
+      const idx = n <= 1 ? 0 : Math.round(((sx - padL) / innerW) * (n - 1))
+      setHoverIdx(Math.max(0, Math.min(n - 1, idx)))
+      if (wrapRef.current) setHoverX(clientX - wrapRef.current.getBoundingClientRect().left)
+    })
   }
+
+  // 清理未完成的 rAF，避免组件卸载后 setState
+  useEffect(() => () => { if (rafRef.current) cancelAnimationFrame(rafRef.current) }, [])
 
   const hoverTs = hoverIdx !== null ? timestamps[hoverIdx] : null
   // tooltip 横向定位夹在容器内，避免溢出

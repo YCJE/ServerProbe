@@ -71,6 +71,7 @@ function parsePingData(raw: unknown): PingResult[] {
 function countryToFlag(code: string): string {
   if (!code || code.length !== 2) return ''
   const cc = code.toUpperCase()
+  if (!/^[A-Z]{2}$/.test(cc)) return ''
   return String.fromCodePoint(...[...cc].map((c) => 0x1f1e6 + c.charCodeAt(0) - 65))
 }
 
@@ -301,12 +302,13 @@ export default function PublicServerDetail() {
     }
 
     const timestamps = historyData.points.map((p) => p.timestamp)
+    // 一次性解析所有点的 ping_data，避免重复调用 parsePingData
+    const allPings = historyData.points.map((p) => parsePingData(p.ping_data))
 
     // 收集所有唯一的 ping 目标名称（保持出现顺序）
     const targetNames: string[] = []
     const seen = new Set<string>()
-    for (const p of historyData.points) {
-      const pings = parsePingData(p.ping_data)
+    for (const pings of allPings) {
       for (const ping of pings) {
         if (!seen.has(ping.name)) {
           seen.add(ping.name)
@@ -318,8 +320,7 @@ export default function PublicServerDetail() {
     const series: ChartSeries[] = targetNames.map((name, i) => ({
       name,
       color: PING_COLORS[i % PING_COLORS.length],
-      data: historyData.points.map((p) => {
-        const pings = parsePingData(p.ping_data)
+      data: allPings.map((pings) => {
         const ping = pings.find((pp) => pp.name === name)
         return ping ? ping.avg_latency : null
       }),

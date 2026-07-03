@@ -51,7 +51,7 @@ function MetricCell({
       <div className="flex items-center justify-between">
         <span className="text-[10px] text-muted-foreground">{label}</span>
         <span className="text-xs font-medium text-foreground">
-          {value.toFixed(1)}
+          {Math.min(Math.max(value, 0), 100).toFixed(1)}
           {suffix}
         </span>
       </div>
@@ -105,7 +105,7 @@ function ServerCard({ server, basePath = '/admin' }: ServerCardProps) {
   const flag = useMemo(() => {
     const region = getRegionFromServer(server)
     return region ? getFlagEmoji(region) : ''
-  }, [server])
+  }, [server.display_name, server.hostname])
 
   // 硬件信息（基于现有数据模型：os · arch · 内存大小）
   const hardwareInfo = useMemo(() => {
@@ -118,7 +118,7 @@ function ServerCard({ server, basePath = '/admin' }: ServerCardProps) {
 
   // 内存使用率
   const memUsagePercent = server.mem_total > 0
-    ? (server.mem_used / server.mem_total) * 100
+    ? Math.min(100, Math.max(0, (server.mem_used / server.mem_total) * 100))
     : (server.mem || 0)
 
   // 磁盘使用率
@@ -155,7 +155,15 @@ function ServerCard({ server, basePath = '/admin' }: ServerCardProps) {
   return (
     <div
       onClick={handleClick}
-      className="group cursor-pointer rounded-2xl border border-border bg-card p-4 transition-all hover:border-primary/30 hover:shadow-lg animate-fade-in"
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          navigate(`${basePath}/server/${server.id}`)
+        }
+      }}
+      role="button"
+      tabIndex={0}
+      className="group cursor-pointer rounded-2xl border border-border bg-card p-4 transition-all hover:border-primary/30 hover:shadow-lg animate-fade-in focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
     >
       {/* 1. 头部行：状态圆点 + 名称 + 国旗 + 在线/离线标签 */}
       <div className="mb-2 flex items-center gap-2">

@@ -37,6 +37,13 @@ export default function PublicDashboard() {
 
   const [selectedRegion, setSelectedRegion] = useState<string>('')
   const [searchQuery, setSearchQuery] = useState('')
+  const [debouncedQuery, setDebouncedQuery] = useState('')
+
+  // 搜索框防抖，避免每次按键都触发过滤
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(searchQuery), 200)
+    return () => clearTimeout(t)
+  }, [searchQuery])
 
   // 连接公开 WebSocket
   useEffect(() => {
@@ -76,13 +83,13 @@ export default function PublicDashboard() {
   const filteredServers = useMemo(() => {
     return servers.filter((s) => {
       if (selectedRegion && getRegionFromServer(s) !== selectedRegion) return false
-      if (searchQuery) {
+      if (debouncedQuery) {
         const name = (s.display_name || s.hostname || '').toLowerCase()
-        if (!name.includes(searchQuery.toLowerCase())) return false
+        if (!name.includes(debouncedQuery.toLowerCase())) return false
       }
       return true
     })
-  }, [servers, selectedRegion, searchQuery])
+  }, [servers, selectedRegion, debouncedQuery])
 
   return (
     <div className="space-y-6">

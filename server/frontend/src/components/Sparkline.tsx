@@ -44,8 +44,8 @@ export default function Sparkline({
     )
   }
 
-  const min = Math.min(...validValues)
-  const max = Math.max(...validValues)
+  const min = validValues.reduce((a, b) => (b < a ? b : a), Infinity)
+  const max = validValues.reduce((a, b) => (b > a ? b : a), -Infinity)
   const range = max - min || 1
 
   // 计算每个数据点的坐标，跳过无效值

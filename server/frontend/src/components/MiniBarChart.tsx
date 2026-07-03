@@ -31,7 +31,7 @@ export default function MiniBarChart({
   const maxValue = useMemo(() => {
     if (max !== undefined && max > 0) return max
     if (data.length === 0) return 1
-    const m = Math.max(...data)
+    const m = data.reduce((acc, v) => (v > acc ? v : acc), -Infinity)
     return m > 0 ? m : 1
   }, [data, max])
 

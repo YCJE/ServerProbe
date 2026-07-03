@@ -89,6 +89,8 @@ async function request<T>(
       if (!isRedirecting) {
         isRedirecting = true
         window.location.href = '/login'
+        // 保险：若导航被阻止（如被浏览器扩展拦截），5 秒后重置标志，避免永久卡住
+        setTimeout(() => { isRedirecting = false }, 5000)
       }
     }
     throw new ApiError(401, '未授权，请重新登录')

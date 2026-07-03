@@ -1,3 +1,4 @@
+import { useMemo } from 'react'
 import { Outlet } from 'react-router-dom'
 import { useServerStore } from '@/store/useServerStore'
 import ThemeToggle from './ThemeToggle'
@@ -13,7 +14,7 @@ export default function PublicLayout() {
   const publicWsConnected = useServerStore((s) => s.publicWsConnected)
   const servers = useServerStore((s) => s.servers)
 
-  const onlineCount = servers.filter((s) => s.online).length
+  const onlineCount = useMemo(() => servers.filter((s) => s.online).length, [servers])
 
   return (
     <div className="min-h-screen bg-background">

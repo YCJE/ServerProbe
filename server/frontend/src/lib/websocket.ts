@@ -85,6 +85,11 @@ export class DashboardWebSocket {
       console.log(`[WS] 连接关闭 (code: ${event.code}):`, this.url)
       this.setConnected(false)
       this.ws = null
+      // 认证失败（token 过期/无效）不重连，避免无限重连
+      if (event.code === 4001 || event.code === 4003) {
+        this.shouldReconnect = false
+        return
+      }
       if (this.shouldReconnect) {
         this.scheduleReconnect()
       }
@@ -153,7 +158,13 @@ export class DashboardWebSocket {
   private setConnected(connected: boolean): void {
     if (this.connected !== connected) {
       this.connected = connected
-      this.statusListeners.forEach((listener) => listener(connected))
+      this.statusListeners.forEach((listener) => {
+        try {
+          listener(connected)
+        } catch (err) {
+          console.error('[WS] 状态监听器异常:', err)
+        }
+      })
     }
   }
 }

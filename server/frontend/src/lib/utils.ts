@@ -120,8 +120,14 @@ export function getRegionFromServer(server: ServerData): string {
   const text = `${server.display_name || ''} ${server.hostname || ''}`.toLowerCase()
   for (const { codes, region } of REGION_KEYWORDS) {
     for (const code of codes) {
-      if (text.includes(code.toLowerCase())) {
-        return region
+      const c = code.toLowerCase()
+      if (/^[a-z]{2,3}$/.test(c)) {
+        // 短英文代码用单词边界匹配，避免子串误判
+        if (new RegExp(`(^|[^a-z])${c}([^a-z]|$)`).test(text)) {
+          return region
+        }
+      } else {
+        if (text.includes(c)) return region
       }
     }
   }
