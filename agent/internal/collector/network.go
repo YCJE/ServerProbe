@@ -92,6 +92,12 @@ func (c *NetworkCollector) Collect() (interface{}, error) {
 	// UDP 无连接概念，统计所有 socket
 	udpCount := countConnections(string(udpData), "")
 
+	// 同时读取 /proc/net/udp6 统计 IPv6 上的 UDP socket
+	// （IPv6 禁用时该文件可能不存在，忽略错误）
+	if udp6Data, err := c.reader.ReadFile(ProcPath + "/net/udp6"); err == nil {
+		udpCount += countConnections(string(udp6Data), "")
+	}
+
 	return model.NetworkInfo{
 		RxSpeed:        rxSpeed,
 		TxSpeed:        txSpeed,

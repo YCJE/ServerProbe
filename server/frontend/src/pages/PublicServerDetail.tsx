@@ -143,9 +143,10 @@ export default function PublicServerDetail() {
               uptime: s.uptime,
               disk_usage: s.disk_usage || 0,
               disks: [],
-              tcp_connections: s.tcp_connections || 0,
-              udp_connections: s.udp_connections || 0,
-              process_count: s.process_count || 0,
+              // 公开 API 已过滤连接/进程信息（安全考虑），公开页不再展示，置 0 占位
+              tcp_connections: 0,
+              udp_connections: 0,
+              process_count: 0,
               ping_data: [],
               timestamp: Math.floor(Date.now() / 1000),
             }))
@@ -511,30 +512,6 @@ export default function PublicServerDetail() {
               value={
                 displayServer.online
                   ? `${(displayServer.load_1 || 0).toFixed(2)} / ${(displayServer.load_5 || 0).toFixed(2)} / ${(displayServer.load_15 || 0).toFixed(2)}`
-                  : '---'
-              }
-            />
-            <InfoRow
-              label="TCP 连接"
-              value={
-                displayServer.online
-                  ? String(displayServer.tcp_connections || 0)
-                  : '---'
-              }
-            />
-            <InfoRow
-              label="UDP 连接"
-              value={
-                displayServer.online
-                  ? String(displayServer.udp_connections || 0)
-                  : '---'
-              }
-            />
-            <InfoRow
-              label="进程数"
-              value={
-                displayServer.online
-                  ? String(displayServer.process_count || 0)
                   : '---'
               }
             />

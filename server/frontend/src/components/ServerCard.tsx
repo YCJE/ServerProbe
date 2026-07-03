@@ -154,7 +154,7 @@ function ServerCard({ server, basePath = '/admin' }: ServerCardProps) {
     const display = showAllPings ? sorted : sorted.slice(0, 3)
     return display.map((p) => ({
       name: p.name || categorizePing(p),
-      latency: p.avg_latency,
+      latency: p.avg_latency ?? 0,
       color: categoryColor(categorizePing(p)),
     }))
   }, [server.ping_data, showAllPings])

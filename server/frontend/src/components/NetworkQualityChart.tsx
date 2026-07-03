@@ -124,6 +124,11 @@ export default function NetworkQualityChart({ timestamps, series, height = 200, 
   // 清理未完成的 rAF，避免组件卸载后 setState
   useEffect(() => () => { if (rafRef.current) cancelAnimationFrame(rafRef.current) }, [])
 
+  // 时间范围切换/数据变化时重置 hoverIdx，避免越界访问新的 timestamps
+  useEffect(() => {
+    setHoverIdx(null)
+  }, [timestamps])
+
   // 点击图例切换系列显示/隐藏
   const toggleSeries = (name: string) => {
     setHiddenSeries((prev) => {
@@ -209,10 +214,10 @@ export default function NetworkQualityChart({ timestamps, series, height = 200, 
             if (v === null || v === undefined || Number.isNaN(v)) return null
             return <circle key={s.name} cx={xFor(hoverIdx)} cy={yFor(v)} r={3} fill={s.color} stroke="#fff" strokeWidth={1} />
           })}
-          <rect x={padL} y={padT} width={Math.max(0, innerW)} height={Math.max(0, innerH)} fill="transparent" onMouseMove={handleMove} onMouseLeave={() => setHoverIdx(null)} />
+          <rect x={padL} y={padT} width={Math.max(0, innerW)} height={Math.max(0, innerH)} fill="transparent" onMouseMove={handleMove} onMouseLeave={() => { if (rafRef.current) cancelAnimationFrame(rafRef.current); setHoverIdx(null) }} />
         </svg>
         {/* Tooltip */}
-        {hoverIdx !== null && hoverTs !== null && (
+        {hoverIdx !== null && hoverTs != null && (
           <div className="pointer-events-none absolute top-1 z-10 rounded-md border border-white/10 bg-gray-900/95 px-2.5 py-1.5 text-xs text-gray-200 shadow-lg" style={{ left: tipLeft, transform: 'translateX(-50%)' }}>
             <div className="mb-1 font-medium text-gray-300">{fmtTime(hoverTs)}</div>
             {series.filter((s) => !hiddenSeries.has(s.name)).map((s) => {

@@ -289,6 +289,7 @@ func (h *DashboardWSHandler) pushPublicDashboardData(ws *wsConn) bool {
 		DisplayName  string                   `json:"display_name"`
 		OS           string                   `json:"os"`
 		Arch         string                   `json:"arch"`
+		AgentVersion string                   `json:"agent_version"`
 		Online       bool                     `json:"online"`
 		CPU          float64                  `json:"cpu"`
 		Mem          float64                  `json:"mem"`
@@ -308,9 +309,6 @@ func (h *DashboardWSHandler) pushPublicDashboardData(ws *wsConn) bool {
 		TotalTx      uint64                   `json:"total_tx"`
 		DiskUsage    float64                  `json:"disk_usage"`
 		Disks        []PublicDiskInfo         `json:"disks"`
-		TCPConns     int                      `json:"tcp_connections"`
-		UDPConns     int                      `json:"udp_connections"`
-		ProcessCount int                      `json:"process_count"`
 		PingData     []sharedmodel.PingResult `json:"ping_data"`
 		Timestamp    int64                    `json:"timestamp"`
 	}
@@ -349,6 +347,7 @@ func (h *DashboardWSHandler) pushPublicDashboardData(ws *wsConn) bool {
 			DisplayName:  item.DisplayName,
 			OS:           item.OS,
 			Arch:         item.Arch,
+			AgentVersion: item.AgentVersion,
 			Online:       item.Online,
 			CPU:          item.CPU,
 			Mem:          item.Mem,
@@ -368,9 +367,6 @@ func (h *DashboardWSHandler) pushPublicDashboardData(ws *wsConn) bool {
 			TotalTx:      item.TotalTx,
 			DiskUsage:    item.DiskUsage,
 			Disks:        publicDisks,
-			TCPConns:     item.TCPConns,
-			UDPConns:     item.UDPConns,
-			ProcessCount: item.ProcessCount,
 			PingData:     publicPing,
 			Timestamp:    item.Timestamp,
 		})

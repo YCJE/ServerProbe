@@ -250,9 +250,6 @@ export interface PublicServerItem {
   load_5: number
   load_15: number
   disk_usage: number
-  tcp_connections: number
-  udp_connections: number
-  process_count: number
 }
 
 /** 公开服务器列表响应 */

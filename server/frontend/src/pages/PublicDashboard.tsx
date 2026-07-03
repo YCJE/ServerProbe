@@ -3,6 +3,7 @@ import { useServerStore } from '@/store/useServerStore'
 import ServerCard from '@/components/ServerCard'
 import {
   formatSpeed,
+  formatTraffic,
   getRegionFromServer,
   getFlagEmoji,
 } from '@/lib/utils'
@@ -57,8 +58,12 @@ export default function PublicDashboard() {
     const totalRx = onlineServers.reduce((sum, s) => sum + (s.net_rx || 0), 0)
     const totalTx = onlineServers.reduce((sum, s) => sum + (s.net_tx || 0), 0)
     const totalTraffic = totalRx + totalTx
+    // 累计流量总和
+    const totalCumulativeRx = onlineServers.reduce((sum, s) => sum + (s.total_rx || 0), 0)
+    const totalCumulativeTx = onlineServers.reduce((sum, s) => sum + (s.total_tx || 0), 0)
+    const totalCumulative = totalCumulativeRx + totalCumulativeTx
 
-    return { total, online, avgCpu, avgDisk, totalRx, totalTx, totalTraffic }
+    return { total, online, avgCpu, avgDisk, totalRx, totalTx, totalTraffic, totalCumulative }
   }, [servers])
 
   // 从服务器数据中提取地区标签
@@ -110,7 +115,7 @@ export default function PublicDashboard() {
           value={String(stats.online)}
           unit={`/ ${stats.total}`}
         />
-        <StatCard label="总流量" value={formatSpeed(stats.totalTraffic)} />
+        <StatCard label="累计流量" value={formatTraffic(stats.totalCumulative)} />
         <StatCard label="上传速度" value={formatSpeed(stats.totalTx)} />
         <StatCard label="下载速度" value={formatSpeed(stats.totalRx)} />
       </div>

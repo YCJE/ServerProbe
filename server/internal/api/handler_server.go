@@ -116,6 +116,10 @@ func (h *ServerHandler) HandleListServers(c *gin.Context) {
 		NetRx        uint64                   `json:"net_rx"`
 		NetTx        uint64                   `json:"net_tx"`
 		Uptime       uint64                   `json:"uptime"`
+		CPUModel     string                   `json:"cpu_model"`
+		CPUCores     int                      `json:"cpu_cores"`
+		TotalRx      uint64                   `json:"total_rx"`
+		TotalTx      uint64                   `json:"total_tx"`
 		Load1        float64                  `json:"load_1"`
 		Load5        float64                  `json:"load_5"`
 		Load15       float64                  `json:"load_15"`
@@ -159,6 +163,10 @@ func (h *ServerHandler) HandleListServers(c *gin.Context) {
 				item.Load15 = p.Load15
 				item.DiskUsage = calcDiskUsage(p.Disks)
 				item.Disks = p.Disks
+				item.CPUModel = p.CPUModel
+				item.CPUCores = p.CPUCores
+				item.TotalRx = p.TotalRx
+				item.TotalTx = p.TotalTx
 				item.TCPConns = p.TCPConns
 				item.UDPConns = p.UDPConns
 				item.ProcessCount = p.ProcessCount
@@ -541,9 +549,6 @@ func (h *ServerHandler) HandlePublicServers(c *gin.Context) {
 		Load5        float64 `json:"load_5"`
 		Load15       float64 `json:"load_15"`
 		DiskUsage    float64 `json:"disk_usage"`
-		TCPConns     int     `json:"tcp_connections"`
-		UDPConns     int     `json:"udp_connections"`
-		ProcessCount int     `json:"process_count"`
 	}
 
 	items := make([]PublicServerItem, 0, len(agents))
@@ -575,9 +580,6 @@ func (h *ServerHandler) HandlePublicServers(c *gin.Context) {
 				item.Load5 = p.Load5
 				item.Load15 = p.Load15
 				item.DiskUsage = calcDiskUsage(p.Disks)
-				item.TCPConns = p.TCPConns
-				item.UDPConns = p.UDPConns
-				item.ProcessCount = p.ProcessCount
 				item.CPUModel = p.CPUModel
 				item.CPUCores = p.CPUCores
 				item.TotalRx = p.TotalRx
@@ -608,6 +610,7 @@ func (h *ServerHandler) HandlePublicDashboard(c *gin.Context) {
 		DisplayName  string                   `json:"display_name"`
 		OS           string                   `json:"os"`
 		Arch         string                   `json:"arch"`
+		AgentVersion string                   `json:"agent_version"`
 		Online       bool                     `json:"online"`
 		CPU          float64                  `json:"cpu"`
 		Mem          float64                  `json:"mem"`
@@ -627,9 +630,6 @@ func (h *ServerHandler) HandlePublicDashboard(c *gin.Context) {
 		TotalTx      uint64                   `json:"total_tx"`
 		DiskUsage    float64                  `json:"disk_usage"`
 		Disks        []PublicDiskInfo         `json:"disks"`
-		TCPConns     int                      `json:"tcp_connections"`
-		UDPConns     int                      `json:"udp_connections"`
-		ProcessCount int                      `json:"process_count"`
 		PingData     []sharedmodel.PingResult `json:"ping_data"`
 		Timestamp    int64                    `json:"timestamp"`
 	}
@@ -668,6 +668,7 @@ func (h *ServerHandler) HandlePublicDashboard(c *gin.Context) {
 			DisplayName:  item.DisplayName,
 			OS:           item.OS,
 			Arch:         item.Arch,
+			AgentVersion: item.AgentVersion,
 			Online:       item.Online,
 			CPU:          item.CPU,
 			Mem:          item.Mem,
@@ -687,9 +688,6 @@ func (h *ServerHandler) HandlePublicDashboard(c *gin.Context) {
 			TotalTx:      item.TotalTx,
 			DiskUsage:    item.DiskUsage,
 			Disks:        safeDisks,
-			TCPConns:     item.TCPConns,
-			UDPConns:     item.UDPConns,
-			ProcessCount: item.ProcessCount,
 			PingData:     safePingData,
 			Timestamp:    item.Timestamp,
 		})
