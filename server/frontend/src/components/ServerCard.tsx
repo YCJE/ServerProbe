@@ -106,8 +106,8 @@ function LatencyBars({
                 {t.name || '--'}
               </span>
             </span>
-            {/* 中间：横向进度条（限宽，避免过长） */}
-            <div className="h-1.5 max-w-[80px] flex-1 overflow-hidden rounded-full bg-secondary">
+            {/* 中间：横向进度条（flex-1 自适应填充剩余空间） */}
+            <div className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-secondary">
               <div
                 className="h-full rounded-full transition-all duration-500"
                 style={{ width: `${barWidth}%`, backgroundColor: hasLoss ? '#FF3B30' : t.color }}
