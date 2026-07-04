@@ -24,14 +24,12 @@ export function formatUptime(seconds: number): string {
   const days = Math.floor(seconds / 86400)
   const hours = Math.floor((seconds % 86400) / 3600)
   const minutes = Math.floor((seconds % 3600) / 60)
+  const secs = Math.floor(seconds % 60)
 
-  if (days > 0) {
-    return `${days}d ${hours}h`
-  }
-  if (hours > 0) {
-    return `${hours}h ${minutes}m`
-  }
-  return `${minutes}m`
+  if (days > 0) return `${days}d ${hours}h`
+  if (hours > 0) return `${hours}h ${minutes}m`
+  if (minutes > 0) return `${minutes}m ${secs}s`
+  return `${secs}s`
 }
 
 /** 格式化累计流量（字节 -> 人类可读，如 "1.5 GB"） */
@@ -128,7 +126,7 @@ const REGION_KEYWORDS: Array<{ codes: string[]; region: string }> = [
   { codes: ['加拿大', 'ca', 'canada', '多伦多'], region: 'CA' },
   { codes: ['澳大利亚', 'au', 'australia', '悉尼'], region: 'AU' },
   { codes: ['俄罗斯', 'ru', 'russia'], region: 'RU' },
-  { codes: ['印度', 'in', 'india', '孟买'], region: 'IN' },
+  { codes: ['印度', 'india', '孟买', 'mumbai', '新德里', 'delhi'], region: 'IN' },
   { codes: ['荷兰', 'nl', 'netherlands', 'amsterdam', '阿姆斯特丹'], region: 'NL' },
   { codes: ['土耳其', 'tr', 'turkey', '伊斯坦布尔'], region: 'TR' },
   { codes: ['巴西', 'br', 'brazil'], region: 'BR' },

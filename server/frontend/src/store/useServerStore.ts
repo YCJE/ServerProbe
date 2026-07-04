@@ -8,15 +8,17 @@ import {
   getServers,
   getServerDetail,
   getSetupStatus,
+  checkAuth as apiCheckAuth,
   login as apiLogin,
   setup as apiSetup,
   logout as apiLogout,
   deleteAgent as deleteAgentAPI,
-  getToken,
-  clearToken,
   ApiError,
 } from '@/lib/api'
 import { getDashboardWebSocket, getPublicDashboardWebSocket } from '@/lib/websocket'
+
+/** checkAuth 网络错误重试计数器（模块级，成功时重置） */
+let checkAuthRetryCount = 0
 
 /** 实时数据历史点（用于详情页实时图表） */
 export interface RealtimePoint {
@@ -32,6 +34,7 @@ export interface RealtimePoint {
 interface ServerStoreState {
   // 认证状态
   isAuthenticated: boolean
+  authInitialized: boolean  // 初始认证检查是否完成（防止首屏闪烁）
   needsSetup: boolean
   authLoading: boolean
 
@@ -56,9 +59,12 @@ interface ServerStoreState {
   // WebSocket 监听器清理函数（内部使用）
   _wsCleanups: (() => void)[] | null
   _publicWsCleanups: (() => void)[] | null
+  // 最近删除的 Agent ID（防止 WS 消息在 fetchServers 完成前重新引入已删除的 Agent）
+  _recentlyDeletedIds: Set<number>
 
   // Actions
   checkSetupStatus: () => Promise<void>
+  checkAuth: () => Promise<void>
   login: (username: string, password: string) => Promise<void>
   setup: (username: string, password: string) => Promise<void>
   logout: () => Promise<void>
@@ -131,7 +137,8 @@ function loadTheme(): Theme {
 
 export const useServerStore = create<ServerStoreState>((set, get) => ({
   // 初始状态
-  isAuthenticated: !!getToken(),
+  isAuthenticated: false,
+  authInitialized: false,
   needsSetup: false,
   authLoading: false,
   servers: [],
@@ -145,6 +152,7 @@ export const useServerStore = create<ServerStoreState>((set, get) => ({
   currentServerLoading: false,
   _wsCleanups: null,
   _publicWsCleanups: null,
+  _recentlyDeletedIds: new Set<number>(),
 
   // 检查是否需要初始化
   checkSetupStatus: async () => {
@@ -153,10 +161,33 @@ export const useServerStore = create<ServerStoreState>((set, get) => ({
       const status = await getSetupStatus()
       set({ needsSetup: status.needs_setup, authLoading: false })
     } catch (err) {
-      // 请求失败时不设置 needsSetup=true，避免误跳 Setup 页
-      // 保持 needsSetup=false，让用户看到登录页或公开页
       console.error('checkSetupStatus failed:', err)
       set({ needsSetup: false, authLoading: false })
+    }
+  },
+
+  // 检查登录状态（通过 HttpOnly Cookie 认证，页面加载时调用）
+  checkAuth: async () => {
+    try {
+      const result = await apiCheckAuth()
+      checkAuthRetryCount = 0
+      set({ isAuthenticated: result.authenticated, authInitialized: true })
+    } catch (err) {
+      if (err instanceof ApiError) {
+        // 服务端返回 HTTP 错误（非网络错误），标记为未认证
+        checkAuthRetryCount = 0
+        set({ isAuthenticated: false, authInitialized: true })
+        return
+      }
+      // 真正的网络错误（超时/断网）：指数退避重试，最多 10 次
+      checkAuthRetryCount++
+      if (checkAuthRetryCount > 10) {
+        set({ isAuthenticated: false, authInitialized: true })
+        return
+      }
+      const delay = Math.min(3000 * Math.pow(1.5, checkAuthRetryCount - 1), 30000)
+      console.error(`checkAuth network error (retry ${checkAuthRetryCount}):`, err)
+      setTimeout(() => get().checkAuth(), delay)
     }
   },
 
@@ -164,7 +195,16 @@ export const useServerStore = create<ServerStoreState>((set, get) => ({
   login: async (username: string, password: string) => {
     set({ authLoading: true })
     try {
-      await apiLogin({ username, password })
+      const result = await apiLogin({ username, password })
+      // 必须检查 success 字段：TOTP 需要二次验证时返回 200 + success=false
+      if (!result.success) {
+        set({ authLoading: false })
+        // 返回 need_totp 信息供 Login 页面处理
+        if (result.need_totp) {
+          throw new Error('需要两步验证')
+        }
+        throw new Error(result.message || '登录失败')
+      }
       set({ isAuthenticated: true, authLoading: false })
     } catch (err) {
       set({ authLoading: false })
@@ -176,7 +216,11 @@ export const useServerStore = create<ServerStoreState>((set, get) => ({
   setup: async (username: string, password: string) => {
     set({ authLoading: true })
     try {
-      await apiSetup({ username, password })
+      const result = await apiSetup({ username, password })
+      if (!result.success) {
+        set({ authLoading: false })
+        throw new Error(result.message || '设置失败')
+      }
       set({ isAuthenticated: true, needsSetup: false, authLoading: false })
     } catch (err) {
       set({ authLoading: false })
@@ -184,15 +228,10 @@ export const useServerStore = create<ServerStoreState>((set, get) => ({
     }
   },
 
-  // 登出
+  // 登出（乐观更新：先清状态跳转，再异步通知后端清除 Cookie）
   logout: async () => {
     get().disconnectWebSocket()
-    try {
-      await apiLogout()
-    } catch {
-      // 忽略登出 API 错误
-    }
-    clearToken()
+    // 乐观更新：立即清除前端状态，避免 UI 卡顿等待网络响应
     set({
       isAuthenticated: false,
       servers: [],
@@ -202,7 +241,13 @@ export const useServerStore = create<ServerStoreState>((set, get) => ({
       currentServerLoading: false,
       serversLoading: false,
       authLoading: false,
+      _recentlyDeletedIds: new Set<number>(),
     })
+    try {
+      await apiLogout()
+    } catch {
+      // 忽略登出 API 错误（前端状态已清，Cookie 由后端过期或下次 checkAuth 清除）
+    }
   },
 
   // 获取服务器列表
@@ -248,17 +293,27 @@ export const useServerStore = create<ServerStoreState>((set, get) => ({
   // 删除 Agent，并刷新服务器列表（从仪表盘移除已删除的 Agent）
   deleteAgent: async (id: number) => {
     await deleteAgentAPI(id)
-    // 原子化删除：先从 servers 和 dashboardData 中同时移除，
-    // 避免在 fetchServers 完成前 WebSocket 推送的实时数据导致已删除的服务器重新出现
+    // 原子化删除：先从 servers 和 dashboardData 中同时移除
     const state = get()
     const newMap = new Map(state.dashboardData)
     newMap.delete(id)
+    // 标记为最近删除，防止 WS 消息在 fetchServers 完成前重新引入
+    const newDeletedIds = new Set(state._recentlyDeletedIds)
+    newDeletedIds.add(id)
     set({
       servers: state.servers.filter((s) => s.id !== id),
       dashboardData: newMap,
+      _recentlyDeletedIds: newDeletedIds,
     })
-    // 异步刷新服务器列表，与本地状态更新解耦
-    get().fetchServers().catch(() => {})
+    // 异步刷新服务器列表，完成后清除删除标记
+    get().fetchServers()
+      .then(() => {
+        const cur = get()
+        const next = new Set(cur._recentlyDeletedIds)
+        next.delete(id)
+        useServerStore.setState({ _recentlyDeletedIds: next })
+      })
+      .catch(() => {})
   },
 
   // 连接 WebSocket
@@ -319,6 +374,8 @@ export const useServerStore = create<ServerStoreState>((set, get) => ({
     const newServersToAdd: ServerData[] = []
 
     for (const item of data) {
+      // 跳过最近删除的 Agent，防止 WS 消息在 fetchServers 完成前重新引入
+      if (state._recentlyDeletedIds.has(item.agent_id)) continue
       newMap.set(item.agent_id, item)
 
       // 如果当前正在查看该服务器的详情页，追加实时历史数据
@@ -402,6 +459,14 @@ export const useServerStore = create<ServerStoreState>((set, get) => ({
           server.tcp_connections === (live.tcp_connections || 0) &&
           server.udp_connections === (live.udp_connections || 0) &&
           server.process_count === (live.process_count || 0) &&
+          server.last_seen === live.timestamp &&
+          server.display_name === (live.display_name || server.display_name) &&
+          server.hostname === (live.hostname || server.hostname) &&
+          server.cpu_model === (live.cpu_model || server.cpu_model) &&
+          server.cpu_cores === (live.cpu_cores || server.cpu_cores) &&
+          server.os === (live.os || server.os) &&
+          server.arch === (live.arch || server.arch) &&
+          server.agent_version === (live.agent_version || server.agent_version) &&
           pingDataEqual(server.ping_data, live.ping_data || [])
         ) {
           return server

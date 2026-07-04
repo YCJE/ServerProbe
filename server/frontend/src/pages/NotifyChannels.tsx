@@ -178,7 +178,10 @@ export default function NotifyChannels() {
     if (form.type === 'webhook') {
       if (!form.webhook.url.trim()) return '请输入 Webhook URL'
       try {
-        new URL(form.webhook.url)
+        const u = new URL(form.webhook.url)
+        if (u.protocol !== 'http:' && u.protocol !== 'https:') {
+          return 'Webhook URL 仅支持 http/https 协议'
+        }
       } catch {
         return 'Webhook URL 格式无效'
       }

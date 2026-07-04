@@ -27,8 +27,11 @@ type PingCategory = '电信' | '联通' | '移动' | '其他'
 /** 将 ping target 归类为三网类别 */
 function categorizePing(ping: PingResult): PingCategory {
   const text = `${ping.target || ''} ${ping.name || ''}`.toLowerCase()
-  if (text.includes('电信') || text.includes('telecom') || text.includes('ct')) return '电信'
-  if (text.includes('联通') || text.includes('unicom') || text.includes('cu')) return '联通'
+  // 使用词边界匹配短代码，避免子串误判（如 "connect" 含 "ct"）
+  const wordTest = (t: string, kw: string) =>
+    new RegExp(`(^|[^a-z])${kw}([^a-z]|$)`).test(t)
+  if (text.includes('电信') || text.includes('telecom') || wordTest(text, 'ct')) return '电信'
+  if (text.includes('联通') || text.includes('unicom') || wordTest(text, 'cu')) return '联通'
   if (text.includes('移动') || text.includes('mobile') || text.includes('cmcc')) return '移动'
   return '其他'
 }
@@ -140,8 +143,10 @@ function ServerCard({ server, basePath = '/admin' }: ServerCardProps) {
   // 磁盘使用率
   const diskUsage = server.disk_usage || 0
 
-  // 累计流量
-  const totalTraffic = (server.total_rx || 0) + (server.total_tx || 0)
+  // 内存使用率
+  const memUsagePercent = server.mem_total > 0
+    ? ((server.mem_used || 0) / server.mem_total) * 100
+    : server.mem || 0
 
   // 三网延迟目标列表（最多展示3个）
   const pingTargets = useMemo(() => {
@@ -208,31 +213,42 @@ function ServerCard({ server, basePath = '/admin' }: ServerCardProps) {
         </span>
       </div>
 
-      {/* 2. 指标网格：CPU / 硬盘 + 流量信息 */}
-      <div className="mb-3 grid grid-cols-2 gap-3">
+      {/* 2. 指标网格：CPU / 内存 / 硬盘（三列，参考 dstatus 紧凑布局） */}
+      <div className="mb-3 grid grid-cols-3 gap-2.5">
         <MetricCell label="CPU" value={server.cpu || 0} color="#007AFF" />
+        <MetricCell label="内存" value={memUsagePercent} color="#AF52DE" />
         <MetricCell label="硬盘" value={diskUsage} color="#FF9500" />
       </div>
 
-      {/* 3. 流量信息：累计流量 + 实时速率（带颜色标注） */}
+      {/* 3. 网络信息：实时速率 + 累计流量（参考 dstatus 单行四项紧凑布局） */}
       <div className="mb-3 rounded-lg bg-secondary/30 px-3 py-2">
+        {/* 实时速率行 */}
         <div className="flex items-center justify-between">
-          <span className="text-[10px] text-muted-foreground">累计流量</span>
-          <span className="text-xs font-semibold text-foreground">
-            {server.online ? formatTraffic(totalTraffic) : '---'}
-          </span>
-        </div>
-        <div className="mt-1 flex items-center gap-3 text-[10px]">
-          <span className="flex items-center gap-1">
+          <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
             <span style={{ color: '#5AC8FA' }}>↓</span>
             <span className="font-medium" style={{ color: '#5AC8FA' }}>
               {server.online ? formatSpeed(server.net_rx) : '---'}
             </span>
           </span>
-          <span className="flex items-center gap-1">
+          <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
             <span style={{ color: '#AF52DE' }}>↑</span>
             <span className="font-medium" style={{ color: '#AF52DE' }}>
               {server.online ? formatSpeed(server.net_tx) : '---'}
+            </span>
+          </span>
+        </div>
+        {/* 累计流量行 */}
+        <div className="mt-1 flex items-center justify-between border-t border-border/50 pt-1 text-[10px]">
+          <span className="flex items-center gap-1 text-muted-foreground">
+            <span style={{ color: '#5AC8FA' }}>↓</span>
+            <span className="font-medium text-foreground/70">
+              {server.online ? formatTraffic(server.total_rx || 0) : '---'}
+            </span>
+          </span>
+          <span className="flex items-center gap-1 text-muted-foreground">
+            <span style={{ color: '#AF52DE' }}>↑</span>
+            <span className="font-medium text-foreground/70">
+              {server.online ? formatTraffic(server.total_tx || 0) : '---'}
             </span>
           </span>
         </div>

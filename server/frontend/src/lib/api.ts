@@ -29,34 +29,17 @@ export class ApiError extends Error {
 /** 防止 401 时多次触发重定向 */
 let isRedirecting = false
 
-/** 获取存储的 JWT Token */
-export function getToken(): string | null {
-  return localStorage.getItem('probe_token')
-}
-
-/** 存储 JWT Token */
-export function setToken(token: string): void {
-  localStorage.setItem('probe_token', token)
-}
-
-/** 清除 JWT Token */
-export function clearToken(): void {
-  localStorage.removeItem('probe_token')
-}
-
-/** 封装 fetch 请求，自动携带 Token 和 Cookie */
+/**
+ * 封装 fetch 请求，自动携带 Cookie（HttpOnly Cookie 包含 JWT Token）
+ * credentials: 'include' 确保浏览器自动发送同源 Cookie
+ */
 async function request<T>(
   path: string,
   options: RequestInit = {},
 ): Promise<T> {
-  const token = getToken()
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     ...((options.headers as Record<string, string>) || {}),
-  }
-
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`
   }
 
   // 添加超时控制 (15 秒)
@@ -81,13 +64,12 @@ async function request<T>(
   clearTimeout(timeoutId)
 
   if (response.status === 401) {
-    // 公开 API 路径（公开接口、初始化检查、登录）的 401 不应清除已登录管理员的 Token
-    const isPublicPath = path.startsWith('/public/') || path.includes('/auth/setup-status') || path.includes('/auth/login')
+    // 非公开接口的 401 表示 Token 过期/无效，重定向到登录页
+    // Cookie 由后端在 401 响应中清除，前端只需重定向
+    const isPublicPath = path.startsWith('/public/') || path.includes('/auth/setup-status') || path.includes('/auth/login') || path.includes('/auth/me')
     if (!isPublicPath) {
-      clearToken()
       if (!isRedirecting) {
         isRedirecting = true
-        // 使用 replace 替换当前历史记录，整页刷新后 isRedirecting 会随页面重置
         window.location.replace('/login')
       }
     }
@@ -127,37 +109,30 @@ export async function getSetupStatus(): Promise<SetupStatus> {
   return request<SetupStatus>('/auth/setup-status')
 }
 
-/** 首次设置（创建管理员账户） */
+/** 检查当前登录状态（通过 HttpOnly Cookie 认证） */
+export async function checkAuth(): Promise<{ authenticated: boolean }> {
+  return request<{ authenticated: boolean }>('/auth/me')
+}
+
+/** 首次设置（创建管理员账户，后端自动设置 Cookie） */
 export async function setup(data: SetupRequest): Promise<LoginResponse> {
-  const result = await request<LoginResponse>('/auth/setup', {
+  return request<LoginResponse>('/auth/setup', {
     method: 'POST',
     body: JSON.stringify(data),
   })
-  if (result.token) {
-    setToken(result.token)
-  }
-  return result
 }
 
-/** 登录 */
+/** 登录（后端自动设置 HttpOnly Cookie） */
 export async function login(data: LoginRequest): Promise<LoginResponse> {
-  const result = await request<LoginResponse>('/auth/login', {
+  return request<LoginResponse>('/auth/login', {
     method: 'POST',
     body: JSON.stringify(data),
   })
-  if (result.token) {
-    setToken(result.token)
-  }
-  return result
 }
 
-/** 登出 */
+/** 登出（后端清除 Cookie） */
 export async function logout(): Promise<void> {
-  try {
-    await request('/auth/logout', { method: 'POST' })
-  } finally {
-    clearToken()
-  }
+  await request('/auth/logout', { method: 'POST' })
 }
 
 // ==================== 服务器相关 API ====================
@@ -202,7 +177,7 @@ export async function getRegisterCodes(): Promise<{ codes: RegisterCode[] }> {
 
 /** 删除注册码 */
 export async function deleteRegisterCode(code: string): Promise<void> {
-  await request(`/agents/register-codes/${code}`, { method: 'DELETE' })
+  await request(`/agents/register-codes/${encodeURIComponent(code)}`, { method: 'DELETE' })
 }
 
 /** 获取 Agent 列表 */

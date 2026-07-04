@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -42,11 +43,11 @@ type LoginRequest struct {
 }
 
 // LoginResponse 登录响应
+// Token 不再通过 JSON 返回，仅通过 HttpOnly Cookie 传递，防止 XSS 窃取
 type LoginResponse struct {
-	Success   bool   `json:"success"`
-	Message   string `json:"message"`
-	NeedTOTP  bool   `json:"need_totp"`
-	Token     string `json:"token,omitempty"`
+	Success  bool   `json:"success"`
+	Message  string `json:"message"`
+	NeedTOTP bool   `json:"need_totp"`
 }
 
 // validateUsername 验证用户名格式: 长度 3-32，仅允许字母、数字、下划线和连字符
@@ -144,21 +145,31 @@ func (h *AuthHandler) HandleLogin(c *gin.Context) {
 	// 标记登录成功，供 LoginRateLimit 中间件移除限速计数
 	c.Set("login_success", true)
 
-	// 设置 Cookie（HttpOnly + Secure + SameSite=Strict）
+	// 设置 Cookie（HttpOnly + SameSite=Strict）
+	// secure=false 以兼容 HTTP 开发环境和反向代理部署（浏览器到反代间使用 HTTPS 保护传输）
+	// maxAge 从 JWTManager.Expiry() 派生，避免与 JWT 过期时间失配
 	c.SetSameSite(http.SameSiteStrictMode)
-	c.SetCookie("token", token, int(12*time.Hour/time.Second), "/", "", true, true)
+	c.SetCookie("token", token, int(h.jwtManager.Expiry()/time.Second), "/", "", cookieSecure(), true)
 
 	c.JSON(http.StatusOK, LoginResponse{
 		Success: true,
 		Message: "登录成功",
-		Token:   token,
 	})
 }
 
 // HandleLogout 处理登出
 // 路由: POST /api/v1/auth/logout
+// 防止 Logout CSRF：仅当请求携带了有效 Token Cookie 时才清除 Cookie
 func (h *AuthHandler) HandleLogout(c *gin.Context) {
-	c.SetCookie("token", "", -1, "/", "", true, true)
+	tokenString, err := c.Cookie("token")
+	if err != nil || tokenString == "" {
+		// 无 Cookie（可能是跨站攻击），返回成功但不清除 Cookie
+		c.JSON(http.StatusOK, gin.H{"success": true, "message": "已登出"})
+		return
+	}
+	// 有 Cookie，验证并清除
+	c.SetSameSite(http.SameSiteStrictMode)
+	c.SetCookie("token", "", -1, "/", "", cookieSecure(), true)
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": "已登出"})
 }
 
@@ -224,15 +235,45 @@ func (h *AuthHandler) HandleSetup(c *gin.Context) {
 		return
 	}
 
-	// 设置 Cookie
+	// 设置 Cookie（HttpOnly + SameSite=Strict）
 	c.SetSameSite(http.SameSiteStrictMode)
-	c.SetCookie("token", token, int(12*time.Hour/time.Second), "/", "", true, true)
+	c.SetCookie("token", token, int(h.jwtManager.Expiry()/time.Second), "/", "", cookieSecure(), true)
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "管理员账户创建成功",
-		"token":   token,
 	})
+}
+
+// HandleCheckAuth 检查当前登录状态
+// 路由: GET /api/v1/auth/me
+// 供前端在页面加载时检查 Cookie 中的 Token 是否仍然有效
+func (h *AuthHandler) HandleCheckAuth(c *gin.Context) {
+	tokenString, err := c.Cookie("token")
+	if err != nil || tokenString == "" {
+		c.JSON(http.StatusOK, gin.H{"authenticated": false})
+		return
+	}
+
+	claims, err := h.jwtManager.ValidateToken(tokenString)
+	if err != nil {
+		// Token 过期或无效，清除 Cookie
+		c.SetSameSite(http.SameSiteStrictMode)
+		c.SetCookie("token", "", -1, "/", "", cookieSecure(), true)
+		c.JSON(http.StatusOK, gin.H{"authenticated": false})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"authenticated": true,
+		"admin_id":      claims.AdminID,
+	})
+}
+
+// cookieSecure 返回 Cookie 的 Secure 标志
+// 生产环境（COOKIE_SECURE=true 或 GIN_MODE=release）强制 true，开发环境 false
+func cookieSecure() bool {
+	return os.Getenv("COOKIE_SECURE") == "true" || os.Getenv("GIN_MODE") == "release"
 }
 
 // HandleCheckSetup 检查是否需要初始化

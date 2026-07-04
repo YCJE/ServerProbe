@@ -210,6 +210,10 @@ func (h *AlertHandler) HandleUpdateAlert(c *gin.Context) {
 		rule.Enabled = *req.Enabled
 	}
 	if req.NotifyChannelID != nil {
+		if *req.NotifyChannelID < 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "通知渠道 ID 不能为负数"})
+			return
+		}
 		if *req.NotifyChannelID > 0 {
 			if _, err := h.notifyRepo.GetByID(*req.NotifyChannelID); err != nil {
 				c.JSON(http.StatusBadRequest, gin.H{"error": "通知渠道不存在"})
@@ -514,6 +518,16 @@ func (h *NotifyHandler) HandleUpdateChannel(c *gin.Context) {
 			}
 		}
 		channel.Config = string(mergedConfig)
+	}
+
+	// 类型变更但配置未更新时，仍需根据最终类型验证现有配置是否兼容
+	if req.Type != nil && req.Config == nil {
+		if h.notifySvc != nil {
+			if err := h.notifySvc.ValidateChannelConfig(channel.Type, channel.Config); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "当前配置与新类型不兼容: " + err.Error()})
+				return
+			}
+		}
 	}
 
 	if err := h.repo.Update(channel); err != nil {

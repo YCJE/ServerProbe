@@ -29,12 +29,17 @@ type MonitorService struct {
 	mu           sync.RWMutex
 	onConfigPush func(agentID int64, config *sharedmodel.AgentConfig)
 	dataDir      string
-	dashWSCount  int32 // 面板 WebSocket 连接数 (atomic)
+	dashWSCount     int32 // 管理员面板 WebSocket 连接数 (atomic)
+	pubDashWSCount  int32 // 公开面板 WebSocket 连接数 (atomic)
 	ticker       *time.Ticker
 	stopCh       chan struct{}
 	stopOnce     sync.Once
 	wg           sync.WaitGroup      // 跟踪后台 goroutine
 	lastDBUpdate map[int64]time.Time // 限频更新 last_seen 的记录 (复用 mu 保护)
+	// agent 列表缓存，避免 Dashboard WS 每次推送都查询数据库
+	agentListCache     []model.Agent
+	agentListCacheAt   time.Time
+	agentListCacheLock sync.Mutex // 防止惊群效应：确保同一时刻只有一个 goroutine 刷新缓存
 }
 
 // NewMonitorService 创建监控服务
@@ -64,17 +69,17 @@ func (m *MonitorService) IsAgentOnline(agentID int64) bool {
 	return ok
 }
 
-// GetDashboardWSCount 获取面板 WebSocket 连接数
+// GetDashboardWSCount 获取管理员面板 WebSocket 连接数
 func (m *MonitorService) GetDashboardWSCount() int {
 	return int(atomic.LoadInt32(&m.dashWSCount))
 }
 
-// IncDashboardWS 面板 WS 连接数 +1，返回递增后的值（用于原子性检查）
+// IncDashboardWS 管理员面板 WS 连接数 +1，返回递增后的值
 func (m *MonitorService) IncDashboardWS() int {
 	return int(atomic.AddInt32(&m.dashWSCount, 1))
 }
 
-// DecDashboardWS 面板 WS 连接数 -1 (防止下溢)
+// DecDashboardWS 管理员面板 WS 连接数 -1 (防止下溢)
 func (m *MonitorService) DecDashboardWS() {
 	for {
 		old := atomic.LoadInt32(&m.dashWSCount)
@@ -82,6 +87,24 @@ func (m *MonitorService) DecDashboardWS() {
 			return
 		}
 		if atomic.CompareAndSwapInt32(&m.dashWSCount, old, old-1) {
+			return
+		}
+	}
+}
+
+// IncPublicDashboardWS 公开面板 WS 连接数 +1，返回递增后的值
+func (m *MonitorService) IncPublicDashboardWS() int {
+	return int(atomic.AddInt32(&m.pubDashWSCount, 1))
+}
+
+// DecPublicDashboardWS 公开面板 WS 连接数 -1 (防止下溢)
+func (m *MonitorService) DecPublicDashboardWS() {
+	for {
+		old := atomic.LoadInt32(&m.pubDashWSCount)
+		if old <= 0 {
+			return
+		}
+		if atomic.CompareAndSwapInt32(&m.pubDashWSCount, old, old-1) {
 			return
 		}
 	}
@@ -289,6 +312,12 @@ func (m *MonitorService) WriteMetricData(agentID int64, data *sharedmodel.Metric
 		// double-check: 获取写锁后再次检查，避免并发创建多个 RingBuffer
 		m.mu.Lock()
 		if rb, ok = m.ringBuffers[agentID]; !ok {
+			// 如果连接已不存在（Agent 已被删除/注销），拒绝创建 ringBuffer
+			// 防止 UnregisterAgent 后的竞态导致 ringBuffer 永久驻留内存
+			if _, connOk := m.connections[agentID]; !connOk {
+				m.mu.Unlock()
+				return fmt.Errorf("Agent %d 连接不存在，拒绝创建 ringBuffer", agentID)
+			}
 			rb = repository.NewRingBuffer(7200) // 7200 点 × 3s = 6 小时
 			m.ringBuffers[agentID] = rb
 		}
@@ -453,8 +482,34 @@ func (m *MonitorService) Stop() {
 
 // GetDashboardData 获取仪表盘数据
 func (m *MonitorService) GetDashboardData() []DashboardItem {
-	// 先获取所有 Agent 的 hostname 和 display_name（避免在持锁期间进行 DB 调用）
-	agents, _ := m.agentRepo.List()
+	// 使用缓存的 agent 列表（5 秒 TTL），避免 Dashboard WS 每次推送都查询数据库
+	// 当 200 个 WS 客户端每 3 秒推送一次时，可将 DB 查询从 ~67 次/秒降至 ~0.2 次/秒
+	m.mu.RLock()
+	cacheAge := time.Since(m.agentListCacheAt)
+	agents := m.agentListCache
+	m.mu.RUnlock()
+
+	if cacheAge > 5*time.Second || agents == nil {
+		// 使用独立锁防止惊群效应：多个 goroutine 同时发现缓存过期时，
+		// 只有第一个执行 DB 查询，其余等待后直接使用刷新后的缓存
+		m.agentListCacheLock.Lock()
+		// double-check：等待期间可能已有其他 goroutine 完成刷新
+		m.mu.RLock()
+		cacheAge = time.Since(m.agentListCacheAt)
+		agents = m.agentListCache
+		m.mu.RUnlock()
+		if cacheAge > 5*time.Second || agents == nil {
+			if fresh, err := m.agentRepo.List(); err == nil {
+				m.mu.Lock()
+				m.agentListCache = fresh
+				m.agentListCacheAt = time.Now()
+				m.mu.Unlock()
+				agents = fresh
+			}
+		}
+		m.agentListCacheLock.Unlock()
+	}
+
 	agentMap := make(map[int64]*model.Agent, len(agents))
 	for i := range agents {
 		agentMap[agents[i].ID] = &agents[i]

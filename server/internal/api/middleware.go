@@ -23,10 +23,10 @@ func NewMiddleware(jwtManager *pkg.JWTManager) *Middleware {
 // AuthRequired JWT 认证中间件
 func (m *Middleware) AuthRequired() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// 从 Cookie 中获取 Token
+		// 从 Cookie 中获取 Token（HttpOnly Cookie，前端 JS 无法读取）
 		tokenString, err := c.Cookie("token")
 		if err != nil {
-			// 尝试从 Authorization header 获取
+			// 尝试从 Authorization header 获取（兼容 API 客户端）
 			auth := c.GetHeader("Authorization")
 			if strings.HasPrefix(auth, "Bearer ") {
 				tokenString = strings.TrimPrefix(auth, "Bearer ")
@@ -41,6 +41,9 @@ func (m *Middleware) AuthRequired() gin.HandlerFunc {
 
 		claims, err := m.jwtManager.ValidateToken(tokenString)
 		if err != nil {
+			// Token 过期或无效，清除 Cookie 防止浏览器持续发送过期凭证
+			c.SetSameSite(http.SameSiteStrictMode)
+			c.SetCookie("token", "", -1, "/", "", cookieSecure(), true)
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Token 无效或已过期"})
 			c.Abort()
 			return
@@ -74,8 +77,23 @@ func (m *Middleware) LoginRateLimit() gin.HandlerFunc {
 
 		rateLimiter.mu.Lock()
 
-		// 每 5 分钟清理一次不活跃 IP 的记录，防止内存泄漏
-		if now.Sub(rateLimiter.lastClean) > 5*time.Minute {
+		// 紧急清理：map 过大时立即全量清理（与 pubRateLimiter 一致，防止旋转 IP 耗尽内存）
+		if len(rateLimiter.attempts) > 10000 {
+			for ip, attempts := range rateLimiter.attempts {
+				valid := make([]time.Time, 0, len(attempts))
+				for _, t := range attempts {
+					if t.After(cutoff) {
+						valid = append(valid, t)
+					}
+				}
+				if len(valid) == 0 {
+					delete(rateLimiter.attempts, ip)
+				} else {
+					rateLimiter.attempts[ip] = valid
+				}
+			}
+			rateLimiter.lastClean = now
+		} else if now.Sub(rateLimiter.lastClean) > 5*time.Minute {
 			for ip, attempts := range rateLimiter.attempts {
 				valid := make([]time.Time, 0, len(attempts))
 				for _, t := range attempts {
@@ -142,6 +160,86 @@ func (m *Middleware) CORS() gin.HandlerFunc {
 	}
 }
 
+// publicRateLimiter 公开 API 限速器（基于 IP 的滑动窗口）
+type publicRateLimiter struct {
+	mu       sync.Mutex
+	requests map[string][]time.Time
+	lastClean time.Time
+}
+
+var pubRateLimiter = &publicRateLimiter{
+	requests:  make(map[string][]time.Time),
+	lastClean: time.Now(),
+}
+
+// PublicRateLimit 公开 API 限速中间件
+// 每个 IP 每分钟最多 60 次请求，防止未认证 DoS 耗尽数据库连接
+func (m *Middleware) PublicRateLimit() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		ip := c.ClientIP()
+		now := time.Now()
+		cutoff := now.Add(-time.Minute)
+
+		pubRateLimiter.mu.Lock()
+
+		// 紧急清理：map 过大时立即全量清理（防止旋转 IP 耗尽内存）
+		if len(pubRateLimiter.requests) > 10000 {
+			for i, reqs := range pubRateLimiter.requests {
+				valid := make([]time.Time, 0, len(reqs))
+				for _, t := range reqs {
+					if t.After(cutoff) {
+						valid = append(valid, t)
+					}
+				}
+				if len(valid) == 0 {
+					delete(pubRateLimiter.requests, i)
+				} else {
+					pubRateLimiter.requests[i] = valid
+				}
+			}
+			pubRateLimiter.lastClean = now
+		} else if now.Sub(pubRateLimiter.lastClean) > 5*time.Minute {
+			for ip, reqs := range pubRateLimiter.requests {
+				valid := make([]time.Time, 0, len(reqs))
+				for _, t := range reqs {
+					if t.After(cutoff) {
+						valid = append(valid, t)
+					}
+				}
+				if len(valid) == 0 {
+					delete(pubRateLimiter.requests, ip)
+				} else {
+					pubRateLimiter.requests[ip] = valid
+				}
+			}
+			pubRateLimiter.lastClean = now
+		}
+
+		// 清理当前 IP 的过期记录
+		reqs := pubRateLimiter.requests[ip]
+		valid := make([]time.Time, 0, len(reqs))
+		for _, t := range reqs {
+			if t.After(cutoff) {
+				valid = append(valid, t)
+			}
+		}
+
+		if len(valid) >= 60 {
+			pubRateLimiter.requests[ip] = valid
+			pubRateLimiter.mu.Unlock()
+			c.JSON(http.StatusTooManyRequests, gin.H{"error": "请求过于频繁，请稍后再试"})
+			c.Abort()
+			return
+		}
+
+		valid = append(valid, now)
+		pubRateLimiter.requests[ip] = valid
+		pubRateLimiter.mu.Unlock()
+
+		c.Next()
+	}
+}
+
 // SecurityHeaders 安全响应头中间件
 func (m *Middleware) SecurityHeaders() gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -149,7 +247,11 @@ func (m *Middleware) SecurityHeaders() gin.HandlerFunc {
 		c.Header("X-Frame-Options", "DENY")
 		c.Header("X-XSS-Protection", "1; mode=block")
 		c.Header("Referrer-Policy", "strict-origin-when-cross-origin")
-		c.Header("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' wss:; img-src 'self' data:; font-src 'self' data:;")
+		c.Header("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; font-src 'self' data:;")
+		// HSTS: 仅 HTTPS 请求设置（开发环境 HTTP 不设置，避免浏览器锁定）
+		if c.Request.TLS != nil || c.GetHeader("X-Forwarded-Proto") == "https" {
+			c.Header("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+		}
 		c.Next()
 	}
 }

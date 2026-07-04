@@ -3,6 +3,8 @@ package api
 import (
 	"log"
 	"net/http"
+	"os"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
@@ -44,10 +46,22 @@ func NewRouter(
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
 
-	// 不信任任何代理，防止通过 X-Forwarded-For 等 header 伪造 IP 绕过登录限速
-	// ClientIP() 将始终返回直接连接的 RemoteAddr
-	if err := r.SetTrustedProxies(nil); err != nil {
-		log.Printf("警告: 设置信任代理失败: %v", err)
+	// 信任反向代理：通过 TRUSTED_PROXIES 环境变量配置（如 "127.0.0.1,::1"）
+	// 确保反代部署时 c.ClientIP() 返回真实客户端 IP，限速才能按 IP 生效
+	// 未配置时不信任任何代理，ClientIP() 返回直接连接方 IP
+	trustedProxies := os.Getenv("TRUSTED_PROXIES")
+	if trustedProxies != "" {
+		proxies := strings.Split(trustedProxies, ",")
+		for i := range proxies {
+			proxies[i] = strings.TrimSpace(proxies[i])
+		}
+		if err := r.SetTrustedProxies(proxies); err != nil {
+			log.Printf("警告: 设置信任代理失败: %v", err)
+		}
+	} else {
+		if err := r.SetTrustedProxies(nil); err != nil {
+			log.Printf("警告: 设置信任代理失败: %v", err)
+		}
 	}
 
 	middleware := NewMiddleware(jwtManager)
@@ -78,31 +92,35 @@ func NewRouter(
 	// API v1
 	api := r.Group("/api/v1")
 	{
-		// 认证相关（无需登录）
+		// 认证相关（无需登录，限速防止 DoS）
 		auth := api.Group("/auth")
+		auth.Use(middleware.PublicRateLimit())
 		{
 			auth.GET("/setup-status", authHandler.HandleCheckSetup)
+			auth.GET("/me", authHandler.HandleCheckAuth)
 			auth.POST("/setup", middleware.LoginRateLimit(), authHandler.HandleSetup)
 			auth.POST("/login", middleware.LoginRateLimit(), authHandler.HandleLogin)
 			auth.POST("/logout", authHandler.HandleLogout)
 		}
 
-		// 公开 API（无需登录，仅返回非敏感信息）
+		// 公开 API（无需登录，仅返回非敏感信息，限速防止 DoS）
 		public := api.Group("/public")
+		public.Use(middleware.PublicRateLimit())
 		{
 			public.GET("/servers", serverHandler.HandlePublicServers)
 			public.GET("/dashboard", serverHandler.HandlePublicDashboard)
 			public.GET("/servers/:id/history", serverHandler.HandlePublicServerHistory)
 		}
 
-		// 公开仪表盘 WebSocket（无需登录）
-		r.GET("/ws/public/dashboard", dashboardWSHandler.HandlePublicDashboardWS)
+		// 公开仪表盘 WebSocket（无需登录，限速防 DoS）
+		r.GET("/ws/public/dashboard", middleware.PublicRateLimit(), dashboardWSHandler.HandlePublicDashboardWS)
 
-		// 管理员仪表盘 WebSocket（需要 token）
-		r.GET("/ws/dashboard", dashboardWSHandler.HandleDashboardWS)
+		// 管理员仪表盘 WebSocket（需要 token，限速防 DoS）
+		r.GET("/ws/dashboard", middleware.PublicRateLimit(), dashboardWSHandler.HandleDashboardWS)
 
-		// Agent 相关
+		// Agent 相关（限速防止 DoS）
 		agent := api.Group("/agent")
+		agent.Use(middleware.PublicRateLimit())
 		{
 			agent.GET("/config", agentHandler.HandleGetAgentConfig)
 			agent.GET("/report", agentHandler.HandleWebSocket)

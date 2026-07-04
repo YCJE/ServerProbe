@@ -229,14 +229,14 @@ export default function ServerDetail() {
     }
 
     const series: ChartSeries[] = targetNames.map((name, i) => {
-      let latestLoss: number | undefined
-      for (let j = allPings.length - 1; j >= 0; j--) {
-        const ping = allPings[j].find((pp) => pp.name === name)
-        if (ping && ping.loss >= 0) {
-          latestLoss = ping.loss
-          break
-        }
-      }
+      const lossData = allPings.map((pings) => {
+        const ping = pings.find((pp) => pp.name === name)
+        return ping ? ping.loss : null
+      })
+      const validLosses = lossData.filter((l): l is number => l !== null && l >= 0)
+      const avgSeriesLoss = validLosses.length > 0
+        ? validLosses.reduce((sum, l) => sum + l, 0) / validLosses.length
+        : undefined
       return {
         name,
         color: PING_COLORS[i % PING_COLORS.length],
@@ -244,11 +244,8 @@ export default function ServerDetail() {
           const ping = pings.find((pp) => pp.name === name)
           return ping ? ping.avg_latency : null
         }),
-        loss: latestLoss,
-        lossData: allPings.map((pings) => {
-          const ping = pings.find((pp) => pp.name === name)
-          return ping ? ping.loss : null
-        }),
+        loss: avgSeriesLoss,
+        lossData,
       }
     })
 
@@ -282,12 +279,23 @@ export default function ServerDetail() {
     }
   }, [timeRange, isRealtimeRange(timeRange) ? realtimeHistory : historyData])
 
-  // 平均丢包率
-  const pingData = displayServer?.ping_data
+  // 平均丢包率（从图表数据源计算，与所选时间范围一致）
   const avgLoss = useMemo(() => {
-    if (!pingData || pingData.length === 0) return 0
-    return pingData.reduce((sum, p) => sum + (p.loss || 0), 0) / pingData.length
-  }, [pingData])
+    const allSeries = networkChartData.series
+    if (allSeries.length === 0) return 0
+    let totalLoss = 0
+    let count = 0
+    for (const s of allSeries) {
+      if (!s.lossData) continue
+      for (const l of s.lossData) {
+        if (l !== null && l >= 0) {
+          totalLoss += l
+          count++
+        }
+      }
+    }
+    return count > 0 ? totalLoss / count : 0
+  }, [networkChartData])
 
   // ==================== 加载 / 错误状态 ====================
 
@@ -320,7 +328,7 @@ export default function ServerDetail() {
 
   const memUsagePercent =
     displayServer.mem_total > 0
-      ? (displayServer.mem_used / displayServer.mem_total) * 100
+      ? ((displayServer.mem_used || 0) / displayServer.mem_total) * 100
       : displayServer.mem || 0
   const diskTotal =
     displayServer.disks?.reduce((sum, d) => sum + d.total, 0) || 0

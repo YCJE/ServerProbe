@@ -14,8 +14,11 @@ import (
 	sharedmodel "github.com/server-probe/shared/model"
 )
 
-// maxDashboardWSConnections 面板 WebSocket 最大并发连接数，防止 DoS
-const maxDashboardWSConnections = 200
+// 管理员与公开仪表盘 WebSocket 各自独立的连接上限，防止公开用户阻断管理员
+const (
+	maxAdminDashboardWSConnections  = 50  // 管理员独立配额
+	maxPublicDashboardWSConnections = 200 // 公开独立配额
+)
 
 // DashboardWSHandler 仪表盘 WebSocket 处理器
 type DashboardWSHandler struct {
@@ -64,11 +67,12 @@ func (w *wsConn) writeJSON(v interface{}) error {
 }
 
 // HandleDashboardWS 仪表盘 WebSocket 端点
-// 路由: GET /ws/dashboard?token=JWT_TOKEN
+// 路由: GET /ws/dashboard
+// 认证方式: HttpOnly Cookie（浏览器自动携带，无需通过 URL 参数传递，防止日志泄露）
 func (h *DashboardWSHandler) HandleDashboardWS(c *gin.Context) {
-	// 从 query 参数获取 JWT token
-	token := c.Query("token")
-	if token == "" {
+	// 从 Cookie 中获取 JWT token（HttpOnly，JS 无法读取，不会出现在日志/Referer 中）
+	token, err := c.Cookie("token")
+	if err != nil || token == "" {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "缺少 token"})
 		return
 	}
@@ -76,14 +80,17 @@ func (h *DashboardWSHandler) HandleDashboardWS(c *gin.Context) {
 	// 验证 JWT token
 	claims, err := h.jwtManager.ValidateToken(token)
 	if err != nil {
+		// Token 过期或无效，清除 Cookie 防止浏览器持续发送过期凭证
+		c.SetSameSite(http.SameSiteStrictMode)
+		c.SetCookie("token", "", -1, "/", "", cookieSecure(), true)
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Token 无效或已过期"})
 		return
 	}
 	_ = claims
 
-	// 连接数限制：先递增再检查（原子操作，消除 TOCTOU 竞态）
+	// 连接数限制：管理员独立配额（先递增再检查，消除 TOCTOU 竞态）
 	newCount := h.monitor.IncDashboardWS()
-	if newCount > maxDashboardWSConnections {
+	if newCount > maxAdminDashboardWSConnections {
 		h.monitor.DecDashboardWS()
 		c.JSON(http.StatusTooManyRequests, gin.H{"error": "连接数已满"})
 		return
@@ -192,10 +199,10 @@ func (h *DashboardWSHandler) pushDashboardData(ws *wsConn) bool {
 // HandlePublicDashboardWS 公开仪表盘 WebSocket 端点 (无需登录)
 // 路由: GET /ws/public/dashboard
 func (h *DashboardWSHandler) HandlePublicDashboardWS(c *gin.Context) {
-	// 连接数限制：先递增再检查（原子操作，消除 TOCTOU 竞态）
-	newCount := h.monitor.IncDashboardWS()
-	if newCount > maxDashboardWSConnections {
-		h.monitor.DecDashboardWS()
+	// 连接数限制：公开独立配额（先递增再检查，消除 TOCTOU 竞态）
+	newCount := h.monitor.IncPublicDashboardWS()
+	if newCount > maxPublicDashboardWSConnections {
+		h.monitor.DecPublicDashboardWS()
 		c.JSON(http.StatusTooManyRequests, gin.H{"error": "连接数已满"})
 		return
 	}
@@ -203,11 +210,11 @@ func (h *DashboardWSHandler) HandlePublicDashboardWS(c *gin.Context) {
 	// 升级为 WebSocket 连接
 	conn, err := h.upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
-		h.monitor.DecDashboardWS()
+		h.monitor.DecPublicDashboardWS()
 		log.Printf("Public Dashboard WebSocket 升级失败: %v", err)
 		return
 	}
-	defer h.monitor.DecDashboardWS()
+	defer h.monitor.DecPublicDashboardWS()
 	defer conn.Close()
 
 	ws := &wsConn{conn: conn}

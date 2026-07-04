@@ -214,9 +214,10 @@ export default function AgentManagement() {
     }
   }
 
-  // 生成一键安装命令
+  // 生成一键安装命令（对参数加单引号防止 shell 注入）
+  const shellQuote = (s: string) => `'${String(s).replace(/'/g, `'\\''`)}'`
   const getInstallCommand = (code: string) => {
-    return `curl -fsSL https://raw.githubusercontent.com/YCJE/ServerProbe/master/scripts/install-agent.sh | bash -s -- --server ${serverUrl} --code ${code}`
+    return `curl -fsSL https://raw.githubusercontent.com/YCJE/ServerProbe/master/scripts/install-agent.sh | bash -s -- --server ${shellQuote(serverUrl)} --code ${shellQuote(code)}`
   }
 
   // 格式化时间
@@ -236,6 +237,7 @@ export default function AgentManagement() {
     if (!expiresAt) return '已过期'
     const now = Date.now()
     const expire = new Date(expiresAt).getTime()
+    if (isNaN(expire)) return '无效日期'
     const diff = Math.floor((expire - now) / 1000)
     if (diff <= 0) return '已过期'
     const min = Math.floor(diff / 60)
@@ -246,7 +248,8 @@ export default function AgentManagement() {
   // 判断是否过期
   const isExpired = (expiresAt: string) => {
     if (!expiresAt) return true
-    return new Date(expiresAt).getTime() <= Date.now()
+    const expire = new Date(expiresAt).getTime()
+    return isNaN(expire) || expire <= Date.now()
   }
 
   return (

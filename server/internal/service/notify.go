@@ -161,6 +161,11 @@ func (s *NotifyService) sendEmail(channel *model.NotifyChannel, title, content s
 
 // sendEmailStandard 使用标准 SMTP（带 STARTTLS）发送邮件，所有阶段都有超时保护
 func (s *NotifyService) sendEmailStandard(addr string, auth smtp.Auth, config model.EmailConfig, body string, recipients []string) error {
+	// SSRF 二次校验：防止配置校验后 DNS rebinding 绕过内网 IP 限制
+	if err := pkg.CheckHostPort(config.SMTPHost, config.SMTPPort); err != nil {
+		return fmt.Errorf("SMTP 服务器安全检查失败: %w", err)
+	}
+
 	// 使用带超时的 TCP 连接
 	conn, err := net.DialTimeout("tcp", addr, 10*time.Second)
 	if err != nil {
@@ -177,11 +182,13 @@ func (s *NotifyService) sendEmailStandard(addr string, auth smtp.Auth, config mo
 	}
 	defer client.Close()
 
-	// 尝试 STARTTLS（如果服务器支持）
+	// 强制 STARTTLS：若服务器不支持则拒绝发送，防止凭据明文传输
 	if ok, _ := client.Extension("STARTTLS"); ok {
 		if err := client.StartTLS(&tls.Config{ServerName: config.SMTPHost}); err != nil {
 			return fmt.Errorf("STARTTLS 失败: %w", err)
 		}
+	} else {
+		return fmt.Errorf("SMTP 服务器不支持 STARTTLS，为防止凭据泄露已中止发送，请改用隐式 TLS (UseTLS=true, 端口 465) 或启用服务器 STARTTLS")
 	}
 
 	// 认证
@@ -223,6 +230,11 @@ func (s *NotifyService) sendEmailStandard(addr string, auth smtp.Auth, config mo
 
 // sendEmailWithTLS 使用隐式 TLS (SMTPS) 发送邮件
 func (s *NotifyService) sendEmailWithTLS(addr string, auth smtp.Auth, config model.EmailConfig, body string) error {
+	// SSRF 二次校验：防止配置校验后 DNS rebinding 绕过内网 IP 限制
+	if err := pkg.CheckHostPort(config.SMTPHost, config.SMTPPort); err != nil {
+		return fmt.Errorf("SMTP 服务器安全检查失败: %w", err)
+	}
+
 	// 建立 TLS 连接
 	conn, err := tls.DialWithDialer(
 		&net.Dialer{Timeout: 10 * time.Second},
@@ -234,6 +246,11 @@ func (s *NotifyService) sendEmailWithTLS(addr string, auth smtp.Auth, config mod
 		return fmt.Errorf("TLS 连接 SMTP 服务器失败: %w", err)
 	}
 	defer conn.Close()
+
+	// 设置整体连接超时，防止 SMTP 服务器在 AUTH/MAIL/RCPT/DATA 阶段挂起导致 goroutine 无限阻塞
+	if err := conn.SetDeadline(time.Now().Add(30 * time.Second)); err != nil {
+		return fmt.Errorf("设置连接超时失败: %w", err)
+	}
 
 	// 创建 SMTP 客户端
 	client, err := smtp.NewClient(conn, config.SMTPHost)
@@ -318,6 +335,13 @@ func (s *NotifyService) ValidateChannelConfig(channelType, config string) error 
 		}
 		if cfg.SMTPHost == "" || cfg.From == "" || cfg.To == "" {
 			return fmt.Errorf("SMTPHost、From、To 不能为空")
+		}
+		if cfg.SMTPPort < 1 || cfg.SMTPPort > 65535 {
+			return fmt.Errorf("SMTPPort 范围无效")
+		}
+		// SSRF 检查：禁止 SMTPHost 解析到内网地址（与 Webhook 防护一致）
+		if err := pkg.CheckHostPort(cfg.SMTPHost, cfg.SMTPPort); err != nil {
+			return fmt.Errorf("SMTPHost 安全检查失败: %w", err)
 		}
 		// 验证邮箱格式，防止注入非法字符到 SMTP 命令
 		if !isValidEmail(cfg.From) {

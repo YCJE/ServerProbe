@@ -1,11 +1,16 @@
 import type { DashboardMessage } from '@/types'
-import { getToken, clearToken } from './api'
+import { checkAuth, ApiError } from './api'
 
 /** WebSocket 重连配置 */
 const RECONNECT_DELAYS = [1000, 2000, 4000, 8000, 16000, 30000, 60000]
 const MAX_RECONNECT_INDEX = RECONNECT_DELAYS.length - 1
 
-/** WebSocket 连接管理器 */
+/**
+ * WebSocket 连接管理器
+ * 认证方式: HttpOnly Cookie（浏览器自动携带，无需通过 URL 参数传递）
+ * - 管理后台 WS: Cookie 中的 JWT Token 由浏览器自动发送
+ * - 公开 WS: 无需认证
+ */
 export class DashboardWebSocket {
   private ws: WebSocket | null = null
   private url: string
@@ -19,7 +24,7 @@ export class DashboardWebSocket {
 
   /**
    * @param path WebSocket 路径，例如 '/ws/dashboard' 或 '/ws/public/dashboard'
-   * @param requireToken 是否需要携带 JWT token
+   * @param requireToken 是否需要认证（仅影响 401 时的重定向行为）
    */
   constructor(path: string = '/ws/dashboard', requireToken: boolean = true) {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
@@ -38,20 +43,9 @@ export class DashboardWebSocket {
     // 新连接重置退避索引，避免上次断连累积的长延迟影响首次重连
     this.reconnectIndex = 0
 
-    let wsUrl = this.url
-
-    // 需要认证的连接通过 URL 查询参数传递 Token
-    if (this.requireToken) {
-      const token = getToken()
-      if (!token) {
-        console.warn('[WS] 无 Token，跳过连接')
-        return
-      }
-      wsUrl = `${this.url}?token=${encodeURIComponent(token)}`
-    }
-
+    // Cookie 由浏览器自动发送，无需在 URL 中传递 Token
     try {
-      this.ws = new WebSocket(wsUrl)
+      this.ws = new WebSocket(this.url)
     } catch (err) {
       console.error('[WS] 创建连接失败:', err)
       this.scheduleReconnect()
@@ -87,16 +81,49 @@ export class DashboardWebSocket {
       console.log(`[WS] 连接关闭 (code: ${event.code}):`, this.url)
       this.setConnected(false)
       this.ws = null
-      // 认证失败（token 过期/无效）不重连，避免无限重连
+
+      // 认证失败：后端在 WS 升级前返回 HTTP 401，浏览器触发 onclose code=1006
+      // 后端从不发送 4001/4003（保留兼容），实际认证失败表现为 1006
       if (event.code === 4001 || event.code === 4003) {
         this.shouldReconnect = false
-        // 认证失败，清除 token 并无条件重定向到登录页（除非已在 /login）
-        clearToken()
-        if (window.location.pathname !== '/login') {
+        if (this.requireToken && window.location.pathname !== '/login') {
           window.location.replace('/login')
         }
         return
       }
+
+      // 异常关闭（1006）+ 需要认证的连接：可能是 Cookie 过期导致后端拒绝升级
+      // 先检查认证状态，避免无限重连 401 端点
+      if (event.code === 1006 && this.requireToken && this.shouldReconnect) {
+        this.shouldReconnect = false // 暂停重连，等待认证检查结果
+        checkAuth()
+          .then((res) => {
+            if (res.authenticated) {
+              // 仍已认证，说明是网络抖动，恢复重连
+              this.shouldReconnect = true
+              this.scheduleReconnect()
+            } else {
+              // Cookie 已过期，重定向到登录页
+              if (window.location.pathname !== '/login') {
+                window.location.replace('/login')
+              }
+            }
+          })
+          .catch((err) => {
+            if (err instanceof ApiError) {
+              // API 返回了错误响应（如 401），Cookie 已失效，重定向到登录页
+              if (window.location.pathname !== '/login') {
+                window.location.replace('/login')
+              }
+              return
+            }
+            // 真正的网络错误，保守恢复重连
+            this.shouldReconnect = true
+            this.scheduleReconnect()
+          })
+        return
+      }
+
       if (this.shouldReconnect) {
         this.scheduleReconnect()
       }
@@ -162,7 +189,7 @@ export class DashboardWebSocket {
   }
 
   /** 设置连接状态并通知监听器 */
-  private setConnected(connected: boolean): void {
+  private setConnected(connected: boolean) {
     if (this.connected !== connected) {
       this.connected = connected
       this.statusListeners.forEach((listener) => {
@@ -179,7 +206,7 @@ export class DashboardWebSocket {
 /** 全局 WebSocket 实例缓存（按路径区分） */
 const wsInstances = new Map<string, DashboardWebSocket>()
 
-/** 获取管理后台仪表盘 WebSocket 实例（单例，需要 token） */
+/** 获取管理后台仪表盘 WebSocket 实例（单例，需要认证） */
 export function getDashboardWebSocket(): DashboardWebSocket {
   const path = '/ws/dashboard'
   if (!wsInstances.has(path)) {
@@ -188,7 +215,7 @@ export function getDashboardWebSocket(): DashboardWebSocket {
   return wsInstances.get(path)!
 }
 
-/** 获取公开仪表盘 WebSocket 实例（单例，无需 token） */
+/** 获取公开仪表盘 WebSocket 实例（单例，无需认证） */
 export function getPublicDashboardWebSocket(): DashboardWebSocket {
   const path = '/ws/public/dashboard'
   if (!wsInstances.has(path)) {

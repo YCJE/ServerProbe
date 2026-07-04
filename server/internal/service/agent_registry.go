@@ -198,16 +198,25 @@ type RegisterAgentResult struct {
 }
 
 // generateRandomCode 生成随机注册码（大写字母+数字）
+// 使用拒绝采样消除模运算偏差，确保字符均匀分布
 func generateRandomCode(length int) (string, error) {
 	const charset = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-	bytes := make([]byte, length)
-	if _, err := rand.Read(bytes); err != nil {
-		return "", err
+	// 252 = 256 - (256 % 36)，仅使用 0-251 的值消除模偏差
+	const maxVal = byte(252)
+	result := make([]byte, length)
+	for i := 0; i < length; i++ {
+		for {
+			b := make([]byte, 1)
+			if _, err := rand.Read(b); err != nil {
+				return "", err
+			}
+			if b[0] < maxVal {
+				result[i] = charset[b[0]%byte(len(charset))]
+				break
+			}
+		}
 	}
-	for i := range bytes {
-		bytes[i] = charset[bytes[i]%byte(len(charset))]
-	}
-	return string(bytes), nil
+	return string(result), nil
 }
 
 // generateRandomToken 生成随机 Token（十六进制）

@@ -169,10 +169,11 @@ export interface LoginRequest {
   password: string
 }
 
-/** 登录响应 */
+/** 登录响应（Token 通过 HttpOnly Cookie 传递，不在响应体中返回） */
 export interface LoginResponse {
-  token: string
-  expires_at: number
+  success: boolean
+  message: string
+  need_totp: boolean
 }
 
 /** 首次设置请求 */

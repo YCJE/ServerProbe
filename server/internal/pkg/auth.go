@@ -25,6 +25,11 @@ func NewJWTManager(secretKey string, expiry time.Duration) *JWTManager {
 	}
 }
 
+// Expiry 返回 Token 过期时长，供 Cookie maxAge 等场景使用
+func (m *JWTManager) Expiry() time.Duration {
+	return m.expiry
+}
+
 // Claims JWT Claims
 type Claims struct {
 	AdminID int64 `json:"admin_id"`

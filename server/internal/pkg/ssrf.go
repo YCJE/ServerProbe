@@ -133,6 +133,37 @@ func (p *SSRFProtector) SendWebhook(targetURL string, body []byte) (int, []byte,
 	return resp.StatusCode, respBody, nil
 }
 
+// CheckHostPort 检查主机名:端口是否安全（供非 HTTP 协议如 SMTP 复用）
+// 与 CheckURL 相同的内网 IP 检查逻辑，但不限制协议
+func CheckHostPort(host string, port int) error {
+	if port < 1 || port > 65535 {
+		return fmt.Errorf("端口范围无效: %d", port)
+	}
+
+	// 检查主机名是否是 IP 地址
+	if ip := net.ParseIP(host); ip != nil {
+		if isPrivateIP(ip) {
+			return fmt.Errorf("目标地址是内网 IP: %s", host)
+		}
+	}
+
+	// 解析主机名（带超时）
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	ips, err := net.DefaultResolver.LookupIP(ctx, "ip", host)
+	if err != nil {
+		return fmt.Errorf("DNS 解析失败: %w", err)
+	}
+
+	for _, ip := range ips {
+		if isPrivateIP(ip) {
+			return fmt.Errorf("目标地址 %s 解析到内网 IP %s", host, ip)
+		}
+	}
+
+	return nil
+}
+
 // isPrivateIP 检查是否是内网 IP
 func isPrivateIP(ip net.IP) bool {
 	// 未指定地址 (0.0.0.0, ::) - 某些系统上等同于 localhost

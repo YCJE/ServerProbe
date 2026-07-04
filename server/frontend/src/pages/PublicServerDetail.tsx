@@ -74,6 +74,7 @@ export default function PublicServerDetail() {
 
   const [loading, setLoading] = useState(true)
   const [fetchError, setFetchError] = useState('')
+  const [retryCount, setRetryCount] = useState(0)
   const [timeRange, setTimeRange] = useState<TimeRange>('1h')
   const [historyData, setHistoryData] = useState<HistoryData | null>(null)
   const [historyLoading, setHistoryLoading] = useState(false)
@@ -185,7 +186,7 @@ export default function PublicServerDetail() {
     } else {
       setLoading(false)
     }
-  }, [servers.length])
+  }, [servers.length, retryCount])
 
   const baseServer = useMemo(
     () => servers.find((s) => s.id === serverId) || null,
@@ -368,14 +369,14 @@ export default function PublicServerDetail() {
         }
       }
       const series: ChartSeries[] = targetNames.map((name, i) => {
-        let latestLoss: number | undefined
-        for (let j = allPings.length - 1; j >= 0; j--) {
-          const ping = allPings[j].find((pp) => pp.name === name)
-          if (ping && ping.loss >= 0) {
-            latestLoss = ping.loss
-            break
-          }
-        }
+        const lossData = allPings.map((pings) => {
+          const ping = pings.find((pp) => pp.name === name)
+          return ping ? ping.loss : null
+        })
+        const validLosses = lossData.filter((l): l is number => l !== null && l >= 0)
+        const avgSeriesLoss = validLosses.length > 0
+          ? validLosses.reduce((sum, l) => sum + l, 0) / validLosses.length
+          : undefined
         return {
           name,
           color: PING_COLORS[i % PING_COLORS.length],
@@ -383,11 +384,8 @@ export default function PublicServerDetail() {
             const ping = pings.find((pp) => pp.name === name)
             return ping ? ping.avg_latency : null
           }),
-          loss: latestLoss,
-          lossData: allPings.map((pings) => {
-            const ping = pings.find((pp) => pp.name === name)
-            return ping ? ping.loss : null
-          }),
+          loss: avgSeriesLoss,
+          lossData,
         }
       })
       return { timestamps, series }
@@ -415,15 +413,14 @@ export default function PublicServerDetail() {
     }
 
     const series: ChartSeries[] = targetNames.map((name, i) => {
-      // 取最新一个有效数据点的丢包率
-      let latestLoss: number | undefined
-      for (let j = allPings.length - 1; j >= 0; j--) {
-        const ping = allPings[j].find((pp) => pp.name === name)
-        if (ping && ping.loss >= 0) {
-          latestLoss = ping.loss
-          break
-        }
-      }
+      const lossData = allPings.map((pings) => {
+        const ping = pings.find((pp) => pp.name === name)
+        return ping ? ping.loss : null
+      })
+      const validLosses = lossData.filter((l): l is number => l !== null && l >= 0)
+      const avgSeriesLoss = validLosses.length > 0
+        ? validLosses.reduce((sum, l) => sum + l, 0) / validLosses.length
+        : undefined
       return {
         name,
         color: PING_COLORS[i % PING_COLORS.length],
@@ -431,35 +428,57 @@ export default function PublicServerDetail() {
           const ping = pings.find((pp) => pp.name === name)
           return ping ? ping.avg_latency : null
         }),
-        loss: latestLoss,
-        // 每个时间点的丢包率（用于绘制丢包率趋势图）
-        lossData: allPings.map((pings) => {
-          const ping = pings.find((pp) => pp.name === name)
-          return ping ? ping.loss : null
-        }),
+        loss: avgSeriesLoss,
+        lossData,
       }
     })
 
     return { timestamps, series }
   }, [timeRange, timeRange === 'realtime' ? realtimeHistory : historyData])
 
-  // 从 realtimeHistory 中提取 Sparkline 数据（取最近 N 个点）
+  // Sparkline 数据：实时模式取 realtimeHistory，历史模式取 historyData（与 ServerDetail 对齐）
   const sparklineData = useMemo(() => {
-    const recent = realtimeHistory.slice(-MAX_SPARK_POINTS)
-    return {
-      cpu: recent.map((p) => p.cpu),
-      mem: recent.map((p) => p.mem),
-      netRx: recent.map((p) => p.net_rx),
-      netTx: recent.map((p) => p.net_tx),
+    if (timeRange === 'realtime') {
+      const recent = realtimeHistory.slice(-MAX_SPARK_POINTS)
+      return {
+        cpu: recent.map((p) => p.cpu),
+        mem: recent.map((p) => p.mem),
+        netRx: recent.map((p) => p.net_rx),
+        netTx: recent.map((p) => p.net_tx),
+      }
     }
-  }, [realtimeHistory])
+    // 历史模式：从 historyData 提取，均匀采样到最多 MAX_SPARK_POINTS 个点
+    if (!historyData || !historyData.points || historyData.points.length === 0) {
+      return { cpu: [], mem: [], netRx: [], netTx: [] }
+    }
+    const points = historyData.points
+    const step = Math.max(1, Math.ceil(points.length / MAX_SPARK_POINTS))
+    const sampled = points.filter((_, i) => i % step === 0)
+    return {
+      cpu: sampled.map((p) => p.cpu_usage),
+      mem: sampled.map((p) => p.mem_usage),
+      netRx: sampled.map((p) => p.net_rx),
+      netTx: sampled.map((p) => p.net_tx),
+    }
+  }, [timeRange, timeRange === 'realtime' ? realtimeHistory : historyData])
 
-  // 平均丢包率
-  const pingData = displayServer?.ping_data
+  // 平均丢包率（从图表数据源计算，与所选时间范围一致）
   const avgLoss = useMemo(() => {
-    if (!pingData || pingData.length === 0) return 0
-    return pingData.reduce((sum, p) => sum + (p.loss || 0), 0) / pingData.length
-  }, [pingData])
+    const allSeries = networkChartData.series
+    if (allSeries.length === 0) return 0
+    let totalLoss = 0
+    let count = 0
+    for (const s of allSeries) {
+      if (!s.lossData) continue
+      for (const l of s.lossData) {
+        if (l !== null && l >= 0) {
+          totalLoss += l
+          count++
+        }
+      }
+    }
+    return count > 0 ? totalLoss / count : 0
+  }, [networkChartData])
 
   // ==================== 加载 / 错误状态 ====================
 
@@ -480,12 +499,22 @@ export default function PublicServerDetail() {
         <p className="text-sm text-muted-foreground">
           {fetchError || '服务器不存在或未上线'}
         </p>
-        <button
-          onClick={() => navigate('/')}
-          className="mt-3 rounded-lg bg-primary px-4 py-2 text-sm text-primary-foreground hover:bg-primary/90"
-        >
-          返回首页
-        </button>
+        <div className="mt-3 flex gap-2">
+          {fetchError && (
+            <button
+              onClick={() => setRetryCount((c) => c + 1)}
+              className="rounded-lg border border-border bg-card px-4 py-2 text-sm text-foreground hover:bg-accent"
+            >
+              重试
+            </button>
+          )}
+          <button
+            onClick={() => navigate('/')}
+            className="rounded-lg bg-primary px-4 py-2 text-sm text-primary-foreground hover:bg-primary/90"
+          >
+            返回首页
+          </button>
+        </div>
       </div>
     )
   }
@@ -495,7 +524,7 @@ export default function PublicServerDetail() {
   const ext = displayServer as ServerDataExt
   const memUsagePercent =
     displayServer.mem_total > 0
-      ? (displayServer.mem_used / displayServer.mem_total) * 100
+      ? ((displayServer.mem_used || 0) / displayServer.mem_total) * 100
       : displayServer.mem || 0
   const diskTotal =
     displayServer.disks?.reduce((sum, d) => sum + d.total, 0) || 0

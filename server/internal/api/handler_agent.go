@@ -284,7 +284,7 @@ func (h *AgentHandler) handleRegister(ws *agentWSConn, msg *sharedmodel.WSMessag
 		log.Printf("Agent 注册失败: %v", err)
 		response := sharedmodel.WSMessage{
 			Type:   sharedmodel.MsgTypeRegisterFail,
-			Reason: err.Error(),
+			Reason: "注册失败，请检查注册码是否正确",
 		}
 		_ = ws.writeJSON(response)
 		return
