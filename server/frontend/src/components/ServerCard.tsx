@@ -36,15 +36,8 @@ function categorizePing(ping: PingResult): PingCategory {
   return '其他'
 }
 
-/** 根据三网类别返回颜色 */
-function categoryColor(cat: PingCategory): string {
-  switch (cat) {
-    case '电信': return '#007AFF'
-    case '联通': return '#34C759'
-    case '移动': return '#FF9500'
-    default: return '#AF52DE'
-  }
-}
+/** ping 目标线条颜色池（与详情页 NetworkQualityChart 保持一致） */
+const PING_COLORS = ['#5AC8FA', '#34C759', '#FF9500', '#AF52DE', '#FF2D55', '#FFCC00']
 
 /** 指标进度条格子 */
 function MetricCell({
@@ -104,23 +97,23 @@ function LatencyBars({
         return (
           <div key={i} className="flex items-center gap-2">
             {/* 左侧：颜色点 + 名称 */}
-            <span className="flex w-10 shrink-0 items-center gap-1">
+            <span className="flex w-16 shrink-0 items-center gap-1">
               <span
                 className="inline-block h-1.5 w-1.5 shrink-0 rounded-full"
-                style={{ backgroundColor: hasLoss ? '#FF3B30' : t.color }}
+                style={{ backgroundColor: t.color }}
               />
               <span className="truncate text-[9px] text-muted-foreground">
                 {t.name || '--'}
               </span>
             </span>
-            {/* 中间：横向进度条 */}
-            <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-secondary">
+            {/* 中间：横向进度条（限宽，避免过长） */}
+            <div className="h-1.5 max-w-[80px] flex-1 overflow-hidden rounded-full bg-secondary">
               <div
                 className="h-full rounded-full transition-all duration-500"
                 style={{ width: `${barWidth}%`, backgroundColor: hasLoss ? '#FF3B30' : t.color }}
               />
             </div>
-            {/* 右侧：延迟数值 */}
+            {/* 右侧：延迟数值（固定） */}
             <span
               className={`shrink-0 text-[9px] font-medium ${
                 hasLoss ? 'text-amber-500' : 'text-foreground/80'
@@ -128,11 +121,14 @@ function LatencyBars({
             >
               {t.latency > 0 ? `${t.latency.toFixed(0)}ms` : '--'}
             </span>
-            {hasLoss && (
-              <span className="shrink-0 text-[8px] font-medium text-amber-500">
-                {t.loss.toFixed(0)}%
-              </span>
-            )}
+            {/* 丢包率（固定显示，0% 也展示） */}
+            <span
+              className={`shrink-0 text-[9px] font-medium ${
+                hasLoss ? 'text-amber-500' : 'text-muted-foreground/60'
+              }`}
+            >
+              {t.loss.toFixed(1)}%
+            </span>
           </div>
         )
       })}
@@ -168,19 +164,24 @@ function ServerCard({ server, basePath = '/admin' }: ServerCardProps) {
   // 三网延迟目标列表（最多展示3个）
   const pingTargets = useMemo(() => {
     const pings = server.ping_data || []
+    // 先按原始出现顺序分配颜色（与详情页 NetworkQualityChart 一致）
+    const indexed = pings.map((p, originalIdx) => ({
+      p,
+      color: PING_COLORS[originalIdx % PING_COLORS.length],
+    }))
     // 按类别排序：电信 > 联通 > 移动 > 其他
     const categoryOrder: PingCategory[] = ['电信', '联通', '移动', '其他']
-    const sorted = [...pings].sort((a, b) => {
-      const ca = categorizePing(a)
-      const cb = categorizePing(b)
+    const sorted = [...indexed].sort((a, b) => {
+      const ca = categorizePing(a.p)
+      const cb = categorizePing(b.p)
       return categoryOrder.indexOf(ca) - categoryOrder.indexOf(cb)
     })
     // 默认只展示前3个，点击可展开全部
     const display = showAllPings ? sorted : sorted.slice(0, 3)
-    return display.map((p) => ({
+    return display.map(({ p, color }) => ({
       name: p.name || categorizePing(p),
       latency: p.avg_latency ?? 0,
-      color: categoryColor(categorizePing(p)),
+      color,
       loss: p.loss ?? 0,
     }))
   }, [server.ping_data, showAllPings])
