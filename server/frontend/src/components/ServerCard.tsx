@@ -77,7 +77,7 @@ function MetricCell({
   )
 }
 
-/** 迷你延迟柱形图 - 每个柱子代表一个探测目标的延迟，有丢包时标红 */
+/** 横向延迟条形图 - 每个探测目标一行：名称 + 横条 + 数值，有丢包时标红 */
 function LatencyBars({
   targets,
   online,
@@ -96,25 +96,42 @@ function LatencyBars({
   const maxLatency = targets.reduce((max, t) => (t.latency > max ? t.latency : max), 0) || 100
 
   return (
-    <div className="flex h-10 items-end justify-center gap-2">
+    <div className="space-y-1.5">
       {targets.map((t, i) => {
         const ratio = t.latency > 0 ? t.latency / maxLatency : 0
-        const barHeight = Math.max(3, ratio * 28)
+        const barWidth = Math.max(8, ratio * 100)
         const hasLoss = t.loss > 0
         return (
-          <div key={i} className="flex min-w-0 flex-1 flex-col items-center gap-0.5">
-            <span className={`text-[9px] font-medium ${hasLoss ? 'text-amber-500' : 'text-foreground/80'}`}>
-              {t.latency > 0 ? `${t.latency.toFixed(0)}` : '--'}
+          <div key={i} className="flex items-center gap-2">
+            {/* 左侧：颜色点 + 名称 */}
+            <span className="flex w-10 shrink-0 items-center gap-1">
+              <span
+                className="inline-block h-1.5 w-1.5 shrink-0 rounded-full"
+                style={{ backgroundColor: hasLoss ? '#FF3B30' : t.color }}
+              />
+              <span className="truncate text-[9px] text-muted-foreground">
+                {t.name || '--'}
+              </span>
             </span>
-            <div
-              className="w-full max-w-[20px] rounded-t-sm transition-all duration-500"
-              style={{ height: `${barHeight}px`, backgroundColor: hasLoss ? '#FF3B30' : t.color }}
-            />
-            <span className="w-full truncate text-center text-[8px] text-muted-foreground">
-              {t.name || '--'}
+            {/* 中间：横向进度条 */}
+            <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-secondary">
+              <div
+                className="h-full rounded-full transition-all duration-500"
+                style={{ width: `${barWidth}%`, backgroundColor: hasLoss ? '#FF3B30' : t.color }}
+              />
+            </div>
+            {/* 右侧：延迟数值 */}
+            <span
+              className={`shrink-0 text-[9px] font-medium ${
+                hasLoss ? 'text-amber-500' : 'text-foreground/80'
+              }`}
+            >
+              {t.latency > 0 ? `${t.latency.toFixed(0)}ms` : '--'}
             </span>
             {hasLoss && (
-              <span className="text-[8px] font-medium text-amber-500">{t.loss.toFixed(0)}%</span>
+              <span className="shrink-0 text-[8px] font-medium text-amber-500">
+                {t.loss.toFixed(0)}%
+              </span>
             )}
           </div>
         )
