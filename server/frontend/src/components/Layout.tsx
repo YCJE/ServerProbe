@@ -14,6 +14,7 @@ const NAV_GROUPS = [
       { to: '/admin/alerts', label: '告警管理', icon: '⚠', end: false },
       { to: '/admin/notify', label: '通知渠道', icon: '✉', end: false },
       { to: '/admin/system', label: '系统状态', icon: '⚙', end: false },
+      { to: '/admin/logs', label: '系统日志', icon: '📋', end: false },
     ],
   },
 ]

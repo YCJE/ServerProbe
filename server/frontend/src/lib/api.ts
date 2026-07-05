@@ -346,3 +346,32 @@ export async function deleteNotifyChannel(id: number): Promise<{ success: boolea
 export async function testNotifyChannel(id: number): Promise<{ success: boolean }> {
   return request(`/notify/channels/${id}/test`, { method: 'POST' })
 }
+
+// ==================== 系统日志 API ====================
+
+/** 日志条目 */
+export interface LogEntry {
+  timestamp: string
+  level: 'INFO' | 'WARNING' | 'ERROR' | 'DEBUG'
+  message: string
+}
+
+/** 日志列表响应 */
+export interface LogListResponse {
+  logs: LogEntry[]
+  total: number
+}
+
+/** 获取系统日志 */
+export async function getLogs(params?: {
+  level?: string
+  limit?: number
+  search?: string
+}): Promise<LogListResponse> {
+  const query = new URLSearchParams()
+  if (params?.level) query.set('level', params.level)
+  if (params?.limit) query.set('limit', String(params.limit))
+  if (params?.search) query.set('search', params.search)
+  const qs = query.toString()
+  return request(`/logs${qs ? `?${qs}` : ''}`)
+}

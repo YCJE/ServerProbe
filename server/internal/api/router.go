@@ -25,6 +25,7 @@ type Router struct {
 	pingTargetHandler  *PingTargetHandler
 	alertHandler       *AlertHandler
 	notifyHandler      *NotifyHandler
+	logHandler         *LogHandler
 }
 
 // NewRouter 创建路由
@@ -42,6 +43,7 @@ func NewRouter(
 	notifyRepo *repository.NotifyRepository,
 	alertEngine *service.AlertEngine,
 	notifySvc *service.NotifyService,
+	logCapture *service.LogCapture,
 ) *Router {
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
@@ -83,6 +85,7 @@ func NewRouter(
 	pingTargetHandler := NewPingTargetHandler(pingTargetRepo, configSync, monitor)
 	alertHandler := NewAlertHandler(alertRepo, notifyRepo, alertEngine)
 	notifyHandler := NewNotifyHandler(notifyRepo, notifySvc, alertRepo)
+	logHandler := NewLogHandler(logCapture)
 
 	// 健康检查
 	r.GET("/api/v1/health", func(c *gin.Context) {
@@ -157,6 +160,9 @@ func NewRouter(
 			// 系统状态
 			protected.GET("/system/status", serverHandler.HandleSystemStatus)
 
+			// 系统日志
+			protected.GET("/logs", logHandler.HandleGetLogs)
+
 			// 告警规则管理
 			protected.GET("/alerts", alertHandler.HandleListAlerts)
 			protected.POST("/alerts", alertHandler.HandleCreateAlert)
@@ -184,6 +190,7 @@ func NewRouter(
 		pingTargetHandler:  pingTargetHandler,
 		alertHandler:       alertHandler,
 		notifyHandler:      notifyHandler,
+		logHandler:         logHandler,
 	}
 }
 

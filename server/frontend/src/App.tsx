@@ -15,6 +15,7 @@ import PingTargets from '@/pages/PingTargets'
 import AlertManagement from '@/pages/AlertManagement'
 import NotifyChannels from '@/pages/NotifyChannels'
 import SystemStatus from '@/pages/SystemStatus'
+import LogViewer from '@/pages/LogViewer'
 
 function App() {
   const initTheme = useServerStore((s) => s.initTheme)
@@ -76,6 +77,7 @@ function App() {
         <Route path="alerts" element={<AlertManagement />} />
         <Route path="notify" element={<NotifyChannels />} />
         <Route path="system" element={<SystemStatus />} />
+        <Route path="logs" element={<LogViewer />} />
         <Route path="server/:id" element={<ServerDetail />} />
       </Route>
 

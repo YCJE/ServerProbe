@@ -100,6 +100,11 @@ func main() {
 	// 创建 SSRF 防护器
 	ssrfProtector := pkg.NewSSRFProtector()
 
+	// 创建日志捕获服务（在所有其他服务之前初始化，以捕获全部日志）
+	logCapture := service.NewLogCapture(500)
+	logCapture.Install()
+	log.Println("日志捕获服务已启动（缓冲区容量: 500）")
+
 	// 创建 services
 	monitor := service.NewMonitorService(agentRepo, *dataDir)
 	registry := service.NewAgentRegistryService(agentRepo, registerCodeRepo, db.DB())
@@ -141,6 +146,7 @@ func main() {
 		notifyRepo,
 		alertEngine,
 		notifySvc,
+		logCapture,
 	)
 
 	// 注册前端静态文件处理器
