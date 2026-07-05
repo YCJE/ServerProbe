@@ -414,7 +414,8 @@ func (c *PingCollector) doHTTPPing(result *sharedmodel.PingResult, target string
 
 		if err == nil {
 			// 排空响应体以便复用 TCP 连接（减少 TLS 握手开销）
-			io.Copy(io.Discard, resp.Body)
+			// 限制读取大小为 1MB，防止恶意服务器返回超大响应体消耗资源
+			io.Copy(io.Discard, io.LimitReader(resp.Body, 1024*1024))
 			resp.Body.Close()
 			// 仅 2xx/3xx 视为成功，4xx/5xx 计为失败
 			if resp.StatusCode >= 200 && resp.StatusCode < 400 {

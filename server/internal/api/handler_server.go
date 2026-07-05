@@ -462,31 +462,40 @@ func (h *ServerHandler) HandlePublicServers(c *gin.Context) {
 		return
 	}
 
+	type PublicDiskInfo struct {
+		Total uint64 `json:"total"`
+		Used  uint64 `json:"used"`
+		// Device 字段不包含，防止泄露挂载点信息
+	}
+
 	type PublicServerItem struct {
-		ID           int64   `json:"id"`
-		DisplayName  string  `json:"display_name"`
-		Hostname     string  `json:"hostname"`
-		OS           string  `json:"os"`
-		Arch         string  `json:"arch"`
-		AgentVersion string  `json:"agent_version"`
-		Online       bool    `json:"online"`
-		CPU          float64 `json:"cpu"`
-		Mem          float64 `json:"mem"`
-		MemTotal     uint64  `json:"mem_total"`
-		MemUsed      uint64  `json:"mem_used"`
-		SwapTotal    uint64  `json:"swap_total"`
-		SwapUsed     uint64  `json:"swap_used"`
-		NetRx        uint64  `json:"net_rx"`
-		NetTx        uint64  `json:"net_tx"`
-		Uptime       uint64  `json:"uptime"`
-		CPUModel     string  `json:"cpu_model"`
-		CPUCores     int     `json:"cpu_cores"`
-		TotalRx      uint64  `json:"total_rx"`
-		TotalTx      uint64  `json:"total_tx"`
-		Load1        float64 `json:"load_1"`
-		Load5        float64 `json:"load_5"`
-		Load15       float64 `json:"load_15"`
-		DiskUsage    float64 `json:"disk_usage"`
+		ID           int64                    `json:"id"`
+		DisplayName  string                   `json:"display_name"`
+		Hostname     string                   `json:"hostname"`
+		OS           string                   `json:"os"`
+		Arch         string                   `json:"arch"`
+		AgentVersion string                   `json:"agent_version"`
+		Online       bool                     `json:"online"`
+		CPU          float64                  `json:"cpu"`
+		Mem          float64                  `json:"mem"`
+		MemTotal     uint64                   `json:"mem_total"`
+		MemUsed      uint64                   `json:"mem_used"`
+		SwapTotal    uint64                   `json:"swap_total"`
+		SwapUsed     uint64                   `json:"swap_used"`
+		NetRx        uint64                   `json:"net_rx"`
+		NetTx        uint64                   `json:"net_tx"`
+		Uptime       uint64                   `json:"uptime"`
+		CPUModel     string                   `json:"cpu_model"`
+		CPUCores     int                      `json:"cpu_cores"`
+		TotalRx      uint64                   `json:"total_rx"`
+		TotalTx      uint64                   `json:"total_tx"`
+		Load1        float64                  `json:"load_1"`
+		Load5        float64                  `json:"load_5"`
+		Load15       float64                  `json:"load_15"`
+		DiskUsage    float64                  `json:"disk_usage"`
+		Disks        []PublicDiskInfo         `json:"disks"`
+		PingData     []sharedmodel.PingResult `json:"ping_data"`
+		Timestamp    int64                    `json:"timestamp"`
 	}
 
 	items := make([]PublicServerItem, 0, len(agents))
@@ -522,6 +531,35 @@ func (h *ServerHandler) HandlePublicServers(c *gin.Context) {
 				item.CPUCores = p.CPUCores
 				item.TotalRx = p.TotalRx
 				item.TotalTx = p.TotalTx
+				item.Timestamp = p.Timestamp
+
+				// 过滤磁盘 Device 字段 (敏感信息)，仅保留容量数据
+				safeDisks := make([]PublicDiskInfo, 0, len(p.Disks))
+				for _, d := range p.Disks {
+					safeDisks = append(safeDisks, PublicDiskInfo{
+						Total: d.Total,
+						Used:  d.Used,
+					})
+				}
+				item.Disks = safeDisks
+
+				// 过滤 PingData 中的 Target 字段，防止泄露探测目标地址
+				safePingData := make([]sharedmodel.PingResult, 0, len(p.PingData))
+				for _, ping := range p.PingData {
+					safePingData = append(safePingData, sharedmodel.PingResult{
+						Name:        ping.Name,
+						Method:      ping.Method,
+						AvgLatency:  ping.AvgLatency,
+						MinLatency:  ping.MinLatency,
+						MaxLatency:  ping.MaxLatency,
+						Jitter:      ping.Jitter,
+						Loss:        ping.Loss,
+						PacketsSent: ping.PacketsSent,
+						PacketsRecv: ping.PacketsRecv,
+						// Target 字段不包含
+					})
+				}
+				item.PingData = safePingData
 			}
 		}
 
