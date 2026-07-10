@@ -24,7 +24,7 @@ export interface AnimatedNumberResult {
  */
 export function useAnimatedNumber(target: number): AnimatedNumberResult {
   const [displayValue, setDisplayValue] = useState<number>(target)
-  const [animating, setAnimating] = useState<boolean>(false)
+  const animatingRef = useRef<boolean>(false)
 
   // 持久化引用，避免重渲染丢失
   // displayValueRef 始终跟踪当前显示值（包括动画过程中每一帧的值），
@@ -52,14 +52,14 @@ export function useAnimatedNumber(target: number): AnimatedNumberResult {
     if (from === to) {
       displayValueRef.current = to
       setDisplayValue(to)
-      setAnimating(false)
+      animatingRef.current = false
       toRef.current = to
       return
     }
 
     toRef.current = to
     startRef.current = performance.now()
-    setAnimating(true)
+    animatingRef.current = true
 
     const tick = (now: number) => {
       const elapsed = now - startRef.current
@@ -76,7 +76,7 @@ export function useAnimatedNumber(target: number): AnimatedNumberResult {
       } else {
         // 动画结束
         rafRef.current = 0
-        setAnimating(false)
+        animatingRef.current = false
       }
     }
 
@@ -91,17 +91,7 @@ export function useAnimatedNumber(target: number): AnimatedNumberResult {
     // 仅依赖目标值变化
   }, [target])
 
-  // 卸载时清理
-  useEffect(() => {
-    return () => {
-      if (rafRef.current) {
-        cancelAnimationFrame(rafRef.current)
-        rafRef.current = 0
-      }
-    }
-  }, [])
-
-  return { value: displayValue, animating }
+  return { value: displayValue, animating: animatingRef.current }
 }
 
 export default useAnimatedNumber

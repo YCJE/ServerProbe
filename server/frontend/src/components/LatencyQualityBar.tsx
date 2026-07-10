@@ -1,4 +1,4 @@
-import { memo, useMemo, useState } from 'react'
+import { memo, useEffect, useMemo, useState } from 'react'
 import type { PingResult } from '@/types'
 import { parsePingData } from '@/lib/utils'
 
@@ -35,12 +35,12 @@ const BUCKET_COLORS = {
 } as const
 
 /** 根据平均延迟和丢包率返回桶颜色 */
-function getBucketColor(avgLatency: number, avgLoss: number): string {
-  // 丢包率 >= 100% 视为完全丢包
-  if (avgLoss >= 100) return BUCKET_COLORS.packetLoss
-  // 丢包率 > 50% 也视为严重丢包
+function getBucketColor(avgLatency: number, avgLoss: number, hasData: boolean): string {
+  // 丢包率 > 50% 视为严重丢包
   if (avgLoss > 50) return BUCKET_COLORS.packetLoss
-  if (avgLatency <= 0) return BUCKET_COLORS.empty
+  // 无数据时返回空颜色
+  if (!hasData) return BUCKET_COLORS.empty
+  // 有数据时 avgLatency=0 归入绿色
   if (avgLatency <= 50) return BUCKET_COLORS.green
   if (avgLatency <= 100) return BUCKET_COLORS.lightGreen
   if (avgLatency <= 180) return BUCKET_COLORS.yellow
@@ -92,7 +92,14 @@ function LatencyQualityBar({
   mobileBuckets = 30,
   className = '',
 }: LatencyQualityBarProps) {
-  const [hoveredBucket, setHoveredBucket] = useState<number | null>(null)
+  const [hoveredBucket, setHoveredBucket] = useState<{ view: 'desktop' | 'mobile'; index: number } | null>(null)
+
+  // 每 60 秒刷新一次 "now" 引用，防止长时间挂载后时间范围漂移
+  const [nowTick, setNowTick] = useState(() => Math.floor(Date.now() / 1000))
+  useEffect(() => {
+    const timer = setInterval(() => setNowTick(Math.floor(Date.now() / 1000)), 60000)
+    return () => clearInterval(timer)
+  }, [])
 
   // 是否移动端视图（通过 CSS 媒体查询判断桶数量）
   // 我们渲染两组桶：桌面 60 个，移动 30 个，通过 CSS 控制显示
@@ -103,7 +110,7 @@ function LatencyQualityBar({
   const buckets = useMemo<TimeBucket[]>(() => {
     if (!points || points.length === 0) return []
 
-    const now = Math.floor(Date.now() / 1000)
+    const now = nowTick
     const startTime = now - timeRangeSeconds
     const result: TimeBucket[] = []
 
@@ -163,12 +170,12 @@ function LatencyQualityBar({
     // 计算每个桶的颜色
     for (const bucket of result) {
       if (bucket.hasData) {
-        bucket.color = getBucketColor(bucket.avgLatency, bucket.avgLoss)
+        bucket.color = getBucketColor(bucket.avgLatency, bucket.avgLoss, bucket.hasData)
       }
     }
 
     return result
-  }, [points, timeRangeSeconds, bucketSeconds, desktopBucketCount])
+  }, [points, timeRangeSeconds, bucketSeconds, desktopBucketCount, nowTick])
 
   // 移动端桶聚合
   const mobileBucketsData = useMemo<TimeBucket[]>(() => {
@@ -206,7 +213,7 @@ function LatencyQualityBar({
           avgLatency: weightedLatency,
           avgLoss: weightedLoss,
           count: totalCount,
-          color: getBucketColor(weightedLatency, weightedLoss),
+          color: getBucketColor(weightedLatency, weightedLoss, true),
           hasData: true,
         })
       }
@@ -217,8 +224,9 @@ function LatencyQualityBar({
 
   // 渲染桶列表
   const renderBuckets = (bucketList: TimeBucket[], isMobile: boolean) => {
+    const view = isMobile ? 'mobile' : 'desktop'
     return bucketList.map((bucket) => {
-      const isHovered = hoveredBucket === bucket.index
+      const isHovered = hoveredBucket !== null && hoveredBucket.view === view && hoveredBucket.index === bucket.index
       return (
         <div
           key={`${isMobile ? 'm' : 'd'}-${bucket.index}`}
@@ -231,18 +239,18 @@ function LatencyQualityBar({
             transform: isHovered ? 'scaleY(1.1)' : 'scaleY(1)',
             transition: 'opacity 0.15s, transform 0.15s',
           }}
-          onMouseEnter={() => setHoveredBucket(bucket.index)}
+          onMouseEnter={() => setHoveredBucket({ view, index: bucket.index })}
           onMouseLeave={() => setHoveredBucket(null)}
         />
       )
     })
   }
 
-  // 当前悬停的桶信息（从两组中查找）
+  // 当前悬停的桶信息（根据 view 选择对应数据源）
   const hoveredBucketData = useMemo(() => {
     if (hoveredBucket === null) return null
-    // 优先桌面桶
-    return buckets[hoveredBucket] || mobileBucketsData[hoveredBucket] || null
+    const source = hoveredBucket.view === 'desktop' ? buckets : mobileBucketsData
+    return source[hoveredBucket.index] || null
   }, [hoveredBucket, buckets, mobileBucketsData])
 
   if (buckets.length === 0) {

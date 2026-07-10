@@ -61,6 +61,8 @@ function ResourceRing({
           width={size}
           height={size}
           viewBox={`0 0 ${size} ${size}`}
+          role="img"
+          aria-label={`${label} 使用率 ${clampedValue.toFixed(0)}%`}
           style={{
             // 外圈微弱发光效果
             filter: `drop-shadow(0 0 4px ${color}40)`,

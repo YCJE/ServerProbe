@@ -371,7 +371,7 @@ export default function PublicServerDetail() {
       const series: ChartSeries[] = targetNames.map((name, i) => {
         const lossData = allPings.map((pings) => {
           const ping = pings.find((pp) => pp.name === name)
-          return ping ? ping.loss : null
+          return ping ? (ping.loss ?? null) : null
         })
         const validLosses = lossData.filter((l): l is number => l !== null && l >= 0)
         const avgSeriesLoss = validLosses.length > 0
@@ -382,7 +382,7 @@ export default function PublicServerDetail() {
           color: PING_COLORS[i % PING_COLORS.length],
           data: allPings.map((pings) => {
             const ping = pings.find((pp) => pp.name === name)
-            return ping ? ping.avg_latency : null
+            return ping ? (ping.avg_latency ?? null) : null
           }),
           loss: avgSeriesLoss,
           lossData,
@@ -415,7 +415,7 @@ export default function PublicServerDetail() {
     const series: ChartSeries[] = targetNames.map((name, i) => {
       const lossData = allPings.map((pings) => {
         const ping = pings.find((pp) => pp.name === name)
-        return ping ? ping.loss : null
+        return ping ? (ping.loss ?? null) : null
       })
       const validLosses = lossData.filter((l): l is number => l !== null && l >= 0)
       const avgSeriesLoss = validLosses.length > 0
@@ -426,7 +426,7 @@ export default function PublicServerDetail() {
         color: PING_COLORS[i % PING_COLORS.length],
         data: allPings.map((pings) => {
           const ping = pings.find((pp) => pp.name === name)
-          return ping ? ping.avg_latency : null
+          return ping ? (ping.avg_latency ?? null) : null
         }),
         loss: avgSeriesLoss,
         lossData,

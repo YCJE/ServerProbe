@@ -63,7 +63,7 @@ export default function ServerDetail() {
   const abortCurrentFetch = useServerStore((s) => s.abortCurrentFetch)
   const realtimeHistory = useServerStore((s) => s.realtimeHistory)
   const clearRealtimeHistory = useServerStore((s) => s.clearRealtimeHistory)
-  const dashboardData = useServerStore((s) => s.dashboardData)
+  const liveData = useServerStore((s) => s.dashboardData.get(serverId))
 
   // 本地状态
   const [timeRange, setTimeRange] = useState<TimeRange>('1h')
@@ -133,28 +133,31 @@ export default function ServerDetail() {
   useEffect(() => {
     if (isRealtimeRange(timeRange)) return
 
-    let interval = setInterval(() => {
-      loadHistory(timeRange)
-    }, HISTORY_REFRESH_INTERVAL)
+    let interval: ReturnType<typeof setInterval> | null = null
 
     const handleVisibilityChange = () => {
       if (document.hidden) {
-        clearInterval(interval)
+        if (interval) {
+          clearInterval(interval)
+          interval = null
+        }
       } else {
         loadHistory(timeRange)
         interval = setInterval(() => loadHistory(timeRange), HISTORY_REFRESH_INTERVAL)
       }
     }
+
+    // 页面初始可见时创建 interval，否则等待变为可见时再创建
+    if (!document.hidden) {
+      interval = setInterval(() => loadHistory(timeRange), HISTORY_REFRESH_INTERVAL)
+    }
     document.addEventListener('visibilitychange', handleVisibilityChange)
 
     return () => {
-      clearInterval(interval)
+      if (interval) clearInterval(interval)
       document.removeEventListener('visibilitychange', handleVisibilityChange)
     }
   }, [timeRange, loadHistory])
-
-  // 实时数据来自 WebSocket
-  const liveData = dashboardData.get(serverId)
 
   // 合并当前服务器信息和实时数据
   const displayServer = useMemo(() => {
@@ -239,7 +242,7 @@ export default function ServerDetail() {
     const series: ChartSeries[] = targetNames.map((name, i) => {
       const lossData = allPings.map((pings) => {
         const ping = pings.find((pp) => pp.name === name)
-        return ping ? ping.loss : null
+        return ping ? (ping.loss ?? null) : null
       })
       const validLosses = lossData.filter((l): l is number => l !== null && l >= 0)
       const avgSeriesLoss = validLosses.length > 0
@@ -250,7 +253,7 @@ export default function ServerDetail() {
         color: PING_COLORS[i % PING_COLORS.length],
         data: allPings.map((pings) => {
           const ping = pings.find((pp) => pp.name === name)
-          return ping ? ping.avg_latency : null
+          return ping ? (ping.avg_latency ?? null) : null
         }),
         loss: avgSeriesLoss,
         lossData,
@@ -535,7 +538,7 @@ export default function ServerDetail() {
               {displayServer.disks.map((disk, i) => {
                 const usage = disk.total > 0 ? (disk.used / disk.total) * 100 : 0
                 return (
-                  <div key={i} className="space-y-1">
+                  <div key={disk.device || `disk-${i}`} className="space-y-1">
                     <div className="flex items-center justify-between text-xs">
                       <span className="truncate text-muted-foreground">{disk.device || `磁盘 ${i + 1}`}</span>
                       <span className={`font-medium ${getUsageTextColor(usage)}`}>

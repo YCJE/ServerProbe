@@ -150,6 +150,7 @@ func main() {
 	heartbeat.Stop()
 	uploader.Stop()
 	configSyncer.Stop()
+	ntpCollector.Stop() // 停止 NTP 重试 goroutine，防止泄漏
 }
 
 // collectAllData 采集所有监控数据

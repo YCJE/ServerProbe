@@ -46,13 +46,13 @@ export interface PingResult {
   target: string
   name: string
   method: string
-  avg_latency: number
-  min_latency: number
-  max_latency: number
-  jitter: number
-  loss: number
-  packets_sent: number
-  packets_recv: number
+  avg_latency?: number
+  min_latency?: number
+  max_latency?: number
+  jitter?: number
+  loss?: number
+  packets_sent?: number
+  packets_recv?: number
 }
 
 /** 进程信息（资源占用 Top N 进程） */

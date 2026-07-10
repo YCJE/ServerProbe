@@ -31,7 +31,7 @@ function detectDistro(distro: string | undefined, os: string | undefined): Distr
   const text = `${distro || ''} ${os || ''}`.toLowerCase()
 
   // Windows 优先匹配
-  if (text.includes('windows') || text.includes('win')) return 'windows'
+  if (text.includes('windows') || text.includes('win32') || text.includes('win64') || text.includes('winnt')) return 'windows'
 
   // Linux 发行版匹配
   if (text.includes('ubuntu')) return 'ubuntu'

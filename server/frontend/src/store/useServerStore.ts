@@ -20,6 +20,9 @@ import { getDashboardWebSocket, getPublicDashboardWebSocket } from '@/lib/websoc
 /** checkAuth 网络错误重试计数器（模块级，成功时重置） */
 let checkAuthRetryCount = 0
 
+/** checkAuth 网络错误重试定时器（模块级，成功或重新调度时清理） */
+let checkAuthRetryTimer: ReturnType<typeof setTimeout> | null = null
+
 /** 实时数据历史点（用于详情页实时图表） */
 export interface RealtimePoint {
   timestamp: number
@@ -171,11 +174,13 @@ export const useServerStore = create<ServerStoreState>((set, get) => ({
     try {
       const result = await apiCheckAuth()
       checkAuthRetryCount = 0
+      if (checkAuthRetryTimer) { clearTimeout(checkAuthRetryTimer); checkAuthRetryTimer = null }
       set({ isAuthenticated: result.authenticated, authInitialized: true })
     } catch (err) {
       if (err instanceof ApiError) {
         // 服务端返回 HTTP 错误（非网络错误），标记为未认证
         checkAuthRetryCount = 0
+        if (checkAuthRetryTimer) { clearTimeout(checkAuthRetryTimer); checkAuthRetryTimer = null }
         set({ isAuthenticated: false, authInitialized: true })
         return
       }
@@ -187,7 +192,8 @@ export const useServerStore = create<ServerStoreState>((set, get) => ({
       }
       const delay = Math.min(3000 * Math.pow(1.5, checkAuthRetryCount - 1), 30000)
       console.error(`checkAuth network error (retry ${checkAuthRetryCount}):`, err)
-      setTimeout(() => get().checkAuth(), delay)
+      if (checkAuthRetryTimer) clearTimeout(checkAuthRetryTimer)
+      checkAuthRetryTimer = setTimeout(() => { checkAuthRetryTimer = null; get().checkAuth() }, delay)
     }
   },
 
@@ -306,14 +312,21 @@ export const useServerStore = create<ServerStoreState>((set, get) => ({
       _recentlyDeletedIds: newDeletedIds,
     })
     // 异步刷新服务器列表，完成后清除删除标记
-    // 使用 finally 确保即使 fetchServers 失败，_recentlyDeletedIds 也会被清理，
-    // 避免标记永久残留导致该 Agent 的后续 WS 消息被一直忽略
+    // 成功时立即清除标记；失败时延迟 30 秒清除，避免过早清除导致已删除 Agent 被 WS 重新引入
     get().fetchServers()
-      .finally(() => {
+      .then(() => {
         const cur = get()
         const next = new Set(cur._recentlyDeletedIds)
         next.delete(id)
         useServerStore.setState({ _recentlyDeletedIds: next })
+      })
+      .catch(() => {
+        setTimeout(() => {
+          const cur = get()
+          const next = new Set(cur._recentlyDeletedIds)
+          next.delete(id)
+          useServerStore.setState({ _recentlyDeletedIds: next })
+        }, 30000)
       })
   },
 

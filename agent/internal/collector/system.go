@@ -94,7 +94,7 @@ func (c *SystemCollector) detectVirtualization() string {
 			}
 			// KUBERNETES_SERVICE_HOST 存在表示运行在 K8s Pod 中
 			if strings.HasPrefix(env, "KUBERNETES_SERVICE_HOST=") {
-				return "Docker"
+				return "Kubernetes"
 			}
 		}
 	}
@@ -212,7 +212,7 @@ func (c *SystemCollector) CollectUptime() (uint64, error) {
 
 // CollectProcessCount 单独采集进程数
 func (c *SystemCollector) CollectProcessCount() (int, error) {
-	entries, err := os.ReadDir(ProcPath)
+	entries, err := c.reader.ReadDir(ProcPath)
 	if err != nil {
 		return 0, fmt.Errorf("读取 /proc 目录失败: %w", err)
 	}

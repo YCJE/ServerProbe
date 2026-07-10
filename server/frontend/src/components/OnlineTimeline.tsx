@@ -1,4 +1,4 @@
-import { memo, useMemo, useState } from 'react'
+import { memo, useEffect, useMemo, useState } from 'react'
 
 /** 单个时间点的在线状态 */
 export interface OnlineTimelinePoint {
@@ -74,9 +74,16 @@ function OnlineTimeline({
 }: OnlineTimelineProps) {
   const [hoveredCell, setHoveredCell] = useState<number | null>(null)
 
+  // 每 60 秒刷新一次 "now" 引用，防止长时间挂载后时间范围漂移
+  const [nowTick, setNowTick] = useState(() => Math.floor(Date.now() / 1000))
+  useEffect(() => {
+    const timer = setInterval(() => setNowTick(Math.floor(Date.now() / 1000)), 60000)
+    return () => clearInterval(timer)
+  }, [])
+
   // 计算格子数据
   const cells = useMemo<TimelineCell[]>(() => {
-    const now = Math.floor(Date.now() / 1000)
+    const now = nowTick
     const startTime = now - totalCells * cellSeconds
     const result: TimelineCell[] = []
 
@@ -130,12 +137,12 @@ function OnlineTimeline({
             break
           }
         }
-        if (found && found.timestamp >= cell.startTime - cellSeconds) {
-          // 数据点在格子附近（前一个格子或本格子），使用其状态
+        if (found && found.timestamp >= cell.startTime - cellSeconds * 2) {
+          // 数据点在格子附近（两个格子内），使用其状态
           lastPoint = found
-        } else if (found && found.timestamp >= cell.startTime - cellSeconds * 2) {
-          // 数据点稍远但也算有效
-          lastPoint = found
+        } else {
+          // 数据点太远或不存在，清除 lastPoint，该格子标记为 empty
+          lastPoint = null
         }
       }
 
@@ -146,7 +153,7 @@ function OnlineTimeline({
     }
 
     return result
-  }, [points, totalCells, cellSeconds])
+  }, [points, totalCells, cellSeconds, nowTick])
 
   // 可用性百分比
   const availability = useMemo(() => {
@@ -183,7 +190,7 @@ function OnlineTimeline({
       </div>
 
       {/* 时间线格子 */}
-      <div className="flex flex-wrap gap-0.5">
+      <div className="flex flex-nowrap overflow-hidden gap-0.5">
         {cells.map((cell) => (
           <div
             key={cell.index}

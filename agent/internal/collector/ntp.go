@@ -57,13 +57,9 @@ func (c *NTPCollector) Name() string {
 }
 
 // Collect 返回缓存的时间偏移（毫秒）
-// 如果查询尚未成功，触发异步重新查询
-// 如果查询尚未完成或失败，返回 0
+// 直接返回当前 offset，不触发异步查询。
+// 初始化时 constructor 已调用 queryOnce，retryLoop 每 5 分钟负责重试/刷新。
 func (c *NTPCollector) Collect() (interface{}, error) {
-	// 如果尚未成功查询，触发异步重新查询
-	if !c.queried.Load() {
-		go c.queryOnce()
-	}
 	return c.offset.Load(), nil
 }
 
@@ -79,8 +75,9 @@ func (c *NTPCollector) queryOnce() {
 
 	offset, err := c.queryNTPServer()
 	if err != nil {
-		// 查询失败，offset 保持 0，queried 保持 false 以便重试
-		c.offset.Store(0)
+		// 查询失败时保留上次成功的缓存偏移量，不清零。
+		// queried 保持 false（若尚未成功过），以便 retryLoop 后续重试。
+		// 若之前已成功查询过（queried 为 true），offset 保留上次的值。
 		return
 	}
 	c.offset.Store(offset)

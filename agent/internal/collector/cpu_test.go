@@ -1,6 +1,7 @@
 package collector
 
 import (
+	"os"
 	"testing"
 
 	"github.com/server-probe/shared/model"
@@ -9,11 +10,33 @@ import (
 // mockFileReader 用于测试的文件读取模拟
 type mockFileReader struct {
 	files map[string][]byte
+	dirs  map[string][]string
 }
 
 func (m *mockFileReader) ReadFile(path string) ([]byte, error) {
 	if content, ok := m.files[path]; ok {
 		return content, nil
+	}
+	return nil, &osPathError{path: path}
+}
+
+// mockDirEntry 测试用的目录条目
+type mockDirEntry struct {
+	name string
+}
+
+func (e *mockDirEntry) Name() string               { return e.name }
+func (e *mockDirEntry) IsDir() bool                { return false }
+func (e *mockDirEntry) Type() os.FileMode           { return 0 }
+func (e *mockDirEntry) Info() (os.FileInfo, error) { return nil, nil }
+
+func (m *mockFileReader) ReadDir(path string) ([]os.DirEntry, error) {
+	if names, ok := m.dirs[path]; ok {
+		entries := make([]os.DirEntry, len(names))
+		for i, name := range names {
+			entries[i] = &mockDirEntry{name: name}
+		}
+		return entries, nil
 	}
 	return nil, &osPathError{path: path}
 }

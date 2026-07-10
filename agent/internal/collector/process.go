@@ -61,12 +61,18 @@ func (c *ProcessCollector) Collect() (interface{}, error) {
 		elapsed = now.Sub(c.prevTime).Seconds()
 	}
 
+	// 在循环外计算 CPU 核心数，避免每次迭代重复调用 runtime.NumCPU()
+	cores := runtime.NumCPU()
+	if cores < 1 {
+		cores = 1
+	}
+
 	// 采集每个进程的信息
 	newStates := make(map[int]processCPUState, len(pids))
 	processes := make([]model.ProcessInfo, 0, len(pids))
 
 	for _, pid := range pids {
-		info, state, ok := c.collectProcess(pid, elapsed)
+		info, state, ok := c.collectProcess(pid, elapsed, cores)
 		if !ok {
 			continue
 		}
@@ -96,7 +102,8 @@ func (c *ProcessCollector) Collect() (interface{}, error) {
 // collectProcess 采集单个进程的信息
 // 返回 (进程信息, CPU状态, 是否成功)
 // 单个进程读取失败不影响其他进程
-func (c *ProcessCollector) collectProcess(pid int, elapsed float64) (model.ProcessInfo, *processCPUState, bool) {
+// cores 为 CPU 核心数，由调用方在循环外计算一次后传入
+func (c *ProcessCollector) collectProcess(pid int, elapsed float64, cores int) (model.ProcessInfo, *processCPUState, bool) {
 	info := model.ProcessInfo{PID: pid}
 
 	// 1. 读取进程名 /proc/[pid]/comm
@@ -147,10 +154,6 @@ func (c *ProcessCollector) collectProcess(pid int, elapsed float64) (model.Proce
 			delta := currentTotal - prev.totalTime
 			// CPU 使用率 = (CPU时间增量 / 时钟频率) / 经过时间 * 100 / CPU核心数
 			// 归一化到 0-100%（占总 CPU 容量的百分比）
-			cores := runtime.NumCPU()
-			if cores < 1 {
-				cores = 1
-			}
 			info.CPU = roundFloat(float64(delta)/(float64(clkTck)*elapsed*float64(cores))*100, 2)
 		}
 	}
@@ -165,7 +168,7 @@ func (c *ProcessCollector) collectProcess(pid int, elapsed float64) (model.Proce
 
 // listPIDs 列出 /proc 目录中所有以数字命名的目录（即 PID）
 func (c *ProcessCollector) listPIDs() ([]int, error) {
-	entries, err := os.ReadDir(ProcPath)
+	entries, err := c.reader.ReadDir(ProcPath)
 	if err != nil {
 		return nil, err
 	}

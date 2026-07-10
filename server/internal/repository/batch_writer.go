@@ -56,7 +56,10 @@ func (bw *BatchWriter) run() {
 		if len(batch) == 0 {
 			return
 		}
-		records := batch
+		// 深拷贝 records，避免与 batch 共享底层数组
+		// batch = batch[:0] 后 records 仍持有独立副本，防止后续 append 覆盖 flushFn 中的数据
+		records := make([]model.MetricRecord, len(batch))
+		copy(records, batch)
 		for attempt := 1; attempt <= 3; attempt++ {
 			if err := bw.flushFn(records); err != nil {
 				log.Printf("[BatchWriter] 批量写入失败 (第 %d 次, %d 条): %v", attempt, len(records), err)

@@ -423,9 +423,12 @@ func (m *MonitorService) HandleAgentReport(agentID int64, data *sharedmodel.Metr
 	// 3. 计算 SHA-256 哈希，去重
 	hash := computeStaticHash(&data.System)
 
-	m.staticHashMu.RLock()
+	// 使用单一写锁覆盖整个"检查哈希 -> DB 更新 -> 更新缓存"流程，
+	// 消除 TOCTOU 竞态（原先先读锁检查后写锁更新，两个并发请求可能同时通过哈希检查）
+	m.staticHashMu.Lock()
+	defer m.staticHashMu.Unlock()
+
 	cachedHash, exists := m.staticHashCache[agentID]
-	m.staticHashMu.RUnlock()
 
 	// 哈希与上次相同，跳过静态数据的数据库写入
 	if exists && cachedHash == hash {
@@ -447,9 +450,7 @@ func (m *MonitorService) HandleAgentReport(agentID int64, data *sharedmodel.Metr
 		return err
 	}
 
-	m.staticHashMu.Lock()
 	m.staticHashCache[agentID] = hash
-	m.staticHashMu.Unlock()
 
 	log.Printf("[Monitor] Agent %d 静态信息已更新 (hash=%s)", agentID, hash[:16])
 	return nil

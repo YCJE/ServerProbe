@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect, useCallback } from 'react'
+import { memo, useMemo, useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useServerStore } from '@/store/useServerStore'
 import ServerCard from '@/components/ServerCard'
@@ -69,7 +69,7 @@ function ProgressCell({ value, color }: { value: number; color: string }) {
 }
 
 /** 表格行组件 */
-function ServerTableRow({
+const ServerTableRow = memo(function ServerTableRow({
   server,
   basePath,
 }: {
@@ -79,7 +79,6 @@ function ServerTableRow({
   const navigate = useNavigate()
   const memUsage = getMemUsage(server)
   const diskUsage = server.disk_usage || 0
-  const totalNet = (server.net_rx || 0) + (server.net_tx || 0)
   const showVirt = server.virtualization && server.virtualization !== 'None' && server.virtualization !== 'none'
 
   const handleClick = () => {
@@ -150,11 +149,30 @@ function ServerTableRow({
           {server.online ? formatUptime(server.uptime) : '---'}
         </span>
       </td>
-      {/* 隐藏：总网速列仅用于排序 */}
-      <td className="hidden">{totalNet}</td>
     </tr>
   )
-}
+}, (prevProps, nextProps) => {
+  const s = prevProps.server
+  const n = nextProps.server
+  return (
+    prevProps.basePath === nextProps.basePath &&
+    s.id === n.id &&
+    s.online === n.online &&
+    s.cpu === n.cpu &&
+    s.mem === n.mem &&
+    s.mem_total === n.mem_total &&
+    s.mem_used === n.mem_used &&
+    s.net_rx === n.net_rx &&
+    s.net_tx === n.net_tx &&
+    s.disk_usage === n.disk_usage &&
+    s.uptime === n.uptime &&
+    s.display_name === n.display_name &&
+    s.hostname === n.hostname &&
+    s.os === n.os &&
+    s.distro === n.distro &&
+    s.virtualization === n.virtualization
+  )
+})
 
 /** 仪表盘页（服务器卡片网格 + 表格视图） */
 export default function Dashboard() {
