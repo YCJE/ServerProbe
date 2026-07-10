@@ -67,6 +67,52 @@ func main() {
 	reportIntervalVal = int64(cfg.ReportInterval)
 	cfgMu.Unlock()
 
+	// lastAppliedCfg 记录最近一次已应用的配置快照，供兜底协程与 WS 回调比较配置是否变化
+	var lastAppliedCfg *sharedmodel.AgentConfig
+	var lastAppliedCfgMu sync.Mutex
+
+	// configEqual 比较两份配置的 ping targets / ping interval / report interval 是否一致
+	configEqual := func(a, b *sharedmodel.AgentConfig) bool {
+		if a == nil || b == nil {
+			return a == b
+		}
+		if a.PingInterval != b.PingInterval || a.ReportInterval != b.ReportInterval {
+			return false
+		}
+		if len(a.PingTargets) != len(b.PingTargets) {
+			return false
+		}
+		for i := range a.PingTargets {
+			if a.PingTargets[i] != b.PingTargets[i] {
+				return false
+			}
+		}
+		return true
+	}
+
+	// applyConfig 应用配置更新到本地运行状态（ping 目标、探测间隔、上报间隔）
+	// 同时记录最近一次应用的配置快照，供兜底协程比较
+	applyConfig := func(config *sharedmodel.AgentConfig) {
+		if config == nil {
+			return
+		}
+		log.Printf("应用配置更新，探测目标 %d 个，间隔 %ds，上报间隔 %ds",
+			len(config.PingTargets), config.PingInterval, config.ReportInterval)
+		pingTargetsMu.Lock()
+		pingTargets = config.PingTargets
+		pingTargetsMu.Unlock()
+		if config.PingInterval > 0 {
+			atomic.StoreInt64(&pingInterval, int64(config.PingInterval))
+		}
+		// 支持 Server 下发新的上报间隔
+		if config.ReportInterval > 0 {
+			atomic.StoreInt64(&reportIntervalVal, int64(config.ReportInterval))
+		}
+		lastAppliedCfgMu.Lock()
+		lastAppliedCfg = config
+		lastAppliedCfgMu.Unlock()
+	}
+
 	wsClient.SetCallbacks(
 		// 注册成功回调
 		func(token string) {
@@ -84,18 +130,7 @@ func main() {
 		},
 		// 配置更新回调
 		func(config *sharedmodel.AgentConfig) {
-			log.Printf("收到配置更新，探测目标 %d 个，间隔 %ds，上报间隔 %ds",
-				len(config.PingTargets), config.PingInterval, config.ReportInterval)
-			pingTargetsMu.Lock()
-			pingTargets = config.PingTargets
-			pingTargetsMu.Unlock()
-			if config.PingInterval > 0 {
-				atomic.StoreInt64(&pingInterval, int64(config.PingInterval))
-			}
-			// 支持 Server 下发新的上报间隔
-			if config.ReportInterval > 0 {
-				atomic.StoreInt64(&reportIntervalVal, int64(config.ReportInterval))
-			}
+			applyConfig(config)
 		},
 		nil,
 	)
@@ -136,6 +171,34 @@ func main() {
 	// 启动配置拉取（无条件启动，sync() 内部会检查 Token 是否为空）
 	configSyncer.Start()
 
+	// 启动配置应用兜底协程：定期调用 GetConfig()，若拉取到的配置与当前已应用配置不同则应用
+	// 作为 WebSocket 推送丢失时的兜底机制，确保 Agent 最终能应用 Server 端最新配置
+	configApplyStopCh := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(60 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				fetched := configSyncer.GetConfig()
+				if fetched == nil {
+					continue
+				}
+				lastAppliedCfgMu.Lock()
+				same := configEqual(lastAppliedCfg, fetched)
+				lastAppliedCfgMu.Unlock()
+				if same {
+					continue
+				}
+				log.Printf("兜底协程检测到配置变更，开始应用")
+				applyConfig(fetched)
+			case <-configApplyStopCh:
+				log.Printf("配置应用兜底协程已停止")
+				return
+			}
+		}
+	}()
+
 	log.Printf("Agent 已启动，开始监控")
 
 	// 等待退出信号，优雅关闭
@@ -145,8 +208,9 @@ func main() {
 	log.Printf("收到信号 %v，正在退出...", sig)
 
 	// 停止各组件
-	close(pingStopCh) // 通知 Ping 探测协程停止
-	wsClient.Stop()   // 停止 WebSocket 客户端
+	close(pingStopCh)        // 通知 Ping 探测协程停止
+	close(configApplyStopCh) // 通知配置应用兜底协程停止
+	wsClient.Stop()          // 停止 WebSocket 客户端
 	heartbeat.Stop()
 	uploader.Stop()
 	configSyncer.Stop()
@@ -243,6 +307,7 @@ func collectAllData(
 		errs = append(errs, fmt.Sprintf("Process 采集器返回类型错误: %T", procResult))
 	} else {
 		data.Processes = processes
+		success++
 	}
 
 	// 采集 NTP 时间偏移（失败不影响整体上报，返回 0）
@@ -252,6 +317,7 @@ func collectAllData(
 		errs = append(errs, fmt.Sprintf("NTP 采集器返回类型错误: %T", ntpResult))
 	} else {
 		data.TimeOffset = offset
+		success++
 	}
 
 	// 所有采集器均失败才放弃本轮上报

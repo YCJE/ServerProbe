@@ -31,6 +31,8 @@ export interface RealtimePoint {
   net_rx: number
   net_tx: number
   ping_data: DashboardItem['ping_data']
+  /** 在线状态（1=在线，0=离线），用于在线状态时间线渲染 */
+  online: number
 }
 
 /** 服务器 Store 状态 */
@@ -237,6 +239,9 @@ export const useServerStore = create<ServerStoreState>((set, get) => ({
   // 登出（乐观更新：先清状态跳转，再异步通知后端清除 Cookie）
   logout: async () => {
     get().disconnectWebSocket()
+    // 清除 checkAuth 重试定时器，防止登出后仍触发认证重试
+    if (checkAuthRetryTimer) { clearTimeout(checkAuthRetryTimer); checkAuthRetryTimer = null }
+    checkAuthRetryCount = 0
     // 乐观更新：立即清除前端状态，避免 UI 卡顿等待网络响应
     set({
       isAuthenticated: false,
@@ -401,6 +406,7 @@ export const useServerStore = create<ServerStoreState>((set, get) => ({
           net_rx: item.net_rx,
           net_tx: item.net_tx,
           ping_data: item.ping_data,
+          online: item.online ? 1 : 0,
         }
         newRealtimeHistory = [...newRealtimeHistory, point]
         if (newRealtimeHistory.length > MAX_REALTIME_POINTS) {

@@ -72,12 +72,12 @@ func (c *SystemCollector) detectVirtualization() string {
 	if cgroupData, err := c.reader.ReadFile(ProcPath + "/1/cgroup"); err == nil {
 		cgroupStr := string(cgroupData)
 		switch {
+		case strings.Contains(cgroupStr, "kubepods"):
+			return "Kubernetes"
 		case strings.Contains(cgroupStr, "docker"):
 			return "Docker"
 		case strings.Contains(cgroupStr, "containerd"):
 			return "containerd"
-		case strings.Contains(cgroupStr, "kubepods"):
-			return "Kubernetes"
 		case strings.Contains(cgroupStr, "lxc"):
 			return "LXC"
 		}

@@ -392,6 +392,8 @@ func (m *MonitorService) WriteMetricData(agentID int64, data *sharedmodel.Metric
 		Load15:       data.CPU.Load15,
 		Uptime:       data.Uptime,
 		ProcessCount: data.ProcessCount,
+		TimeOffset:   data.TimeOffset,
+		Processes:    data.Processes,
 	}
 
 	// 继承上一个数据点的 PingData (Ping 每 60s 上报一次，指标每 3s 上报一次)
@@ -661,11 +663,13 @@ func (m *MonitorService) GetDashboardData() []DashboardItem {
 			DiskUsage:    calcDiskUsage(p.Disks),
 			Disks:        p.Disks,
 			TCPConns:     p.TCPConns,
-			UDPConns:     p.UDPConns,
-			ProcessCount: p.ProcessCount,
-			PingData:     p.PingData,
-			Timestamp:    p.Timestamp,
-		}
+		UDPConns:     p.UDPConns,
+		ProcessCount: p.ProcessCount,
+		PingData:     p.PingData,
+		TimeOffset:   p.TimeOffset,
+		Processes:    p.Processes,
+		Timestamp:    p.Timestamp,
+	}
 
 		// 补充 hostname, display_name, os, arch, agent_version
 		if agent := agentMap[agentID]; agent != nil {
@@ -737,5 +741,7 @@ type DashboardItem struct {
 	UDPConns     int                      `json:"udp_connections"`
 	ProcessCount int                      `json:"process_count"`
 	PingData     []sharedmodel.PingResult `json:"ping_data"`
+	TimeOffset   int64                    `json:"time_offset"`
+	Processes    []sharedmodel.ProcessInfo `json:"processes"`
 	Timestamp    int64                    `json:"timestamp"`
 }

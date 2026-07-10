@@ -167,7 +167,7 @@ export interface HistoryPoint {
   mem_used: number
   swap_total: number
   swap_used: number
-  disk_usage: string
+  disk_usage: number
   net_rx: number
   net_tx: number
   tcp_connections: number

@@ -341,17 +341,17 @@ export default function ServerDetail() {
         }
       }
     }
-    // 补充实时历史数据（假设当前在线状态）
-    if (realtimeHistory.length > 0 && displayServer) {
+    // 补充实时历史数据（使用每个数据点自身的在线状态）
+    if (realtimeHistory.length > 0) {
       for (const p of realtimeHistory) {
         result.push({
           timestamp: p.timestamp,
-          online: displayServer.online ? 1 : 0,
+          online: p.online,
         })
       }
     }
     return result
-  }, [historyData, realtimeHistory, displayServer])
+  }, [historyData, realtimeHistory])
 
   // ==================== 加载 / 错误状态 ====================
 

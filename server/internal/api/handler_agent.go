@@ -557,11 +557,13 @@ func (h *AgentHandler) HandleSetReportInterval(c *gin.Context) {
 		return
 	}
 
-	// 推送配置更新到所有在线 Agent
+	// 推送配置更新到所有在线 Agent（异步执行，避免广播阻塞 HTTP 响应）
 	if h.monitor != nil {
 		config, err := h.configSync.GetAgentConfig()
 		if err == nil {
-			h.monitor.BroadcastConfigUpdate(config)
+			go func() {
+				h.monitor.BroadcastConfigUpdate(config)
+			}()
 		}
 	}
 

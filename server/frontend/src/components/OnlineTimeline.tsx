@@ -107,43 +107,21 @@ function OnlineTimeline({
     const sortedPoints = [...points].sort((a, b) => a.timestamp - b.timestamp)
 
     for (const cell of result) {
-      // 找到该时间格子内或之前最近的数据点
+      if (sortedPoints.length === 0) continue
+
+      // 找到 <= cell.endTime 的最后一个数据点
       let lastPoint: OnlineTimelinePoint | null = null
       for (const point of sortedPoints) {
         if (point.timestamp <= cell.endTime) {
-          // 数据点在格子结束时间之前
-          if (point.timestamp >= cell.startTime) {
-            // 数据点在格子内，记录并继续遍历到最后一个落在范围内的点
-            // （数据已按时间升序排序，最后一个满足条件的点即为最新点）
-            lastPoint = point
-          } else {
-            // 数据点在格子之前，记录但继续查找更近的
-            lastPoint = point
-          }
+          lastPoint = point
         } else {
-          // 数据点在格子之后，停止查找（性能优化）
           break
         }
       }
 
-      // 反向查找更准确：找到格子时间范围内或之前最近的数据点
-      if (!lastPoint || lastPoint.timestamp < cell.startTime) {
-        // 重新查找：找到 <= cell.endTime 的最后一个数据点
-        let found: OnlineTimelinePoint | null = null
-        for (const point of sortedPoints) {
-          if (point.timestamp <= cell.endTime) {
-            found = point
-          } else {
-            break
-          }
-        }
-        if (found && found.timestamp >= cell.startTime - cellSeconds * 2) {
-          // 数据点在格子附近（两个格子内），使用其状态
-          lastPoint = found
-        } else {
-          // 数据点太远或不存在，清除 lastPoint，该格子标记为 empty
-          lastPoint = null
-        }
+      // 数据点太远（超过两个格子之前）则视为无数据
+      if (lastPoint && lastPoint.timestamp < cell.startTime - cellSeconds * 2) {
+        lastPoint = null
       }
 
       if (lastPoint) {

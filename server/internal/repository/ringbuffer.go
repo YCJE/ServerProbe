@@ -30,6 +30,8 @@ type MetricPoint struct {
 	Uptime       uint64                      // 运行时间
 	ProcessCount int                         // 进程数
 	PingData     []sharedmodel.PingResult    // Ping 探测结果
+	TimeOffset   int64                       // NTP 时间偏移（毫秒）
+	Processes    []sharedmodel.ProcessInfo   // Top N 进程列表
 }
 
 // RingBuffer 内存环形缓冲

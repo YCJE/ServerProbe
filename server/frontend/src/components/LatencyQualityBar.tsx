@@ -36,10 +36,10 @@ const BUCKET_COLORS = {
 
 /** 根据平均延迟和丢包率返回桶颜色 */
 function getBucketColor(avgLatency: number, avgLoss: number, hasData: boolean): string {
-  // 丢包率 > 50% 视为严重丢包
-  if (avgLoss > 50) return BUCKET_COLORS.packetLoss
   // 无数据时返回空颜色
   if (!hasData) return BUCKET_COLORS.empty
+  // 丢包率 > 50% 视为严重丢包
+  if (avgLoss > 50) return BUCKET_COLORS.packetLoss
   // 有数据时 avgLatency=0 归入绿色
   if (avgLatency <= 50) return BUCKET_COLORS.green
   if (avgLatency <= 100) return BUCKET_COLORS.lightGreen

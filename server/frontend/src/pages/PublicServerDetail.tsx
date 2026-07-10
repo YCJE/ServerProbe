@@ -224,6 +224,11 @@ export default function PublicServerDetail() {
         process_count: liveData.process_count || 0,
         ping_data: liveData.ping_data || [],
         last_seen: liveData.timestamp,
+        // 新增字段
+        virtualization: liveData.virtualization || baseServer.virtualization,
+        distro: liveData.distro || baseServer.distro,
+        processes: liveData.processes || baseServer.processes,
+        time_offset: liveData.time_offset ?? baseServer.time_offset,
       }
     }
     if (liveData) {
@@ -258,6 +263,11 @@ export default function PublicServerDetail() {
         udp_connections: liveData.udp_connections || 0,
         process_count: liveData.process_count || 0,
         ping_data: liveData.ping_data || [],
+        // 新增字段
+        virtualization: liveData.virtualization || baseServer?.virtualization,
+        distro: liveData.distro || baseServer?.distro,
+        processes: liveData.processes || baseServer?.processes,
+        time_offset: liveData.time_offset ?? baseServer?.time_offset,
       }
     }
     return baseServer
@@ -327,22 +337,28 @@ export default function PublicServerDetail() {
   useEffect(() => {
     if (timeRange === 'realtime') return // 实时模式使用 WebSocket，不需要定时刷新
 
-    let interval = setInterval(() => {
-      loadHistory(timeRange)
-    }, HISTORY_REFRESH_INTERVAL)
+    let interval: ReturnType<typeof setInterval> | null = null
 
     const handleVisibilityChange = () => {
       if (document.hidden) {
-        clearInterval(interval)
+        if (interval) {
+          clearInterval(interval)
+          interval = null
+        }
       } else {
         loadHistory(timeRange)
         interval = setInterval(() => loadHistory(timeRange), HISTORY_REFRESH_INTERVAL)
       }
     }
+
+    // 页面初始可见时创建 interval，否则等待变为可见时再创建
+    if (!document.hidden) {
+      interval = setInterval(() => loadHistory(timeRange), HISTORY_REFRESH_INTERVAL)
+    }
     document.addEventListener('visibilitychange', handleVisibilityChange)
 
     return () => {
-      clearInterval(interval)
+      if (interval) clearInterval(interval)
       document.removeEventListener('visibilitychange', handleVisibilityChange)
     }
   }, [timeRange, loadHistory])

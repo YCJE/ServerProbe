@@ -43,14 +43,6 @@ func (r *RecordRepository) CreateRecord(record *model.MetricRecord) error {
 	return r.db.Create(record).Error
 }
 
-// CreateBatch 批量创建历史记录（直接同步写入）
-func (r *RecordRepository) CreateBatch(records []model.MetricRecord) error {
-	if len(records) == 0 {
-		return nil
-	}
-	return r.db.CreateInBatches(records, 50).Error
-}
-
 // FlushBatch 执行实际批量 INSERT（由 BatchWriter 调用）
 // 使用多值 INSERT 语法（INSERT INTO ... VALUES (...), (...), ...）
 // 注意 SQLite 单条 SQL 参数限制（999 个），每批最多 50 行（50 × 19 = 950 < 999）
