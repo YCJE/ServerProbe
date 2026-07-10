@@ -8,7 +8,7 @@ import {
   getFlagEmoji,
 } from '@/lib/utils'
 
-/** 聚合指标卡片 */
+/** 聚合指标卡片（NodeGet card-soft 风格） */
 function StatCard({
   label,
   value,
@@ -19,17 +19,17 @@ function StatCard({
   unit?: string
 }) {
   return (
-    <div className="rounded-2xl border border-border bg-card p-4">
+    <div className="card-soft p-4">
       <div className="text-xs text-muted-foreground">{label}</div>
       <div className="mt-2 flex items-baseline gap-1">
-        <span className="truncate text-2xl font-bold text-foreground">{value}</span>
+        <span className="truncate text-2xl font-bold tabular-nums text-foreground">{value}</span>
         {unit && <span className="text-xs text-muted-foreground">{unit}</span>}
       </div>
     </div>
   )
 }
 
-/** 公开仪表盘页（无需登录，显示服务器监控信息） */
+/** 公开仪表盘页（无需登录，显示服务器监控信息，NodeGet 风格） */
 export default function PublicDashboard() {
   const servers = useServerStore((s) => s.servers)
   const publicWsConnected = useServerStore((s) => s.publicWsConnected)
@@ -49,6 +49,7 @@ export default function PublicDashboard() {
     const total = servers.length
     const onlineServers = servers.filter((s) => s.online)
     const online = onlineServers.length
+    const offline = total - online
     const avgCpu = online > 0
       ? onlineServers.reduce((sum, s) => sum + (s.cpu || 0), 0) / online
       : 0
@@ -63,7 +64,7 @@ export default function PublicDashboard() {
     const totalCumulativeTx = onlineServers.reduce((sum, s) => sum + (s.total_tx || 0), 0)
     const totalCumulative = totalCumulativeRx + totalCumulativeTx
 
-    return { total, online, avgCpu, avgDisk, totalRx, totalTx, totalTraffic, totalCumulative }
+    return { total, online, offline, avgCpu, avgDisk, totalRx, totalTx, totalTraffic, totalCumulative }
   }, [servers])
 
   // 从服务器数据中提取地区标签
@@ -106,8 +107,39 @@ export default function PublicDashboard() {
         </div>
       </div>
 
-      {/* 聚合指标栏：6 个卡片 */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+      {/* 简要统计信息：总服务器 / 在线 / 离线（card-soft 风格） */}
+      <div className="grid grid-cols-3 gap-4">
+        <div className="card-soft p-4">
+          <div className="text-xs text-muted-foreground">总服务器</div>
+          <div className="mt-2 flex items-baseline gap-1">
+            <span className="text-2xl font-bold tabular-nums text-foreground">{stats.total}</span>
+            <span className="text-xs text-muted-foreground">台</span>
+          </div>
+        </div>
+        <div className="card-soft p-4">
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-muted-foreground">在线</span>
+          </div>
+          <div className="mt-2 flex items-baseline gap-1">
+            <span className="text-2xl font-bold tabular-nums text-success">{stats.online}</span>
+            <span className="text-xs text-muted-foreground">台</span>
+          </div>
+        </div>
+        <div className="card-soft p-4">
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-muted-foreground">离线</span>
+          </div>
+          <div className="mt-2 flex items-baseline gap-1">
+            <span className="text-2xl font-bold tabular-nums text-foreground">
+              {stats.offline}
+            </span>
+            <span className="text-xs text-muted-foreground">台</span>
+          </div>
+        </div>
+      </div>
+
+      {/* 聚合指标栏：6 个卡片（card-soft 风格） */}
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
         <StatCard label="CPU 使用率" value={stats.avgCpu.toFixed(1)} unit="%" />
         <StatCard label="磁盘使用率" value={stats.avgDisk.toFixed(1)} unit="%" />
         <StatCard
@@ -143,16 +175,27 @@ export default function PublicDashboard() {
             </button>
           ))}
         </div>
-        <input
-          type="text"
-          placeholder="搜索服务器..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="w-full shrink-0 rounded-lg border border-border bg-card px-3 py-1.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none sm:w-64"
-        />
+        {/* 搜索框（NodeGet 风格：h-11 rounded-xl bg-secondary font-semibold） */}
+        <div className="relative w-full shrink-0 sm:w-64">
+          <svg
+            className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+          </svg>
+          <input
+            type="text"
+            placeholder="搜索服务器..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="h-11 w-full rounded-xl border border-border bg-secondary pl-9 pr-3 text-sm font-semibold text-foreground placeholder:text-muted-foreground/60 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+          />
+        </div>
       </div>
 
-      {/* 服务器卡片网格 */}
+      {/* 服务器卡片网格（与 Dashboard 一致） */}
       {filteredServers.length === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-border py-16">
           <svg
@@ -181,9 +224,9 @@ export default function PublicDashboard() {
         </div>
       )}
 
-      {/* WebSocket 断线提示 */}
+      {/* WebSocket 断线提示（毛玻璃效果） */}
       {!publicWsConnected && servers.length > 0 && (
-        <div className="fixed bottom-4 right-4 rounded-lg border border-warning/30 bg-warning/10 px-4 py-2 text-sm text-warning shadow-lg">
+        <div className="glass fixed bottom-4 right-4 rounded-xl border border-warning/30 px-4 py-2 text-sm text-warning shadow-lg">
           实时连接已断开，正在重连...
         </div>
       )}

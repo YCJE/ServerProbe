@@ -23,7 +23,7 @@ interface LatencyQualityBarProps {
   className?: string
 }
 
-/** 桶颜色配置 */
+/** 桶颜色配置（NodeGet 色系） */
 const BUCKET_COLORS = {
   green: '#34C759',        // <=50ms
   lightGreen: '#5AC8FA',   // 50-100ms
@@ -31,7 +31,7 @@ const BUCKET_COLORS = {
   orange: '#FF9500',       // 180-300ms
   red: '#FF3B30',          // >300ms
   packetLoss: '#8B0000',   // 丢包深红
-  empty: 'hsl(var(--secondary))', // 无数据
+  empty: 'hsl(var(--muted) / 0.4)', // 无数据
 } as const
 
 /** 根据平均延迟和丢包率返回桶颜色 */
@@ -77,10 +77,11 @@ function formatTime(ts: number): string {
 }
 
 /**
- * 延迟质量条形图组件
+ * 延迟质量条形图组件（NodeGet 风格）
  *
  * - 接收最近 1 小时的 PingResult 历史数据
  * - 按时间桶聚合（每分钟一个桶，共 60 个桶）
+ * - 虚线边框容器，标题使用 primary 色
  * - 每个桶根据平均延迟着色：<=50ms 绿、50-100ms 浅绿、100-180ms 黄、180-300ms 橙、>300ms 红、丢包深红
  * - 悬停显示该时间段的详细信息（时间范围、平均延迟、丢包率）
  * - 响应式：移动端 30 桶
@@ -230,11 +231,10 @@ function LatencyQualityBar({
       return (
         <div
           key={`${isMobile ? 'm' : 'd'}-${bucket.index}`}
-          className="relative flex-1 cursor-pointer transition-all"
+          className="relative flex-1 cursor-pointer rounded-[3px] transition-all"
           style={{
             height: isMobile ? 28 : 36,
             backgroundColor: bucket.color,
-            borderRadius: 2,
             opacity: hoveredBucket !== null && !isHovered ? 0.5 : 1,
             transform: isHovered ? 'scaleY(1.1)' : 'scaleY(1)',
             transition: 'opacity 0.15s, transform 0.15s',
@@ -255,17 +255,17 @@ function LatencyQualityBar({
 
   if (buckets.length === 0) {
     return (
-      <div className={`flex items-center justify-center text-sm text-muted-foreground ${className}`}>
+      <div className={`flex items-center justify-center rounded-md border-dashed border border-border/80 p-4 text-sm text-muted-foreground ${className}`}>
         暂无延迟历史数据
       </div>
     )
   }
 
   return (
-    <div className={`relative ${className}`}>
+    <div className={`relative rounded-md border-dashed border border-border/80 p-4 ${className}`}>
       {/* 标题 + 图例 */}
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <span className="text-xs font-medium text-muted-foreground">延迟质量分布（最近 1 小时）</span>
+        <span className="text-sm font-bold text-primary">延迟质量分布</span>
         <div className="flex flex-wrap items-center gap-2 text-[10px] text-muted-foreground">
           <LegendItem color={BUCKET_COLORS.green} label="≤50ms" />
           <LegendItem color={BUCKET_COLORS.lightGreen} label="50-100" />
@@ -299,7 +299,7 @@ function LatencyQualityBar({
 
       {/* 悬停 Tooltip */}
       {hoveredBucketData && (
-        <div className="pointer-events-none absolute -top-2 left-1/2 z-10 -translate-x-1/2 -translate-y-full rounded-md border border-border bg-card px-3 py-2 text-xs shadow-lg">
+        <div className="pointer-events-none absolute -top-2 left-1/2 z-10 -translate-x-1/2 -translate-y-full rounded-sm border border-border bg-card px-3 py-2.5 text-xs shadow-tooltip ring-1 ring-black/5">
           <div className="whitespace-nowrap font-medium text-foreground">
             {formatTime(hoveredBucketData.startTime)} - {formatTime(hoveredBucketData.endTime)}
           </div>

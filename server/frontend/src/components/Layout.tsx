@@ -2,6 +2,9 @@ import { useEffect, useState, useCallback, useMemo } from 'react'
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom'
 import { useServerStore } from '@/store/useServerStore'
 import ThemeToggle from './ThemeToggle'
+import Background from './Background'
+import Footer from './Footer'
+import StatusDot from './StatusDot'
 
 /** 侧边栏导航分组配置（模块级常量，避免每次渲染重建数组） */
 const NAV_GROUPS = [
@@ -19,7 +22,7 @@ const NAV_GROUPS = [
   },
 ]
 
-/** 布局组件（顶栏 + 侧边栏 + 主内容区） */
+/** 布局组件（浮动顶栏 + 侧边栏 + 主内容区） - NodeGet 风格 */
 export default function Layout() {
   const navigate = useNavigate()
   const location = useLocation()
@@ -31,6 +34,7 @@ export default function Layout() {
   const isAuthenticated = useServerStore((s) => s.isAuthenticated)
   const servers = useServerStore((s) => s.servers)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
+  const [scrolled, setScrolled] = useState(false)
 
   // 首次加载时获取服务器列表并连接 WebSocket
   useEffect(() => {
@@ -66,10 +70,18 @@ export default function Layout() {
     }
   }, [mobileNavOpen])
 
-  const handleLogout = async () => {
+  // 滚动检测：scrollY > 12 时增强导航栏阴影
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 12)
+    onScroll()
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => window.removeEventListener('scroll', onScroll)
+  }, [])
+
+  const handleLogout = useCallback(async () => {
     await logout()
     navigate('/login')
-  }
+  }, [logout, navigate])
 
   const onlineCount = useMemo(() => servers.filter((s) => s.online).length, [servers])
   const totalCount = servers.length
@@ -104,107 +116,121 @@ export default function Layout() {
     </nav>
   )
 
-  const renderSidebarFooter = () => (
-    <div className="border-t border-border p-3 text-xs text-muted-foreground">
-      <a
-        href="/"
-        className="mb-2 flex items-center gap-1.5 rounded-md px-2 py-1.5 text-foreground transition-colors hover:bg-accent"
-      >
-        <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-        </svg>
-        返回公开页
-      </a>
-      <p>纯只读安全探针 v1.0.0</p>
-    </div>
-  )
-
   return (
-    <div className="flex h-screen flex-col bg-background">
-      {/* 顶栏 */}
-      <header className="relative z-30 flex h-14 shrink-0 items-center justify-between border-b border-border bg-card px-3 sm:px-4">
-        <div className="flex items-center gap-2 sm:gap-3">
-          {/* 移动端菜单按钮 */}
-          <button
-            onClick={() => setMobileNavOpen(!mobileNavOpen)}
-            className="flex h-9 w-9 items-center justify-center rounded-lg border border-border text-foreground transition-colors hover:bg-accent md:hidden"
-            aria-label="切换导航菜单"
+    <div className="relative min-h-screen">
+      {/* 背景 */}
+      <Background />
+
+      {/* 浮动式导航栏 */}
+      <header className="fixed inset-x-0 top-0 z-40 pt-3 px-4 sm:px-6">
+        <div className="mx-auto max-w-[91.5rem]">
+          <div
+            className={`glass flex h-16 items-center justify-between rounded-2xl border border-border px-4 transition-shadow duration-200 sm:h-[68px] sm:px-5 ${
+              scrolled ? 'shadow-nav-stuck dark:shadow-nav-stuck-dark' : 'shadow-nav dark:shadow-nav-dark'
+            }`}
           >
-            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              {mobileNavOpen ? (
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              ) : (
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-              )}
-            </svg>
-          </button>
-          <div className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground font-bold text-sm">
-              SP
+            {/* 左侧：移动端菜单按钮 + Logo + 标题 */}
+            <div className="flex items-center gap-2 sm:gap-3">
+              <button
+                onClick={() => setMobileNavOpen(!mobileNavOpen)}
+                className="flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-secondary text-foreground transition-colors hover:bg-accent md:hidden"
+                aria-label="切换导航菜单"
+              >
+                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  {mobileNavOpen ? (
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  ) : (
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                  )}
+                </svg>
+              </button>
+              <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-primary text-primary-foreground font-bold text-sm">
+                SP
+              </div>
+              <span className="text-base font-bold tracking-wide text-primary sm:text-xl">
+                服务器探针
+              </span>
             </div>
-            <span className="text-base font-semibold text-foreground sm:text-lg">服务器探针</span>
+
+            {/* 右侧：WS 状态 + 在线计数 + ThemeToggle + 退出 */}
+            <div className="flex items-center gap-2 sm:gap-3">
+              {/* WebSocket 连接状态 */}
+              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <StatusDot online={wsConnected} />
+                <span className="hidden sm:inline">{wsConnected ? '实时连接' : '已断开'}</span>
+              </div>
+
+              {/* 在线/总数 */}
+              <div className="hidden items-center gap-1.5 rounded-lg bg-secondary px-3 py-1 text-xs text-secondary-foreground sm:flex">
+                <span className="font-medium text-success">{onlineCount}</span>
+                <span>/</span>
+                <span>{totalCount}</span>
+                <span className="ml-1">在线</span>
+              </div>
+
+              <ThemeToggle />
+
+              <button
+                onClick={handleLogout}
+                className="flex h-9 items-center rounded-lg border border-border bg-secondary px-2 text-sm text-foreground transition-colors hover:bg-accent sm:px-3"
+              >
+                退出
+              </button>
+            </div>
           </div>
-        </div>
-
-        <div className="flex items-center gap-2 sm:gap-3">
-          {/* WebSocket 连接状态 */}
-          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <span
-              className={`inline-block h-2 w-2 rounded-full ${
-                wsConnected ? 'bg-success animate-pulse' : 'bg-destructive'
-              }`}
-            />
-            <span className="hidden sm:inline">{wsConnected ? '实时连接' : '已断开'}</span>
-          </div>
-
-          {/* 在线/总数 */}
-          <div className="hidden items-center gap-1.5 rounded-lg bg-secondary px-3 py-1 text-xs text-secondary-foreground sm:flex">
-            <span className="font-medium text-success">{onlineCount}</span>
-            <span>/</span>
-            <span>{totalCount}</span>
-            <span className="ml-1">在线</span>
-          </div>
-
-          <ThemeToggle />
-
-          <button
-            onClick={handleLogout}
-            className="flex h-9 items-center rounded-lg border border-border px-2 text-sm text-foreground transition-colors hover:bg-accent sm:px-3"
-          >
-            退出
-          </button>
         </div>
       </header>
 
-      <div className="flex flex-1 overflow-hidden">
-        {/* 侧边栏 - 桌面端 */}
-        <aside className="relative hidden w-56 shrink-0 flex-col border-r border-border bg-card md:flex">
-          <div className="flex-1 overflow-y-auto scrollbar-thin">
-            {renderNavItems()}
-          </div>
-          {renderSidebarFooter()}
-        </aside>
+      {/* 主内容区 */}
+      <div className="relative z-10 pt-[6.9rem] sm:pt-[7.6rem]">
+        <div className="mx-auto max-w-[91.5rem] px-4 sm:px-6 pb-4 sm:pb-6">
+          <div className="flex gap-6">
+            {/* 侧边栏 - 桌面端（sticky 浮动卡片） */}
+            <aside className="card-soft sticky top-[5.75rem] hidden h-[calc(100vh-7rem)] w-56 shrink-0 flex-col overflow-hidden md:flex">
+              <div className="flex-1 overflow-y-auto scrollbar-thin">
+                {renderNavItems()}
+              </div>
+              <div className="border-t border-dashed border-border p-3 text-xs text-muted-foreground">
+                <a
+                  href="/"
+                  className="mb-2 flex items-center gap-1.5 rounded-md px-2 py-1.5 text-foreground transition-colors hover:bg-accent"
+                >
+                  <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+                  </svg>
+                  返回公开页
+                </a>
+              </div>
+            </aside>
 
-        {/* 主内容区 */}
-        <main className="flex-1 overflow-y-auto scrollbar-thin">
-          <div className="mx-auto max-w-7xl p-3 sm:p-4 md:p-6">
-            <Outlet />
+            {/* 主内容 */}
+            <main className="min-w-0 flex-1">
+              <Outlet />
+            </main>
           </div>
-        </main>
+        </div>
       </div>
 
-      {/* 移动端侧边栏 - 抽屉式 (放在 overflow-hidden 容器外部，避免被裁剪) */}
+      {/* 底部 */}
+      <Footer />
+
+      {/* 移动端侧边栏 - 抽屉式 */}
       {mobileNavOpen && (
         <div className="fixed inset-0 z-50 md:hidden">
           {/* 遮罩 */}
           <div
-            className="absolute inset-0 bg-black/50"
+            className="absolute inset-0 bg-black/50 backdrop-blur-sm"
             onClick={() => setMobileNavOpen(false)}
           />
           {/* 抽屉 */}
-          <aside className="absolute left-0 top-0 flex h-full w-72 max-w-[85vw] flex-col border-r border-border bg-card shadow-2xl">
-            <div className="flex h-14 shrink-0 items-center justify-between border-b border-border px-4">
-              <span className="text-sm font-semibold text-foreground">导航菜单</span>
+          <aside className="glass absolute left-0 top-0 flex h-full w-72 max-w-[85vw] flex-col border-r border-border shadow-2xl">
+            <div className="flex h-16 shrink-0 items-center justify-between border-b border-dashed border-border px-4">
+              <div className="flex items-center gap-2">
+                <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-primary text-primary-foreground font-bold text-sm">
+                  SP
+                </div>
+                <span className="text-base font-bold tracking-wide text-primary">服务器探针</span>
+              </div>
               <button
                 onClick={() => setMobileNavOpen(false)}
                 className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent"
@@ -218,7 +244,18 @@ export default function Layout() {
             <div className="flex-1 overflow-y-auto scrollbar-thin">
               {renderNavItems(() => setMobileNavOpen(false))}
             </div>
-            {renderSidebarFooter()}
+            <div className="border-t border-dashed border-border p-3 text-xs text-muted-foreground">
+              <a
+                href="/"
+                className="mb-2 flex items-center gap-1.5 rounded-md px-2 py-1.5 text-foreground transition-colors hover:bg-accent"
+              >
+                <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+                </svg>
+                返回公开页
+              </a>
+              <p>纯只读安全探针 v1.0.0</p>
+            </div>
           </aside>
         </div>
       )}

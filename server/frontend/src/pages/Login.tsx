@@ -65,13 +65,13 @@ export default function Login() {
 
       {/* 登录卡片 */}
       <div className="relative w-full max-w-md">
-        <div className="rounded-2xl border border-border bg-card p-8 shadow-xl animate-fade-in">
+        <div className="card-soft p-8 animate-fade-in">
           {/* Logo */}
           <div className="mb-8 text-center">
-            <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-primary text-primary-foreground font-bold text-xl">
+            <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-xl bg-primary text-primary-foreground font-bold text-xl">
               SP
             </div>
-            <h1 className="text-2xl font-bold text-foreground">服务器探针</h1>
+            <h1 className="text-2xl font-bold text-primary">服务器探针</h1>
             <p className="mt-1 text-sm text-muted-foreground">安全第一的纯只读服务器监控</p>
           </div>
 
@@ -85,7 +85,7 @@ export default function Login() {
                 type="text"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
+                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm shadow-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
                 placeholder="请输入用户名"
                 autoComplete="username"
                 autoFocus
@@ -100,14 +100,14 @@ export default function Login() {
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
+                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm shadow-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
                 placeholder="请输入密码"
                 autoComplete="current-password"
               />
             </div>
 
             {error && (
-              <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
                 {error}
               </div>
             )}
@@ -115,7 +115,7 @@ export default function Login() {
             <button
               type="submit"
               disabled={authLoading}
-              className="w-full rounded-lg bg-primary py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+              className="w-full rounded-xl bg-primary py-2.5 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {authLoading ? '登录中...' : '登录'}
             </button>

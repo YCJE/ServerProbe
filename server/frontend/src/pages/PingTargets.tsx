@@ -231,14 +231,14 @@ export default function PingTargets() {
       {/* 页面标题 */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold text-foreground">探测目标管理</h1>
+          <h1 className="text-xl font-bold text-primary">探测目标管理</h1>
           <p className="mt-0.5 text-sm text-muted-foreground">
             管理三网延迟探测目标，配置 ICMP / TCP / HTTP 探测方式
           </p>
         </div>
         <button
           onClick={handleOpenAdd}
-          className="flex h-9 items-center gap-1.5 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+          className="flex h-10 items-center gap-1.5 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
         >
           <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -248,8 +248,8 @@ export default function PingTargets() {
       </div>
 
       {/* 探测间隔设置 */}
-      <div className="rounded-xl border border-border bg-card">
-        <div className="border-b border-border px-4 py-3">
+      <div className="card-soft">
+        <div className="border-b border-dashed border-border px-4 py-3">
           <h2 className="text-sm font-semibold text-foreground">探测间隔设置</h2>
           <p className="mt-0.5 text-xs text-muted-foreground">
             设置 Ping 探测的执行频率，间隔越小数据越实时但消耗资源越多
@@ -262,7 +262,7 @@ export default function PingTargets() {
                 探测间隔
               </label>
               {intervalLoading ? (
-                <div className="flex h-9 items-center gap-2 text-sm text-muted-foreground">
+                <div className="flex h-10 items-center gap-2 text-sm text-muted-foreground">
                   <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
                   加载中...
                 </div>
@@ -270,7 +270,7 @@ export default function PingTargets() {
                 <select
                   value={probeInterval}
                   onChange={(e) => setProbeInterval(Number(e.target.value))}
-                  className="h-9 w-full rounded-lg border border-border bg-background px-3 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm shadow-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                 >
                   {INTERVAL_OPTIONS.map((opt) => (
                     <option key={opt.value} value={opt.value}>
@@ -283,7 +283,7 @@ export default function PingTargets() {
             <button
               onClick={handleSaveInterval}
               disabled={intervalSaving || intervalLoading}
-              className="flex h-9 shrink-0 items-center gap-1.5 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+              className="flex h-10 shrink-0 items-center gap-1.5 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
             >
               {intervalSaving ? (
                 <>
@@ -301,14 +301,14 @@ export default function PingTargets() {
             </p>
           )}
           <p className="mt-2 text-xs text-muted-foreground">
-            当前探测间隔：<span className="font-medium text-foreground">{probeInterval} 秒</span>
+            当前探测间隔：<span className="font-bold tabular-nums text-foreground">{probeInterval} 秒</span>
           </p>
         </div>
       </div>
 
       {/* 目标列表 */}
-      <div className="rounded-xl border border-border bg-card">
-        <div className="border-b border-border px-4 py-3">
+      <div className="card-soft overflow-hidden">
+        <div className="border-b border-dashed border-border px-4 py-3">
           <h2 className="text-sm font-semibold text-foreground">探测目标列表 ({targets.length})</h2>
         </div>
 
@@ -325,37 +325,35 @@ export default function PingTargets() {
             <p className="mt-1 text-xs text-muted-foreground/70">点击"添加目标"创建第一个探测目标</p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto scrollbar-thin">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-border text-left text-xs text-muted-foreground">
-                  <th className="px-4 py-2 font-medium">ID</th>
-                  <th className="px-4 py-2 font-medium">名称</th>
-                  <th className="px-4 py-2 font-medium">目标地址</th>
-                  <th className="px-4 py-2 font-medium">探测方式</th>
-                  <th className="px-4 py-2 font-medium">启用状态</th>
-                  <th className="px-4 py-2 font-medium">排序</th>
-                  <th className="px-4 py-2 font-medium">创建时间</th>
-                  <th className="px-4 py-2 font-medium">操作</th>
+                <tr className="border-b border-border bg-secondary/30">
+                  <th className="h-10 px-3 text-left font-medium text-muted-foreground">ID</th>
+                  <th className="h-10 px-3 text-left font-medium text-muted-foreground">名称</th>
+                  <th className="h-10 px-3 text-left font-medium text-muted-foreground">目标地址</th>
+                  <th className="h-10 px-3 text-left font-medium text-muted-foreground">探测方式</th>
+                  <th className="h-10 px-3 text-left font-medium text-muted-foreground">启用状态</th>
+                  <th className="h-10 px-3 text-left font-medium text-muted-foreground">排序</th>
+                  <th className="h-10 px-3 text-left font-medium text-muted-foreground">创建时间</th>
+                  <th className="h-10 px-3 text-left font-medium text-muted-foreground">操作</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-border">
+              <tbody className="divide-y divide-dashed divide-border">
                 {targets.map((target) => (
-                  <tr key={target.id} className="text-foreground">
-                    <td className="px-4 py-3 text-muted-foreground">{target.id}</td>
-                    <td className="px-4 py-3 font-medium">{target.name}</td>
-                    <td className="px-4 py-3 text-muted-foreground font-mono text-xs">{target.target}</td>
-                    <td className="px-4 py-3">
-                      <span className="rounded bg-secondary px-1.5 py-0.5 text-xs text-secondary-foreground">
+                  <tr key={target.id} className="text-foreground transition-colors hover:bg-muted/50">
+                    <td className="px-3 py-3 tabular-nums text-muted-foreground">{target.id}</td>
+                    <td className="px-3 py-3 font-medium">{target.name}</td>
+                    <td className="px-3 py-3 text-muted-foreground font-mono text-xs">{target.target}</td>
+                    <td className="px-3 py-3">
+                      <span className="badge-pill badge-primary">
                         {getMethodLabel(target.method)}
                       </span>
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-3 py-3">
                       <button
                         onClick={() => handleToggleEnabled(target)}
-                        className={`inline-flex items-center gap-1 text-xs ${
-                          target.enabled ? 'text-success' : 'text-muted-foreground'
-                        }`}
+                        className="badge-pill badge-success"
                       >
                         <span
                           className={`inline-block h-1.5 w-1.5 rounded-full ${
@@ -365,21 +363,21 @@ export default function PingTargets() {
                         {target.enabled ? '启用' : '禁用'}
                       </button>
                     </td>
-                    <td className="px-4 py-3 text-muted-foreground">{target.sort_order}</td>
-                    <td className="px-4 py-3 text-xs text-muted-foreground">
+                    <td className="px-3 py-3 tabular-nums text-muted-foreground">{target.sort_order}</td>
+                    <td className="px-3 py-3 text-xs tabular-nums text-muted-foreground">
                       {target.created_at ? new Date(target.created_at).toLocaleString('zh-CN') : '-'}
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-3 py-3">
                       <div className="flex items-center gap-2">
                         <button
                           onClick={() => handleOpenEdit(target)}
-                          className="text-xs text-primary transition-colors hover:underline"
+                          className="text-xs font-medium text-primary transition-colors hover:underline"
                         >
                           编辑
                         </button>
                         <button
                           onClick={() => handleDelete(target)}
-                          className="text-xs text-destructive transition-colors hover:underline"
+                          className="text-xs font-medium text-destructive transition-colors hover:underline"
                         >
                           删除
                         </button>
@@ -397,7 +395,7 @@ export default function PingTargets() {
       {modalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={handleCloseModal}>
           <div
-            className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-xl border border-border bg-card p-4 shadow-lg sm:p-6"
+            className="max-h-[90vh] w-full max-w-md overflow-y-auto card-soft p-4 sm:p-6 scrollbar-thin"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="mb-4 flex items-center justify-between">
@@ -425,7 +423,7 @@ export default function PingTargets() {
                   value={form.name}
                   onChange={(e) => setForm({ ...form, name: e.target.value })}
                   placeholder="例如：电信"
-                  className="h-9 w-full rounded-lg border border-border bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground/60 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm shadow-sm text-foreground placeholder:text-muted-foreground/60 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                 />
               </div>
 
@@ -439,7 +437,7 @@ export default function PingTargets() {
                   value={form.target}
                   onChange={(e) => setForm({ ...form, target: e.target.value })}
                   placeholder="例如：223.5.5.5 或 https://example.com"
-                  className="h-9 w-full rounded-lg border border-border bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground/60 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm shadow-sm text-foreground placeholder:text-muted-foreground/60 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                 />
               </div>
 
@@ -449,7 +447,7 @@ export default function PingTargets() {
                 <select
                   value={form.method}
                   onChange={(e) => setForm({ ...form, method: e.target.value })}
-                  className="h-9 w-full rounded-lg border border-border bg-background px-3 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm shadow-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                 >
                   {METHOD_OPTIONS.map((opt) => (
                     <option key={opt.value} value={opt.value}>
@@ -467,7 +465,7 @@ export default function PingTargets() {
                     type="number"
                     value={form.sort_order}
                     onChange={(e) => setForm({ ...form, sort_order: parseInt(e.target.value) || 0 })}
-                    className="h-9 w-full rounded-lg border border-border bg-background px-3 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                    className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm shadow-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                   />
                 </div>
                 <div className="flex items-center gap-2 pb-2">
@@ -492,14 +490,14 @@ export default function PingTargets() {
             <div className="mt-6 flex items-center justify-end gap-2">
               <button
                 onClick={handleCloseModal}
-                className="flex h-9 items-center rounded-lg border border-border px-4 text-sm text-foreground transition-colors hover:bg-accent"
+                className="flex h-10 items-center rounded-xl border border-border bg-secondary px-4 text-sm font-semibold text-foreground transition-colors hover:bg-accent"
               >
                 取消
               </button>
               <button
                 onClick={handleSubmit}
                 disabled={submitting}
-                className="flex h-9 items-center rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+                className="flex h-10 items-center rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
               >
                 {submitting ? '提交中...' : editingId !== null ? '保存' : '添加'}
               </button>

@@ -232,7 +232,7 @@ export default function AlertManagement() {
       {/* 页面标题 */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold text-foreground">告警管理</h1>
+          <h1 className="text-xl font-bold text-primary">告警管理</h1>
           <p className="mt-0.5 text-sm text-muted-foreground">
             配置监控指标告警规则，触发时通过通知渠道发送告警
           </p>
@@ -241,7 +241,7 @@ export default function AlertManagement() {
           onClick={handleOpenAdd}
           disabled={channels.length === 0}
           title={channels.length === 0 ? '请先创建通知渠道' : ''}
-          className="flex h-9 items-center gap-1.5 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+          className="flex h-10 items-center gap-1.5 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
         >
           <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -251,14 +251,14 @@ export default function AlertManagement() {
       </div>
 
       {channels.length === 0 && (
-        <div className="rounded-xl border border-warning/50 bg-warning/10 p-3 text-sm text-warning">
+        <div className="rounded-md border border-dashed border-warning/50 bg-warning/10 p-3 text-sm text-warning">
           尚未创建通知渠道，请先到「通知渠道」页面创建一个渠道，否则告警规则无法发送通知。
         </div>
       )}
 
       {/* 规则列表 */}
-      <div className="rounded-xl border border-border bg-card">
-        <div className="border-b border-border px-4 py-3">
+      <div className="card-soft overflow-hidden">
+        <div className="border-b border-dashed border-border px-4 py-3">
           <h2 className="text-sm font-semibold text-foreground">告警规则列表 ({rules.length})</h2>
         </div>
 
@@ -275,46 +275,44 @@ export default function AlertManagement() {
             <p className="mt-1 text-xs text-muted-foreground/70">点击"添加规则"创建第一个告警规则</p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto scrollbar-thin">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-border text-left text-xs text-muted-foreground">
-                  <th className="px-4 py-2 font-medium">ID</th>
-                  <th className="px-4 py-2 font-medium">名称</th>
-                  <th className="px-4 py-2 font-medium">指标</th>
-                  <th className="px-4 py-2 font-medium">操作符</th>
-                  <th className="px-4 py-2 font-medium">阈值</th>
-                  <th className="px-4 py-2 font-medium">持续时间</th>
-                  <th className="px-4 py-2 font-medium">启用状态</th>
-                  <th className="px-4 py-2 font-medium">通知渠道</th>
-                  <th className="px-4 py-2 font-medium">操作</th>
+                <tr className="border-b border-border bg-secondary/30">
+                  <th className="h-10 px-3 text-left font-medium text-muted-foreground">ID</th>
+                  <th className="h-10 px-3 text-left font-medium text-muted-foreground">名称</th>
+                  <th className="h-10 px-3 text-left font-medium text-muted-foreground">指标</th>
+                  <th className="h-10 px-3 text-left font-medium text-muted-foreground">操作符</th>
+                  <th className="h-10 px-3 text-left font-medium text-muted-foreground">阈值</th>
+                  <th className="h-10 px-3 text-left font-medium text-muted-foreground">持续时间</th>
+                  <th className="h-10 px-3 text-left font-medium text-muted-foreground">启用状态</th>
+                  <th className="h-10 px-3 text-left font-medium text-muted-foreground">通知渠道</th>
+                  <th className="h-10 px-3 text-left font-medium text-muted-foreground">操作</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-border">
+              <tbody className="divide-y divide-dashed divide-border">
                 {rules.map((rule) => (
-                  <tr key={rule.id} className="text-foreground">
-                    <td className="px-4 py-3 text-muted-foreground">{rule.id}</td>
-                    <td className="px-4 py-3 font-medium">{rule.name}</td>
-                    <td className="px-4 py-3">
-                      <span className="rounded bg-secondary px-1.5 py-0.5 text-xs text-secondary-foreground">
+                  <tr key={rule.id} className="text-foreground transition-colors hover:bg-muted/50">
+                    <td className="px-3 py-3 tabular-nums text-muted-foreground">{rule.id}</td>
+                    <td className="px-3 py-3 font-medium">{rule.name}</td>
+                    <td className="px-3 py-3">
+                      <span className="badge-pill badge-primary">
                         {getMetricLabel(rule.metric)}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-muted-foreground font-mono">
+                    <td className="px-3 py-3 font-mono tabular-nums text-muted-foreground">
                       {getOperatorLabel(rule.operator)}
                     </td>
-                    <td className="px-4 py-3 text-muted-foreground">
+                    <td className="px-3 py-3 tabular-nums text-muted-foreground">
                       {rule.metric === 'agent_offline' ? '-' : `${rule.threshold}%`}
                     </td>
-                    <td className="px-4 py-3 text-muted-foreground">
+                    <td className="px-3 py-3 tabular-nums text-muted-foreground">
                       {formatDuration(rule.duration)}
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-3 py-3">
                       <button
                         onClick={() => handleToggleEnabled(rule)}
-                        className={`inline-flex items-center gap-1 text-xs ${
-                          rule.enabled ? 'text-success' : 'text-muted-foreground'
-                        }`}
+                        className="badge-pill badge-success"
                       >
                         <span
                           className={`inline-block h-1.5 w-1.5 rounded-full ${
@@ -324,27 +322,27 @@ export default function AlertManagement() {
                         {rule.enabled ? '启用' : '禁用'}
                       </button>
                     </td>
-                    <td className="px-4 py-3 text-muted-foreground">
+                    <td className="px-3 py-3 text-muted-foreground">
                       {getChannelName(channels, rule.notify_channel_id)}
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-3 py-3">
                       <div className="flex items-center gap-2">
                         <button
                           onClick={() => handleOpenEdit(rule)}
-                          className="text-xs text-primary transition-colors hover:underline"
+                          className="text-xs font-medium text-primary transition-colors hover:underline"
                         >
                           编辑
                         </button>
                         <button
                           onClick={() => handleTest(rule)}
                           disabled={testingId === rule.id}
-                          className="text-xs text-success transition-colors hover:underline disabled:opacity-50"
+                          className="text-xs font-medium text-success transition-colors hover:underline disabled:opacity-50"
                         >
                           {testingId === rule.id ? '测试中...' : '测试'}
                         </button>
                         <button
                           onClick={() => setDeleteTarget(rule)}
-                          className="text-xs text-destructive transition-colors hover:underline"
+                          className="text-xs font-medium text-destructive transition-colors hover:underline"
                         >
                           删除
                         </button>
@@ -362,7 +360,7 @@ export default function AlertManagement() {
       {modalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={handleCloseModal}>
           <div
-            className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-xl border border-border bg-card p-4 shadow-lg sm:p-6"
+            className="max-h-[90vh] w-full max-w-md overflow-y-auto card-soft p-4 sm:p-6 scrollbar-thin"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="mb-4 flex items-center justify-between">
@@ -390,7 +388,7 @@ export default function AlertManagement() {
                   value={form.name}
                   onChange={(e) => setForm({ ...form, name: e.target.value })}
                   placeholder="例如：CPU 高负载告警"
-                  className="h-9 w-full rounded-lg border border-border bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground/60 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm shadow-sm text-foreground placeholder:text-muted-foreground/60 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                 />
               </div>
 
@@ -402,7 +400,7 @@ export default function AlertManagement() {
                 <select
                   value={form.metric}
                   onChange={(e) => setForm({ ...form, metric: e.target.value })}
-                  className="h-9 w-full rounded-lg border border-border bg-background px-3 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm shadow-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                 >
                   {METRIC_OPTIONS.map((opt) => (
                     <option key={opt.value} value={opt.value}>
@@ -421,7 +419,7 @@ export default function AlertManagement() {
                   <select
                     value={form.operator}
                     onChange={(e) => setForm({ ...form, operator: e.target.value })}
-                    className="h-9 w-full rounded-lg border border-border bg-background px-3 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                    className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm shadow-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                   >
                     {OPERATOR_OPTIONS.map((opt) => (
                       <option key={opt.value} value={opt.value}>
@@ -439,7 +437,7 @@ export default function AlertManagement() {
                     value={form.threshold}
                     onChange={(e) => setForm({ ...form, threshold: Number(e.target.value) })}
                     disabled={form.metric === 'agent_offline'}
-                    className="h-9 w-full rounded-lg border border-border bg-background px-3 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-60"
+                    className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm shadow-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-60"
                   />
                 </div>
               </div>
@@ -454,7 +452,7 @@ export default function AlertManagement() {
                   value={form.duration}
                   onChange={(e) => setForm({ ...form, duration: Number(e.target.value) })}
                   min={1}
-                  className="h-9 w-full rounded-lg border border-border bg-background px-3 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm shadow-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                 />
                 <p className="mt-1 text-xs text-muted-foreground/70">
                   指标持续超过阈值多少秒后触发告警（agent_offline 指标表示离线多少秒后告警）
@@ -469,7 +467,7 @@ export default function AlertManagement() {
                 <select
                   value={form.notify_channel_id}
                   onChange={(e) => setForm({ ...form, notify_channel_id: Number(e.target.value) })}
-                  className="h-9 w-full rounded-lg border border-border bg-background px-3 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm shadow-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                 >
                   <option value={0}>请选择...</option>
                   {channels.map((ch) => (
@@ -502,14 +500,14 @@ export default function AlertManagement() {
             <div className="mt-6 flex items-center justify-end gap-2">
               <button
                 onClick={handleCloseModal}
-                className="flex h-9 items-center rounded-lg border border-border px-4 text-sm text-foreground transition-colors hover:bg-accent"
+                className="flex h-10 items-center rounded-xl border border-border bg-secondary px-4 text-sm font-semibold text-foreground transition-colors hover:bg-accent"
               >
                 取消
               </button>
               <button
                 onClick={handleSubmit}
                 disabled={submitting}
-                className="flex h-9 items-center rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+                className="flex h-10 items-center rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
               >
                 {submitting ? '提交中...' : editingId !== null ? '保存' : '添加'}
               </button>
@@ -522,7 +520,7 @@ export default function AlertManagement() {
       {deleteTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => !deleting && setDeleteTarget(null)}>
           <div
-            className="w-full max-w-sm rounded-xl border border-border bg-card p-6 shadow-lg"
+            className="w-full max-w-sm card-soft p-6"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="mb-4 flex items-center gap-3">
@@ -542,14 +540,14 @@ export default function AlertManagement() {
               <button
                 onClick={() => setDeleteTarget(null)}
                 disabled={deleting}
-                className="flex h-9 items-center rounded-lg border border-border px-4 text-sm text-foreground transition-colors hover:bg-accent disabled:opacity-50"
+                className="flex h-10 items-center rounded-xl border border-border bg-secondary px-4 text-sm font-semibold text-foreground transition-colors hover:bg-accent disabled:opacity-50"
               >
                 取消
               </button>
               <button
                 onClick={handleDelete}
                 disabled={deleting}
-                className="flex h-9 items-center rounded-lg bg-destructive px-4 text-sm font-medium text-destructive-foreground transition-colors hover:bg-destructive/90 disabled:opacity-50"
+                className="flex h-10 items-center rounded-xl bg-destructive px-4 text-sm font-semibold text-destructive-foreground transition-colors hover:bg-destructive/90 disabled:opacity-50"
               >
                 {deleting ? '删除中...' : '删除'}
               </button>

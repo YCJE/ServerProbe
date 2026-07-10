@@ -256,15 +256,15 @@ export default function AgentManagement() {
     <div className="space-y-6">
       {/* 页面标题 */}
       <div>
-        <h1 className="text-xl font-bold text-foreground">Agent 管理</h1>
+        <h1 className="text-xl font-bold text-primary">Agent 管理</h1>
         <p className="mt-0.5 text-sm text-muted-foreground">
           生成注册码，在被监控服务器上一键安装 Agent
         </p>
       </div>
 
       {/* 添加服务器表单 */}
-      <div className="rounded-xl border border-border bg-card">
-        <div className="border-b border-border px-4 py-3">
+      <div className="card-soft">
+        <div className="border-b border-dashed border-border px-4 py-3">
           <h2 className="text-sm font-semibold text-foreground">添加服务器</h2>
           <p className="mt-0.5 text-xs text-muted-foreground">
             填写服务器信息后生成注册码，用于在被监控服务器上安装 Agent
@@ -281,7 +281,7 @@ export default function AgentManagement() {
                 value={displayName}
                 onChange={(e) => setDisplayName(e.target.value)}
                 placeholder="例如：Web 服务器 01"
-                className="h-9 w-full rounded-lg border border-border bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground/60 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm shadow-sm text-foreground placeholder:text-muted-foreground/60 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
               />
             </div>
             <div className="flex-1">
@@ -293,13 +293,13 @@ export default function AgentManagement() {
                 value={remark}
                 onChange={(e) => setRemark(e.target.value)}
                 placeholder="例如：生产环境"
-                className="h-9 w-full rounded-lg border border-border bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground/60 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm shadow-sm text-foreground placeholder:text-muted-foreground/60 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
               />
             </div>
             <button
               onClick={handleGenerateCode}
               disabled={generating}
-              className="flex h-9 shrink-0 items-center gap-1.5 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+              className="flex h-10 shrink-0 items-center gap-1.5 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
             >
               {generating ? (
                 <>
@@ -323,8 +323,8 @@ export default function AgentManagement() {
       </div>
 
       {/* 注册码列表 */}
-      <div className="rounded-xl border border-border bg-card">
-        <div className="border-b border-border px-4 py-3">
+      <div className="card-soft">
+        <div className="border-b border-dashed border-border px-4 py-3">
           <h2 className="text-sm font-semibold text-foreground">注册码列表 ({codes.length})</h2>
           <p className="mt-0.5 text-xs text-muted-foreground">
             每个注册码有效 15 分钟，仅可使用一次。将安装命令在被监控服务器上执行即可完成注册。
@@ -344,7 +344,7 @@ export default function AgentManagement() {
             <p className="mt-1 text-xs text-muted-foreground/70">在上方填写服务器信息后生成注册码</p>
           </div>
         ) : (
-          <div className="divide-y divide-border">
+          <div className="divide-y divide-dashed divide-border">
             {codes.map((code) => {
               const installCmd = getInstallCommand(code.code)
               const remaining = getRemainingTime(code.expires_at)
@@ -360,9 +360,7 @@ export default function AgentManagement() {
                           {code.display_name || '未命名'}
                         </h3>
                         {code.used && (
-                          <span className="rounded bg-secondary px-1.5 py-0.5 text-xs text-secondary-foreground">
-                            已使用
-                          </span>
+                          <span className="badge-pill badge-warning">已使用</span>
                         )}
                       </div>
                       {code.remark && (
@@ -372,7 +370,7 @@ export default function AgentManagement() {
                       )}
                     </div>
                     <div className="flex shrink-0 items-center gap-2">
-                      <span className={`text-xs font-medium ${expired ? 'text-destructive' : 'text-success'}`}>
+                      <span className={`text-xs font-medium tabular-nums ${expired ? 'text-destructive' : 'text-success'}`}>
                         {remaining}
                       </span>
                       <button
@@ -387,9 +385,9 @@ export default function AgentManagement() {
                   {/* 注册码 */}
                   <div className="mb-3 flex items-center gap-2">
                     <span className="text-xs text-muted-foreground">注册码：</span>
-                    <code className="rounded bg-secondary px-2 py-1 text-sm font-mono font-bold text-secondary-foreground">
+                    <span className="badge-pill badge-primary font-mono font-bold">
                       {code.code}
-                    </code>
+                    </span>
                     <button
                       onClick={() => handleCopy(code.code, `code-${code.code}`)}
                       className="flex h-7 items-center gap-1 rounded-md border border-border px-2 text-xs text-muted-foreground transition-colors hover:bg-accent"
@@ -404,14 +402,14 @@ export default function AgentManagement() {
                       一键安装命令 (粘贴到被监控服务器执行)
                     </label>
                     <div className="flex items-start gap-2">
-                      <div className="flex-1 overflow-x-auto rounded-lg bg-secondary/50 p-3">
+                      <div className="flex-1 overflow-x-auto rounded-md bg-secondary/50 p-3 scrollbar-thin">
                         <code className="text-xs font-mono text-foreground break-all whitespace-pre-wrap">
                           {installCmd}
                         </code>
                       </div>
                       <button
                         onClick={() => handleCopy(installCmd, `cmd-${code.code}`)}
-                        className="flex h-9 shrink-0 items-center gap-1 rounded-lg bg-primary px-3 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+                        className="flex h-9 shrink-0 items-center gap-1 rounded-xl bg-primary px-3 text-xs font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
                       >
                         {copied === `cmd-${code.code}` ? (
                           <>
@@ -439,8 +437,8 @@ export default function AgentManagement() {
       </div>
 
       {/* 已安装 Agent 列表 */}
-      <div className="rounded-xl border border-border bg-card">
-        <div className="border-b border-border px-4 py-3">
+      <div className="card-soft overflow-hidden">
+        <div className="border-b border-dashed border-border px-4 py-3">
           <h2 className="text-sm font-semibold text-foreground">已安装 Agent ({agents.length})</h2>
         </div>
 
@@ -457,50 +455,50 @@ export default function AgentManagement() {
             <p className="mt-1 text-xs text-muted-foreground/70">在目标服务器上执行安装命令后，Agent 会自动出现在这里</p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto scrollbar-thin">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-border text-left text-xs text-muted-foreground">
-                  <th className="px-4 py-2 font-medium">ID</th>
-                  <th className="px-4 py-2 font-medium">显示名称</th>
-                  <th className="px-4 py-2 font-medium">主机名</th>
-                  <th className="px-4 py-2 font-medium">系统</th>
-                  <th className="px-4 py-2 font-medium">架构</th>
-                  <th className="px-4 py-2 font-medium">版本</th>
-                  <th className="px-4 py-2 font-medium">状态</th>
-                  <th className="px-4 py-2 font-medium">最后在线</th>
-                  <th className="px-4 py-2 font-medium">操作</th>
+                <tr className="border-b border-border bg-secondary/30">
+                  <th className="h-10 px-3 text-left font-medium text-muted-foreground">ID</th>
+                  <th className="h-10 px-3 text-left font-medium text-muted-foreground">显示名称</th>
+                  <th className="h-10 px-3 text-left font-medium text-muted-foreground">主机名</th>
+                  <th className="h-10 px-3 text-left font-medium text-muted-foreground">系统</th>
+                  <th className="h-10 px-3 text-left font-medium text-muted-foreground">架构</th>
+                  <th className="h-10 px-3 text-left font-medium text-muted-foreground">版本</th>
+                  <th className="h-10 px-3 text-left font-medium text-muted-foreground">状态</th>
+                  <th className="h-10 px-3 text-left font-medium text-muted-foreground">最后在线</th>
+                  <th className="h-10 px-3 text-left font-medium text-muted-foreground">操作</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-border">
+              <tbody className="divide-y divide-dashed divide-border">
                 {agents.map((agent) => (
-                  <tr key={agent.id} className="text-foreground">
-                    <td className="px-4 py-3 text-muted-foreground">{agent.id}</td>
-                    <td className="px-4 py-3 font-medium">{agent.display_name || '-'}</td>
-                    <td className="px-4 py-3 text-muted-foreground">{agent.hostname || '-'}</td>
-                    <td className="px-4 py-3 text-muted-foreground">{agent.os || '-'}</td>
-                    <td className="px-4 py-3 text-muted-foreground">{agent.arch || '-'}</td>
-                    <td className="px-4 py-3 text-muted-foreground">{agent.agent_version || '-'}</td>
-                    <td className="px-4 py-3">
-                      <span className={`inline-flex items-center gap-1 text-xs ${agent.online ? 'text-success' : 'text-muted-foreground'}`}>
+                  <tr key={agent.id} className="text-foreground transition-colors hover:bg-muted/50">
+                    <td className="px-3 py-3 tabular-nums text-muted-foreground">{agent.id}</td>
+                    <td className="px-3 py-3 font-medium">{agent.display_name || '-'}</td>
+                    <td className="px-3 py-3 text-muted-foreground">{agent.hostname || '-'}</td>
+                    <td className="px-3 py-3 text-muted-foreground">{agent.os || '-'}</td>
+                    <td className="px-3 py-3 text-muted-foreground">{agent.arch || '-'}</td>
+                    <td className="px-3 py-3 text-muted-foreground">{agent.agent_version || '-'}</td>
+                    <td className="px-3 py-3">
+                      <span className="badge-pill badge-success">
                         <span className={`inline-block h-1.5 w-1.5 rounded-full ${agent.online ? 'bg-success' : 'bg-muted-foreground'}`} />
                         {agent.online ? '在线' : '离线'}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-xs text-muted-foreground">
+                    <td className="px-3 py-3 text-xs tabular-nums text-muted-foreground">
                       {formatTime(agent.last_seen)}
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-3 py-3">
                       <div className="flex items-center gap-2">
                         <button
                           onClick={() => handleOpenEdit(agent)}
-                          className="text-xs text-primary transition-colors hover:underline"
+                          className="text-xs font-medium text-primary transition-colors hover:underline"
                         >
                           编辑
                         </button>
                         <button
                           onClick={() => handleDeleteAgent(agent.id, agent.display_name || agent.hostname)}
-                          className="text-xs text-destructive transition-colors hover:underline"
+                          className="text-xs font-medium text-destructive transition-colors hover:underline"
                         >
                           删除
                         </button>
@@ -518,7 +516,7 @@ export default function AgentManagement() {
       {editingAgent && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={handleCloseEdit}>
           <div
-            className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-xl border border-border bg-card p-4 shadow-lg sm:p-6"
+            className="max-h-[90vh] w-full max-w-md overflow-y-auto card-soft p-4 sm:p-6 scrollbar-thin"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="mb-4 flex items-center justify-between">
@@ -544,29 +542,29 @@ export default function AgentManagement() {
                   value={editDisplayName}
                   onChange={(e) => setEditDisplayName(e.target.value)}
                   placeholder="例如：Web 服务器 01"
-                  className="h-9 w-full rounded-lg border border-border bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground/60 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm shadow-sm text-foreground placeholder:text-muted-foreground/60 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                   autoFocus
                 />
               </div>
 
               {/* 只读信息 */}
-              <div className="rounded-lg bg-secondary/50 p-3 text-xs text-muted-foreground">
+              <div className="rounded-md border border-dashed border-border bg-secondary/30 p-3 text-xs text-muted-foreground">
                 <div className="flex justify-between py-0.5">
                   <span>ID</span>
-                  <span className="font-mono text-foreground">{editingAgent.id}</span>
+                  <span className="font-mono font-bold tabular-nums text-foreground">{editingAgent.id}</span>
                 </div>
                 <div className="flex justify-between py-0.5">
                   <span>主机名</span>
-                  <span className="font-mono text-foreground">{editingAgent.hostname || '-'}</span>
+                  <span className="font-mono font-bold text-foreground">{editingAgent.hostname || '-'}</span>
                 </div>
                 <div className="flex justify-between py-0.5">
                   <span>系统</span>
-                  <span className="text-foreground">{editingAgent.os || '-'}</span>
+                  <span className="font-bold text-foreground">{editingAgent.os || '-'}</span>
                 </div>
               </div>
 
               {/* 重新生成安装命令 */}
-              <div className="rounded-lg border border-border p-3">
+              <div className="rounded-md border border-dashed border-border p-3">
                 <div className="mb-2 flex items-center justify-between">
                   <span className="text-xs font-medium text-muted-foreground">重新生成安装命令</span>
                   <button
@@ -580,14 +578,14 @@ export default function AgentManagement() {
                 {regeneratedCode ? (
                   <div>
                     <div className="flex items-start gap-2">
-                      <div className="flex-1 overflow-x-auto rounded-lg bg-secondary/50 p-2">
+                      <div className="flex-1 overflow-x-auto rounded-md bg-secondary/50 p-2 scrollbar-thin">
                         <code className="text-xs font-mono text-foreground break-all whitespace-pre-wrap">
                           {getInstallCommand(regeneratedCode)}
                         </code>
                       </div>
                       <button
                         onClick={() => handleCopy(getInstallCommand(regeneratedCode), `regen-${regeneratedCode}`)}
-                        className="flex h-8 shrink-0 items-center gap-1 rounded-lg bg-primary px-2 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+                        className="flex h-8 shrink-0 items-center gap-1 rounded-xl bg-primary px-2 text-xs font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
                       >
                         {copied === `regen-${regeneratedCode}` ? '已复制' : '复制'}
                       </button>
@@ -612,14 +610,14 @@ export default function AgentManagement() {
             <div className="mt-6 flex items-center justify-end gap-2">
               <button
                 onClick={handleCloseEdit}
-                className="flex h-9 items-center rounded-lg border border-border px-4 text-sm text-foreground transition-colors hover:bg-accent"
+                className="flex h-10 items-center rounded-xl border border-border bg-secondary px-4 text-sm font-semibold text-foreground transition-colors hover:bg-accent"
               >
                 取消
               </button>
               <button
                 onClick={handleSaveEdit}
                 disabled={editSaving}
-                className="flex h-9 items-center rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+                className="flex h-10 items-center rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
               >
                 {editSaving ? '保存中...' : '保存'}
               </button>

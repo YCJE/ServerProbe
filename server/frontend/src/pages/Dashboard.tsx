@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useServerStore } from '@/store/useServerStore'
 import ServerCard from '@/components/ServerCard'
 import DistroIcon from '@/components/DistroIcon'
+import StatusDot from '@/components/StatusDot'
 import { formatSpeed, formatUptime } from '@/lib/utils'
 import type { ServerData } from '@/types'
 
@@ -50,9 +51,11 @@ function getTotalNetSpeed(server: ServerData): number {
   return (server.net_rx || 0) + (server.net_tx || 0)
 }
 
-/** 紧凑进度条单元格 */
-function ProgressCell({ value, color }: { value: number; color: string }) {
+/** 紧凑进度条单元格（NodeGet 资源环形图色） */
+function ProgressCell({ value }: { value: number }) {
   const v = Math.min(Math.max(value, 0), 100)
+  // NodeGet 资源环形图色：< 70% 绿、70-90% 橙、>= 90% 红
+  const color = v >= 90 ? '#f56565' : v >= 70 ? '#f6ad55' : '#42b983'
   return (
     <div className="flex items-center gap-2">
       <div className="h-1.5 w-12 shrink-0 overflow-hidden rounded-full bg-secondary">
@@ -68,7 +71,7 @@ function ProgressCell({ value, color }: { value: number; color: string }) {
   )
 }
 
-/** 表格行组件 */
+/** 表格行组件（NodeGet 风格） */
 const ServerTableRow = memo(function ServerTableRow({
   server,
   basePath,
@@ -88,25 +91,16 @@ const ServerTableRow = memo(function ServerTableRow({
   return (
     <tr
       onClick={handleClick}
-      className="cursor-pointer border-b border-border/50 transition-colors last:border-0 hover:bg-accent/50"
+      className={`cursor-pointer border-b transition-colors hover:bg-muted/50 ${
+        server.online ? '' : 'opacity-60'
+      }`}
     >
       {/* 状态灯 */}
-      <td className="px-3 py-2">
-        <span className="relative flex h-2 w-2">
-          {server.online && (
-            <span
-              className="absolute inline-flex h-full w-full animate-ping rounded-full opacity-75"
-              style={{ backgroundColor: '#34C759' }}
-            />
-          )}
-          <span
-            className="relative inline-flex h-2 w-2 rounded-full"
-            style={{ backgroundColor: server.online ? '#34C759' : '#6b7280' }}
-          />
-        </span>
+      <td className="p-3 align-middle">
+        <StatusDot online={server.online} />
       </td>
       {/* 名称 */}
-      <td className="px-3 py-2">
+      <td className="p-3 align-middle">
         <div className="flex items-center gap-2">
           <DistroIcon distro={server.distro} os={server.os} size={14} />
           <span className="truncate text-sm font-medium text-foreground">
@@ -120,31 +114,31 @@ const ServerTableRow = memo(function ServerTableRow({
         </div>
       </td>
       {/* CPU */}
-      <td className="px-3 py-2">
-        <ProgressCell value={server.cpu || 0} color="#007AFF" />
+      <td className="p-3 align-middle">
+        <ProgressCell value={server.cpu || 0} />
       </td>
       {/* 内存 */}
-      <td className="px-3 py-2">
-        <ProgressCell value={memUsage} color="#AF52DE" />
+      <td className="p-3 align-middle">
+        <ProgressCell value={memUsage} />
       </td>
       {/* 磁盘 */}
-      <td className="px-3 py-2">
-        <ProgressCell value={diskUsage} color="#FF9500" />
+      <td className="p-3 align-middle">
+        <ProgressCell value={diskUsage} />
       </td>
       {/* 下行速度 */}
-      <td className="px-3 py-2">
+      <td className="p-3 align-middle">
         <span className="text-xs font-medium tabular-nums text-foreground/80">
           {server.online ? formatSpeed(server.net_rx) : '---'}
         </span>
       </td>
       {/* 上行速度 */}
-      <td className="px-3 py-2">
+      <td className="p-3 align-middle">
         <span className="text-xs font-medium tabular-nums text-foreground/80">
           {server.online ? formatSpeed(server.net_tx) : '---'}
         </span>
       </td>
       {/* 运行时长 */}
-      <td className="px-3 py-2">
+      <td className="p-3 align-middle">
         <span className="text-xs tabular-nums text-muted-foreground">
           {server.online ? formatUptime(server.uptime) : '---'}
         </span>
@@ -174,7 +168,7 @@ const ServerTableRow = memo(function ServerTableRow({
   )
 })
 
-/** 仪表盘页（服务器卡片网格 + 表格视图） */
+/** 仪表盘页（服务器卡片网格 + 表格视图，NodeGet 风格） */
 export default function Dashboard() {
   const servers = useServerStore((s) => s.servers)
   const fetchServers = useServerStore((s) => s.fetchServers)
@@ -305,7 +299,7 @@ export default function Dashboard() {
         <div className="flex items-center gap-2">
           <button
             onClick={() => fetchServers().catch(() => {})}
-            className="flex h-9 items-center gap-1.5 rounded-lg border border-border bg-card px-2.5 text-sm text-foreground transition-colors hover:bg-accent sm:px-3"
+            className="flex h-11 items-center gap-1.5 rounded-xl border border-border bg-secondary px-3 text-sm font-medium text-foreground transition-colors hover:bg-accent"
           >
             <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -315,10 +309,10 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* 统计卡片 */}
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+      {/* 统计卡片（card-soft） */}
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
         {/* 在线/离线 */}
-        <div className="rounded-xl border border-border bg-card p-4">
+        <div className="card-soft p-4">
           <div className="flex items-center justify-between">
             <span className="text-xs text-muted-foreground">服务器</span>
             <span className="text-xs font-medium text-success">
@@ -326,7 +320,7 @@ export default function Dashboard() {
             </span>
           </div>
           <div className="mt-2 flex items-baseline gap-1">
-            <span className="text-2xl font-bold text-foreground">{stats.total}</span>
+            <span className="text-2xl font-bold tabular-nums text-foreground">{stats.total}</span>
             <span className="text-sm text-muted-foreground">台</span>
             {stats.offline > 0 && (
               <span className="ml-auto text-xs text-destructive">{stats.offline} 离线</span>
@@ -335,12 +329,12 @@ export default function Dashboard() {
         </div>
 
         {/* 平均 CPU */}
-        <div className="rounded-xl border border-border bg-card p-4">
+        <div className="card-soft p-4">
           <div className="flex items-center justify-between">
             <span className="text-xs text-muted-foreground">平均 CPU</span>
           </div>
           <div className="mt-2 flex items-baseline gap-1">
-            <span className="text-2xl font-bold text-foreground">
+            <span className="text-2xl font-bold tabular-nums text-foreground">
               {stats.avgCpu.toFixed(1)}
             </span>
             <span className="text-sm text-muted-foreground">%</span>
@@ -348,12 +342,12 @@ export default function Dashboard() {
         </div>
 
         {/* 平均内存 */}
-        <div className="rounded-xl border border-border bg-card p-4">
+        <div className="card-soft p-4">
           <div className="flex items-center justify-between">
             <span className="text-xs text-muted-foreground">平均内存</span>
           </div>
           <div className="mt-2 flex items-baseline gap-1">
-            <span className="text-2xl font-bold text-foreground">
+            <span className="text-2xl font-bold tabular-nums text-foreground">
               {stats.avgMem.toFixed(1)}
             </span>
             <span className="text-sm text-muted-foreground">%</span>
@@ -361,60 +355,30 @@ export default function Dashboard() {
         </div>
 
         {/* 总流量 */}
-        <div className="rounded-xl border border-border bg-card p-4">
+        <div className="card-soft p-4">
           <div className="flex items-center justify-between">
             <span className="text-xs text-muted-foreground">总流量</span>
           </div>
           <div className="mt-2 flex items-baseline gap-1">
-            <span className="text-sm font-bold text-foreground">
+            <span className="text-sm font-bold tabular-nums text-foreground">
               ↓{formatSpeed(stats.totalRx)}
             </span>
             <span className="text-sm text-muted-foreground">/</span>
-            <span className="text-sm font-bold text-foreground">
+            <span className="text-sm font-bold tabular-nums text-foreground">
               ↑{formatSpeed(stats.totalTx)}
             </span>
           </div>
         </div>
       </div>
 
-      {/* 工具栏：视图切换 + 搜索 + 排序 */}
+      {/* 工具栏：搜索框 + 排序下拉 + 视图切换（分段控制器） */}
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        {/* 视图切换按钮组 */}
-        <div className="flex items-center gap-1 rounded-lg border border-border bg-card p-1">
-          <button
-            onClick={() => setViewMode('card')}
-            className={`flex h-8 items-center gap-1.5 rounded-md px-3 text-xs font-medium transition-colors ${
-              viewMode === 'card'
-                ? 'bg-primary text-primary-foreground'
-                : 'text-muted-foreground hover:text-foreground'
-            }`}
-          >
-            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
-            </svg>
-            卡片视图
-          </button>
-          <button
-            onClick={() => setViewMode('table')}
-            className={`flex h-8 items-center gap-1.5 rounded-md px-3 text-xs font-medium transition-colors ${
-              viewMode === 'table'
-                ? 'bg-primary text-primary-foreground'
-                : 'text-muted-foreground hover:text-foreground'
-            }`}
-          >
-            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-            </svg>
-            表格视图
-          </button>
-        </div>
-
-        {/* 搜索框 + 排序 */}
+        {/* 左侧：搜索框 + 排序 */}
         <div className="flex items-center gap-2">
           {/* 搜索框 */}
           <div className="relative">
             <svg
-              className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground"
+              className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -426,7 +390,7 @@ export default function Dashboard() {
               value={searchInput}
               onChange={handleSearchChange}
               placeholder="搜索名称/主机名"
-              className="h-9 w-44 rounded-lg border border-border bg-card pl-8 pr-3 text-sm text-foreground placeholder:text-muted-foreground/60 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary sm:w-56"
+              className="h-11 w-44 rounded-xl border border-border bg-secondary pl-9 pr-3 text-sm font-semibold text-foreground placeholder:text-muted-foreground/60 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary sm:w-56"
             />
             {searchInput && (
               <button
@@ -446,7 +410,7 @@ export default function Dashboard() {
             <select
               value={sortOption}
               onChange={(e) => setSortOption(e.target.value as SortOption)}
-              className="h-9 cursor-pointer appearance-none rounded-lg border border-border bg-card pl-3 pr-8 text-sm text-foreground transition-colors hover:bg-accent focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+              className="h-11 cursor-pointer appearance-none rounded-xl border border-border bg-secondary px-3 pr-8 text-sm font-medium text-foreground transition-colors hover:bg-accent focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
             >
               {SORT_OPTIONS.map((opt) => (
                 <option key={opt.value} value={opt.value}>
@@ -463,6 +427,36 @@ export default function Dashboard() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
             </svg>
           </div>
+        </div>
+
+        {/* 右侧：视图切换 - 分段控制器 */}
+        <div className="flex items-center rounded-xl border border-border bg-muted p-1">
+          <button
+            onClick={() => setViewMode('card')}
+            className={`flex h-9 items-center gap-1.5 rounded-lg px-3 text-xs font-medium transition-all ${
+              viewMode === 'card'
+                ? 'bg-background text-foreground shadow-sm'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
+            </svg>
+            卡片
+          </button>
+          <button
+            onClick={() => setViewMode('table')}
+            className={`flex h-9 items-center gap-1.5 rounded-lg px-3 text-xs font-medium transition-all ${
+              viewMode === 'table'
+                ? 'bg-background text-foreground shadow-sm'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+            表格
+          </button>
         </div>
       </div>
 
@@ -490,39 +484,41 @@ export default function Dashboard() {
         </div>
       ) : viewMode === 'card' ? (
         // 卡片视图
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {processedServers.map((server) => (
             <ServerCard key={server.id} server={server} />
           ))}
         </div>
       ) : (
-        // 表格视图
-        <div className="overflow-x-auto rounded-xl border border-border bg-card">
-          <table className="w-full min-w-[640px]">
-            <thead>
-              <tr className="border-b border-border bg-secondary/30">
-                <th className="px-3 py-2 text-left text-[10px] font-medium uppercase tracking-wider text-muted-foreground">状态</th>
-                <th className="px-3 py-2 text-left text-[10px] font-medium uppercase tracking-wider text-muted-foreground">名称</th>
-                <th className="px-3 py-2 text-left text-[10px] font-medium uppercase tracking-wider text-muted-foreground">CPU</th>
-                <th className="px-3 py-2 text-left text-[10px] font-medium uppercase tracking-wider text-muted-foreground">内存</th>
-                <th className="px-3 py-2 text-left text-[10px] font-medium uppercase tracking-wider text-muted-foreground">磁盘</th>
-                <th className="px-3 py-2 text-left text-[10px] font-medium uppercase tracking-wider text-muted-foreground">下行</th>
-                <th className="px-3 py-2 text-left text-[10px] font-medium uppercase tracking-wider text-muted-foreground">上行</th>
-                <th className="px-3 py-2 text-left text-[10px] font-medium uppercase tracking-wider text-muted-foreground">运行时长</th>
-              </tr>
-            </thead>
-            <tbody>
-              {processedServers.map((server) => (
-                <ServerTableRow key={server.id} server={server} basePath="/admin" />
-              ))}
-            </tbody>
-          </table>
+        // 表格视图（card-soft overflow-hidden）
+        <div className="card-soft overflow-hidden">
+          <div className="overflow-x-auto scrollbar-thin">
+            <table className="w-full min-w-[640px]">
+              <thead>
+                <tr className="border-b border-border">
+                  <th className="h-10 px-3 text-left text-xs font-medium text-muted-foreground">状态</th>
+                  <th className="h-10 px-3 text-left text-xs font-medium text-muted-foreground">名称</th>
+                  <th className="h-10 px-3 text-left text-xs font-medium text-muted-foreground">CPU</th>
+                  <th className="h-10 px-3 text-left text-xs font-medium text-muted-foreground">内存</th>
+                  <th className="h-10 px-3 text-left text-xs font-medium text-muted-foreground">磁盘</th>
+                  <th className="h-10 px-3 text-left text-xs font-medium text-muted-foreground">下行</th>
+                  <th className="h-10 px-3 text-left text-xs font-medium text-muted-foreground">上行</th>
+                  <th className="h-10 px-3 text-left text-xs font-medium text-muted-foreground">运行时长</th>
+                </tr>
+              </thead>
+              <tbody>
+                {processedServers.map((server) => (
+                  <ServerTableRow key={server.id} server={server} basePath="/admin" />
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
       {/* WebSocket 断线提示 */}
       {!wsConnected && servers.length > 0 && (
-        <div className="fixed bottom-4 right-4 rounded-lg border border-warning/30 bg-warning/10 px-4 py-2 text-sm text-warning shadow-lg">
+        <div className="glass fixed bottom-4 right-4 rounded-xl border border-warning/30 px-4 py-2 text-sm text-warning shadow-lg">
           实时连接已断开，正在重连...
         </div>
       )}

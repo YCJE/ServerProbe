@@ -135,23 +135,23 @@ export default function LogViewer() {
       {/* 页面标题 */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold text-foreground">系统日志</h1>
+          <h1 className="text-xl font-bold text-primary">系统日志</h1>
           <p className="mt-0.5 text-sm text-muted-foreground">
             服务端运行日志，用于调试和排查问题
           </p>
         </div>
         <div className="flex items-center gap-3">
           {lastUpdate > 0 && (
-            <span className="text-xs text-muted-foreground">
+            <span className="text-xs tabular-nums text-muted-foreground">
               最后更新：{new Date(lastUpdate).toLocaleTimeString('zh-CN')}
             </span>
           )}
           <button
             onClick={() => setAutoRefresh((v) => !v)}
-            className={`flex h-9 items-center gap-1.5 rounded-lg border px-3 text-sm transition-colors ${
+            className={`flex h-10 items-center gap-1.5 rounded-xl border px-3 text-sm font-semibold transition-colors ${
               autoRefresh
                 ? 'border-primary/30 bg-primary/10 text-primary'
-                : 'border-border bg-card text-muted-foreground hover:bg-accent'
+                : 'border-border bg-secondary text-muted-foreground hover:bg-accent'
             }`}
           >
             {autoRefresh && (
@@ -165,7 +165,7 @@ export default function LogViewer() {
           <button
             onClick={loadLogs}
             disabled={loading}
-            className="flex h-9 items-center gap-1.5 rounded-lg border border-border bg-card px-3 text-sm text-foreground transition-colors hover:bg-accent disabled:opacity-50"
+            className="flex h-10 items-center gap-1.5 rounded-xl border border-border bg-secondary px-3 text-sm font-semibold text-foreground transition-colors hover:bg-accent disabled:opacity-50"
           >
             {loading ? (
               <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
@@ -182,7 +182,7 @@ export default function LogViewer() {
       {/* 统计卡片 + 过滤器 */}
       <div className="flex flex-wrap items-center gap-2">
         {/* 级别过滤 */}
-        <div className="flex items-center gap-1 rounded-lg border border-border bg-card p-1">
+        <div className="flex items-center gap-1 rounded-xl border border-border bg-secondary p-1">
           {Object.entries(LEVEL_CONFIG).map(([key, cfg]) => {
             const isActive = activeLevel === key
             const count = key === 'ALL' ? logs.length : stats[key as keyof typeof stats] || 0
@@ -190,7 +190,7 @@ export default function LogViewer() {
               <button
                 key={key}
                 onClick={() => setActiveLevel(key)}
-                className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-all ${
+                className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold transition-all ${
                   isActive
                     ? 'bg-primary text-primary-foreground shadow-sm'
                     : 'text-muted-foreground hover:bg-accent hover:text-foreground'
@@ -204,8 +204,8 @@ export default function LogViewer() {
                 )}
                 {cfg.label}
                 {count > 0 && (
-                  <span className={`rounded-full px-1.5 text-[10px] ${
-                    isActive ? 'bg-primary-foreground/20' : 'bg-secondary'
+                  <span className={`rounded-full px-1.5 text-[10px] tabular-nums ${
+                    isActive ? 'bg-primary-foreground/20' : 'bg-background'
                   }`}>
                     {count}
                   </span>
@@ -228,7 +228,7 @@ export default function LogViewer() {
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
             placeholder="搜索日志内容..."
-            className="h-9 w-full rounded-lg border border-border bg-card pl-9 pr-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+            className="h-10 w-full rounded-md border border-input bg-background pl-9 pr-3 text-sm shadow-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
           />
           {searchInput && (
             <button
@@ -243,17 +243,17 @@ export default function LogViewer() {
         </div>
 
         {/* 总量 */}
-        <div className="flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground">
+        <div className="flex items-center gap-1.5 rounded-xl border border-border bg-secondary px-3 py-1.5 text-xs font-semibold text-muted-foreground">
           <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
           </svg>
-          共 {total} 条
+          共 <span className="tabular-nums text-foreground">{total}</span> 条
         </div>
       </div>
 
       {/* 错误提示 */}
       {error && (
-        <div className="rounded-xl border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
+        <div className="rounded-md border border-dashed border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
           {error}
         </div>
       )}
@@ -322,7 +322,7 @@ export default function LogViewer() {
                         {formatTime(log.timestamp)}
                       </span>
                       {/* 级别标签 */}
-                      <span className={`shrink-0 rounded px-1.5 py-0 text-[10px] font-semibold leading-5 ${cfg.bg} ${cfg.color}`}>
+                      <span className={`shrink-0 rounded-full px-1.5 py-0 text-[10px] font-semibold leading-5 ${cfg.bg} ${cfg.color}`}>
                         {log.level}
                       </span>
                       {/* 日志消息 */}

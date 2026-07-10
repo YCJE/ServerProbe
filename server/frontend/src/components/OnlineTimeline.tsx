@@ -22,11 +22,11 @@ interface OnlineTimelineProps {
 /** 格子状态 */
 type CellStatus = 'online' | 'offline' | 'empty'
 
-/** 格子颜色 */
-const CELL_COLORS: Record<CellStatus, string> = {
-  online: '#34C759',     // 绿色
-  offline: '#FF3B30',    // 红色
-  empty: 'hsl(var(--secondary))', // 灰色
+/** 格子 className（NodeGet 风格） */
+const CELL_CLASS: Record<CellStatus, string> = {
+  online: 'bg-primary shadow-[0_0_0_1px_rgba(66,185,131,0.09)]',
+  offline: 'bg-border/90',
+  empty: 'bg-muted/40',
 }
 
 /** 格子状态文本 */
@@ -59,12 +59,13 @@ function formatTime(ts: number): string {
 }
 
 /**
- * 在线状态时间线组件
+ * 在线状态时间线组件（NodeGet 风格）
  *
  * - 80 格时间线，每格 3 分钟，共 4 小时
- * - 根据历史采样数据填充格子（在线=绿色，离线=红色，无数据=灰色）
+ * - 虚线边框容器，标题使用 primary 色
+ * - 在线格子 bg-primary，离线格子 bg-border/90，空格子 bg-muted/40
  * - 悬停显示时间范围和状态
- * - 底部显示可用性百分比
+ * - 右侧显示可用性百分比
  */
 function OnlineTimeline({
   points,
@@ -145,38 +146,37 @@ function OnlineTimeline({
   const hoveredCellData = hoveredCell !== null ? cells[hoveredCell] : null
 
   return (
-    <div className={`relative ${className}`}>
-      {/* 标题 + 可用性 */}
+    <div className={`relative rounded-md border-dashed border border-border bg-secondary/35 p-4 ${className}`}>
+      {/* 标题行: Activity 图标 + "在线状态" + 右侧可用率 */}
       <div className="mb-3 flex items-center justify-between">
-        <span className="text-xs font-medium text-muted-foreground">
-          在线状态时间线（最近 4 小时）
+        <span className="flex items-center gap-1.5 text-sm font-bold text-primary">
+          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M22 12h-4l-3 9L9 3l-3 9H2"
+            />
+          </svg>
+          在线状态
         </span>
-        <span className="text-xs">
-          <span className="text-muted-foreground">可用性: </span>
-          <span
-            className={`font-semibold ${
-              availability >= 99
-                ? 'text-success'
-                : availability >= 90
-                  ? 'text-warning'
-                  : 'text-destructive'
-            }`}
-          >
-            {availability.toFixed(2)}%
-          </span>
+        <span className="text-sm">
+          <span className="text-muted-foreground">可用率 </span>
+          <span className="font-bold text-primary">{availability.toFixed(2)}%</span>
         </span>
       </div>
 
-      {/* 时间线格子 */}
-      <div className="flex flex-nowrap overflow-hidden gap-0.5">
+      {/* 时间线格子 - grid 布局 */}
+      <div
+        className="grid gap-[3px]"
+        style={{ gridTemplateColumns: `repeat(${totalCells}, minmax(0, 1fr))` }}
+      >
         {cells.map((cell) => (
           <div
             key={cell.index}
-            className="relative cursor-pointer transition-all"
+            className={`relative cursor-pointer transition-all ${CELL_CLASS[cell.status]}`}
             style={{
-              width: `calc((100% - ${(totalCells - 1) * 2}px) / ${totalCells})`,
               height: 24,
-              backgroundColor: CELL_COLORS[cell.status],
               borderRadius: 2,
               opacity: hoveredCell !== null && hoveredCell !== cell.index ? 0.5 : 1,
               transform: hoveredCell === cell.index ? 'scaleY(1.15)' : 'scaleY(1)',
@@ -198,29 +198,28 @@ function OnlineTimeline({
       {/* 图例 */}
       <div className="mt-2 flex items-center gap-3 text-[10px] text-muted-foreground">
         <span className="flex items-center gap-1">
-          <span className="inline-block h-2 w-2 rounded-sm" style={{ backgroundColor: CELL_COLORS.online }} />
+          <span className={`inline-block h-2 w-2 rounded-sm ${CELL_CLASS.online}`} />
           <span>在线</span>
         </span>
         <span className="flex items-center gap-1">
-          <span className="inline-block h-2 w-2 rounded-sm" style={{ backgroundColor: CELL_COLORS.offline }} />
+          <span className={`inline-block h-2 w-2 rounded-sm ${CELL_CLASS.offline}`} />
           <span>离线</span>
         </span>
         <span className="flex items-center gap-1">
-          <span className="inline-block h-2 w-2 rounded-sm" style={{ backgroundColor: CELL_COLORS.empty }} />
+          <span className={`inline-block h-2 w-2 rounded-sm ${CELL_CLASS.empty}`} />
           <span>无数据</span>
         </span>
       </div>
 
       {/* 悬停 Tooltip */}
       {hoveredCellData && (
-        <div className="pointer-events-none absolute -top-2 left-1/2 z-10 -translate-x-1/2 -translate-y-full rounded-md border border-border bg-card px-3 py-2 text-xs shadow-lg">
+        <div className="pointer-events-none absolute -top-2 left-1/2 z-10 -translate-x-1/2 -translate-y-full rounded-sm border border-border bg-card px-3 py-2.5 text-xs shadow-tooltip ring-1 ring-black/5">
           <div className="whitespace-nowrap font-medium text-foreground">
             {formatTime(hoveredCellData.startTime)} - {formatTime(hoveredCellData.endTime)}
           </div>
           <div className="mt-1 flex items-center gap-1.5 whitespace-nowrap">
             <span
-              className="inline-block h-2 w-2 rounded-sm"
-              style={{ backgroundColor: CELL_COLORS[hoveredCellData.status] }}
+              className={`inline-block h-2 w-2 rounded-sm ${CELL_CLASS[hoveredCellData.status]}`}
             />
             <span className="text-muted-foreground">状态: </span>
             <span className="font-medium text-foreground">{CELL_LABELS[hoveredCellData.status]}</span>

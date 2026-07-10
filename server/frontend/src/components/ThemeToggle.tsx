@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { useServerStore } from '@/store/useServerStore'
 import type { Theme } from '@/types'
 
-/** 主题切换组件（浅色/深色/跟随系统） */
+/** 主题切换组件（浅色/深色/跟随系统） - NodeGet 风格 */
 export default function ThemeToggle() {
   const theme = useServerStore((s) => s.theme)
   const setTheme = useServerStore((s) => s.setTheme)
@@ -28,35 +28,56 @@ export default function ThemeToggle() {
 
   const current = options.find((o) => o.value === theme) || options[0]
 
+  /** 切换主题：添加 .theme-changing 禁用过渡，90ms 后移除 */
+  const handleChange = (value: Theme) => {
+    document.documentElement.classList.add('theme-changing')
+    setTheme(value)
+    window.setTimeout(() => {
+      document.documentElement.classList.remove('theme-changing')
+    }, 90)
+    setOpen(false)
+  }
+
   return (
     <div className="relative" ref={ref}>
       <button
         onClick={() => setOpen(!open)}
-        className="flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-card text-foreground transition-colors hover:bg-accent"
+        className="flex h-11 w-11 items-center justify-center rounded-xl border border-border bg-secondary text-foreground transition-colors hover:bg-accent"
         title="切换主题"
+        aria-label="切换主题"
+        aria-expanded={open}
       >
         <span className="text-base">{current.icon}</span>
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full z-50 mt-2 w-36 rounded-lg border border-border bg-card p-1 shadow-lg animate-fade-in">
+        <div className="animate-scale-in absolute right-0 top-full z-50 mt-2 w-36 rounded-xl border border-border bg-popover py-1 shadow-md">
           {options.map((option) => (
             <button
               key={option.value}
-              onClick={() => {
-                setTheme(option.value)
-                setOpen(false)
-              }}
-              className={`flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors hover:bg-accent ${
+              onClick={() => handleChange(option.value)}
+              className={`flex w-full items-center gap-2 px-2.5 py-2 text-sm transition-colors hover:bg-accent ${
                 theme === option.value
-                  ? 'bg-accent font-medium text-foreground'
+                  ? 'font-medium text-foreground'
                   : 'text-muted-foreground'
               }`}
             >
               <span className="w-4 text-center">{option.icon}</span>
               <span>{option.label}</span>
               {theme === option.value && (
-                <span className="ml-auto text-primary">✓</span>
+                <svg
+                  className="ml-auto h-4 w-4 text-primary"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2.5}
+                    d="M5 13l4 4L19 7"
+                  />
+                </svg>
               )}
             </button>
           ))}

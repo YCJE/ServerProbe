@@ -5,6 +5,19 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>服务器探针</title>
+    <script>
+      // 防闪烁：在 React 加载前根据 localStorage 设置主题
+      (function () {
+        try {
+          var theme = localStorage.getItem('probe_theme');
+          if (theme !== 'light') {
+            document.documentElement.classList.add('dark');
+          }
+        } catch (e) {
+          document.documentElement.classList.add('dark');
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

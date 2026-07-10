@@ -11,6 +11,7 @@ import {
 } from '@/lib/utils'
 import ResourceRing from '@/components/ResourceRing'
 import DistroIcon from '@/components/DistroIcon'
+import StatusDot from '@/components/StatusDot'
 import { useAnimatedNumber } from '@/hooks/useAnimatedNumber'
 import { useInViewport } from '@/hooks/useInViewport'
 
@@ -40,15 +41,32 @@ function categorizePing(ping: PingResult): PingCategory {
   return '其他'
 }
 
-/** ping 目标线条颜色池（与详情页 NetworkQualityChart 保持一致） */
-const PING_COLORS = ['#5AC8FA', '#34C759', '#FF9500', '#AF52DE', '#FF2D55', '#FFCC00']
+/**
+ * 根据延迟值返回颜色（NodeGet 延迟分桶色）
+ * - <= 50ms: 深绿  #69BE7B
+ * - <= 100ms: 浅绿 #A7D879
+ * - <= 180ms: 浅黄 #E8CC68
+ * - <= 300ms: 深黄 #EFA85F
+ * - > 300ms:  浅红 #E98686
+ * - 丢包:     深红 #D96B6B
+ * - 无数据:   灰   rgba(148,163,184,0.28)
+ */
+function getLatencyColor(latency: number, loss: number): string {
+  if (loss > 0) return '#D96B6B'
+  if (latency <= 0) return 'rgba(148, 163, 184, 0.28)'
+  if (latency <= 50) return '#69BE7B'
+  if (latency <= 100) return '#A7D879'
+  if (latency <= 180) return '#E8CC68'
+  if (latency <= 300) return '#EFA85F'
+  return '#E98686'
+}
 
 /** 横向延迟条形图 - 每个探测目标一行：名称 + 横条 + 数值，有丢包时标红 */
 function LatencyBars({
   targets,
   online,
 }: {
-  targets: Array<{ name: string; latency: number; color: string; loss: number }>
+  targets: Array<{ name: string; latency: number; loss: number }>
   online: boolean
 }) {
   if (!online || targets.length === 0) {
@@ -67,13 +85,14 @@ function LatencyBars({
         const ratio = t.latency > 0 ? t.latency / maxLatency : 0
         const barWidth = Math.max(8, ratio * 100)
         const hasLoss = t.loss > 0
+        const color = getLatencyColor(t.latency, t.loss)
         return (
           <div key={i} className="flex items-center gap-2">
             {/* 左侧：颜色点 + 名称 */}
             <span className="flex w-16 shrink-0 items-center gap-1">
               <span
                 className="inline-block h-1.5 w-1.5 shrink-0 rounded-full"
-                style={{ backgroundColor: t.color }}
+                style={{ backgroundColor: color }}
               />
               <span className="truncate text-[9px] text-muted-foreground">
                 {t.name || '--'}
@@ -83,12 +102,12 @@ function LatencyBars({
             <div className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-secondary">
               <div
                 className="h-full rounded-full transition-all duration-500"
-                style={{ width: `${barWidth}%`, backgroundColor: hasLoss ? '#FF3B30' : t.color }}
+                style={{ width: `${barWidth}%`, backgroundColor: hasLoss ? '#D96B6B' : color }}
               />
             </div>
             {/* 右侧：延迟数值（固定） */}
             <span
-              className={`shrink-0 text-[9px] font-medium ${
+              className={`shrink-0 text-[9px] font-medium tabular-nums ${
                 hasLoss ? 'text-amber-500' : 'text-foreground/80'
               }`}
             >
@@ -96,7 +115,7 @@ function LatencyBars({
             </span>
             {/* 丢包率（固定显示，0% 也展示） */}
             <span
-              className={`shrink-0 text-[9px] font-medium ${
+              className={`shrink-0 text-[9px] font-medium tabular-nums ${
                 hasLoss ? 'text-amber-500' : 'text-muted-foreground/60'
               }`}
             >
@@ -109,7 +128,7 @@ function LatencyBars({
   )
 }
 
-/** 服务器卡片组件 */
+/** 服务器卡片组件（NodeGet 风格） */
 function ServerCard({ server, basePath = '/admin' }: ServerCardProps) {
   const navigate = useNavigate()
   const [showAllPings, setShowAllPings] = useState(false)
@@ -169,24 +188,18 @@ function ServerCard({ server, basePath = '/admin' }: ServerCardProps) {
   // 三网延迟目标列表（最多展示3个）
   const pingTargets = useMemo(() => {
     const pings = server.ping_data || []
-    // 先按原始出现顺序分配颜色（与详情页 NetworkQualityChart 一致）
-    const indexed = pings.map((p, originalIdx) => ({
-      p,
-      color: PING_COLORS[originalIdx % PING_COLORS.length],
-    }))
     // 按类别排序：电信 > 联通 > 移动 > 其他
     const categoryOrder: PingCategory[] = ['电信', '联通', '移动', '其他']
-    const sorted = [...indexed].sort((a, b) => {
-      const ca = categorizePing(a.p)
-      const cb = categorizePing(b.p)
+    const sorted = [...pings].sort((a, b) => {
+      const ca = categorizePing(a)
+      const cb = categorizePing(b)
       return categoryOrder.indexOf(ca) - categoryOrder.indexOf(cb)
     })
     // 默认只展示前3个，点击可展开全部
     const display = showAllPings ? sorted : sorted.slice(0, 3)
-    return display.map(({ p, color }) => ({
+    return display.map((p) => ({
       name: p.name || categorizePing(p),
       latency: p.avg_latency ?? 0,
-      color,
       loss: p.loss ?? 0,
     }))
   }, [server.ping_data, showAllPings])
@@ -200,6 +213,9 @@ function ServerCard({ server, basePath = '/admin' }: ServerCardProps) {
   const virtualization = server.virtualization
   const showVirtualizationBadge = virtualization && virtualization !== 'None' && virtualization !== 'none'
 
+  // OS 显示文本
+  const osText = server.os || ''
+
   return (
     <div
       ref={viewportRef}
@@ -212,52 +228,40 @@ function ServerCard({ server, basePath = '/admin' }: ServerCardProps) {
       }}
       role="button"
       tabIndex={0}
-      className="group cursor-pointer rounded-2xl border border-border bg-card p-4 transition-all hover:border-primary/30 hover:shadow-lg animate-fade-in focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+      className={`group relative flex min-h-[360px] cursor-pointer flex-col rounded-2xl border border-border p-4 card-soft node-card-hover animate-fade-in focus:outline-none focus-visible:ring-2 focus-visible:ring-primary sm:min-h-[430px] sm:p-5 ${
+        server.online ? '' : 'opacity-75'
+      }`}
     >
-      {/* 1. 头部行：状态圆点 + 名称 + 发行版图标 + 国旗 + 在线/离线标签 */}
-      <div className="mb-3 flex items-center gap-2">
-        <span className="relative flex h-2 w-2 shrink-0">
-          {server.online && (
-            <span
-              className="absolute inline-flex h-full w-full animate-ping rounded-full opacity-75"
-              style={{ backgroundColor: '#34C759' }}
-            />
-          )}
-          <span
-            className="relative inline-flex h-2 w-2 rounded-full"
-            style={{ backgroundColor: server.online ? '#34C759' : '#6b7280' }}
-          />
-        </span>
-        <h3 className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
+      {/* 1. 头部行：StatusDot + DistroIcon + 名称 + 国旗 */}
+      <div className="flex items-center gap-2 border-b border-dashed border-border pb-3">
+        <StatusDot online={server.online} size="md" />
+        <DistroIcon distro={server.distro} os={server.os} size={16} />
+        <h3 className="min-w-0 flex-1 truncate text-[14px] font-bold text-foreground sm:text-[15px]">
           {displayName}
         </h3>
-        {/* 发行版图标 */}
-        <DistroIcon distro={server.distro} os={server.os} size={14} />
-        {/* 虚拟化 Badge */}
         {showVirtualizationBadge && (
           <span className="shrink-0 rounded bg-secondary px-1.5 py-0.5 text-[9px] font-medium text-muted-foreground">
             {virtualization}
           </span>
         )}
         {flag && <span className="shrink-0 text-sm leading-none">{flag}</span>}
-        <span
-          className={`shrink-0 text-xs font-medium ${
-            server.online ? 'text-success' : 'text-muted-foreground'
-          }`}
-        >
-          {server.online ? '在线' : '离线'}
-        </span>
       </div>
 
-      {/* 2. 资源环形图：CPU / 内存 / 硬盘（三个圆环） */}
-      <div className="mb-3 grid grid-cols-3 gap-1">
+      {/* 2. OS / 虚拟化 信息行 */}
+      <div className="mt-2 truncate text-xs font-bold text-muted-foreground">
+        {osText}
+        {showVirtualizationBadge ? ` · ${virtualization}` : ''}
+      </div>
+
+      {/* 3. 资源环形图：CPU / 内存 / 硬盘（三个圆环） */}
+      <div className="mt-3 grid grid-cols-3 gap-x-2 gap-y-3">
         <ResourceRing label="CPU" value={server.cpu || 0} size={80} />
         <ResourceRing label="内存" value={memUsagePercent} size={80} />
         <ResourceRing label="硬盘" value={diskUsage} size={80} />
       </div>
 
-      {/* 3. 网络信息：实时速率（动画过渡）+ 累计流量 */}
-      <div className="mb-3 rounded-lg bg-secondary/30 px-3 py-2">
+      {/* 4. 网络信息面板：实时速率（动画过渡）+ 累计流量 */}
+      <div className="mt-3 rounded-xl border border-dashed border-border/80 px-3 py-2.5">
         {/* 实时速率行 - 使用动画数值，上升显示主题色，下降显示橙色 */}
         <div className="flex items-center justify-between">
           <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
@@ -280,28 +284,28 @@ function ServerCard({ server, basePath = '/admin' }: ServerCardProps) {
           </span>
         </div>
         {/* 累计流量行 */}
-        <div className="mt-1 flex items-center justify-between border-t border-border/50 pt-1 text-[10px]">
+        <div className="mt-1 flex items-center justify-between border-t border-dashed border-border/60 pt-1 text-[10px]">
           <span className="flex items-center gap-1 text-muted-foreground">
             <span style={{ color: '#5AC8FA' }}>↓</span>
-            <span className="font-medium text-foreground/70">
+            <span className="font-medium tabular-nums text-foreground/70">
               {server.online ? formatTraffic(server.total_rx || 0) : '---'}
             </span>
           </span>
           <span className="flex items-center gap-1 text-muted-foreground">
             <span style={{ color: '#AF52DE' }}>↑</span>
-            <span className="font-medium text-foreground/70">
+            <span className="font-medium tabular-nums text-foreground/70">
               {server.online ? formatTraffic(server.total_tx || 0) : '---'}
             </span>
           </span>
         </div>
       </div>
 
-      {/* 4. 三网延迟行 - 仅在卡片进入视口时渲染 */}
-      <div className="mb-3 border-t border-border pt-3">
+      {/* 5. 延迟探测面板 - 仅在卡片进入视口时渲染 */}
+      <div className="mt-3 rounded-xl border border-dashed border-border/80 px-3 py-3">
         {isInViewport && hasPingData ? (
           <>
-            <div className="mb-1 flex items-center justify-between">
-              <span className="text-[10px] text-muted-foreground">延迟探测</span>
+            <div className="mb-1.5 flex items-center justify-between">
+              <span className="text-[10px] font-medium text-muted-foreground">延迟探测</span>
               {totalPingCount > 3 && (
                 <button
                   onClick={(e) => {
@@ -317,7 +321,7 @@ function ServerCard({ server, basePath = '/admin' }: ServerCardProps) {
             <LatencyBars targets={pingTargets} online={server.online} />
           </>
         ) : isInViewport ? (
-          <div className="py-2 text-center text-[10px] text-muted-foreground/60">
+          <div className="flex h-10 items-center justify-center text-[10px] text-muted-foreground/60">
             暂无延迟数据
           </div>
         ) : (
@@ -328,15 +332,16 @@ function ServerCard({ server, basePath = '/admin' }: ServerCardProps) {
         )}
       </div>
 
-      {/* 5. 底部信息栏：运行时间 · 最后更新 */}
-      <div className="flex items-center justify-between gap-1 text-[10px] text-muted-foreground">
-        <span className="shrink-0">
-          {server.online ? formatUptime(server.uptime) : '---'}
-        </span>
-        <span className="shrink-0">·</span>
-        <span className="shrink-0 whitespace-nowrap">
-          {formatRelativeTime(server.last_seen)}
-        </span>
+      {/* 6. 底部信息栏：运行时间 · 最后更新 */}
+      <div className="mt-auto space-y-1.5 border-t border-dashed border-border pt-3 text-xs tabular-nums text-muted-foreground">
+        <div className="flex items-center justify-between gap-1">
+          <span className="shrink-0">
+            {server.online ? formatUptime(server.uptime) : '---'}
+          </span>
+          <span className="shrink-0 whitespace-nowrap">
+            {formatRelativeTime(server.last_seen)}
+          </span>
+        </div>
       </div>
     </div>
   )

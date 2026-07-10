@@ -3,125 +3,96 @@
 @tailwind utilities;
 
 /* ──────────────────────────────────────────────────────────
-   Apple HIG Dark Theme
-   参考 macOS Sonoma/Ventura 系统偏好设置界面
+   NodeGet Theme (NIE-Theme)
+   青绿主色 + 毛玻璃浮动导航 + 虚线分隔 + 渐变卡片 + 网格背景
    ────────────────────────────────────────────────────────── */
 
 @layer base {
   :root {
     /* 字体栈 */
-    --font-sans: -apple-system, BlinkMacSystemFont, 'SF Pro Display',
-      'SF Pro Text', 'Helvetica Neue', Arial, sans-serif;
-    --font-mono: 'SF Mono', Menlo, Monaco, 'Courier New', monospace;
+    --font-sans: "MiSans VF", "MiSans", "HarmonyOS Sans SC", "Alibaba PuHuiTi 3.0",
+      "PingFang SC", "Microsoft YaHei UI", system-ui, -apple-system,
+      BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --font-mono: "JetBrains Mono", "SFMono-Regular", "ui-monospace", "Menlo", "Consolas", monospace;
 
     /* 圆角 */
-    --radius: 0.75rem; /* 12px */
-    --radius-lg: 1rem; /* 16px */
-    --radius-xl: 1.25rem; /* 20px */
+    --radius: 0.65rem; /* 10.4px */
 
-    /* ── 浅色主题（保留作为备用） ── */
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
+    /* ── 浅色主题 ── */
+    --background: 210 25% 97%;          /* #F2F5F8 */
+    --foreground: 216 33% 27%;          /* #2C3A4D */
 
-    --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
+    --card: 0 0% 100%;                   /* #FFFFFF */
+    --card-foreground: 216 33% 27%;
     --card-elevated: 0 0% 98%;
 
-    --primary: 211 100% 50%; /* Apple Blue #007AFF */
+    --primary: 153 51% 39%;             /* #36A585 */
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
+    --secondary: 210 40% 94%;           /* #DDE6F0 */
+    --secondary-foreground: 214 24% 37%; /* #485C75 */
 
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
+    --muted: 210 40% 94%;
+    --muted-foreground: 215 18% 46%;    /* #6B7B8E */
 
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
+    --accent: 210 40% 94%;
+    --accent-foreground: 153 51% 35%;   /* #2E8E70 */
 
-    --destructive: 1 100% 59%; /* Apple Red #FF3B30 */
+    --destructive: 0 72% 51%;           /* #DC2424 */
     --destructive-foreground: 0 0% 100%;
 
-    --success: 142 69% 59%; /* Apple Green #34C759 */
+    --success: 142 69% 59%;             /* #34C759 */
     --success-foreground: 0 0% 100%;
 
-    --warning: 37 100% 50%; /* Apple Orange #FF9500 */
+    --warning: 37 100% 50%;             /* #FF9500 */
     --warning-foreground: 0 0% 100%;
 
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 211 100% 50%;
+    --border: 214 27% 83%;              /* #C5CFDD */
+    --input: 214 25% 84%;               /* #C8D2DE */
+    --ring: 153 51% 39%;
 
-    /* Apple 强调色 */
-    --apple-blue: 211 100% 50%; /* #007AFF */
-    --apple-green: 142 69% 59%; /* #34C759 */
-    --apple-orange: 37 100% 50%; /* #FF9500 */
-    --apple-purple: 281 68% 60%; /* #AF52DE */
-    --apple-red: 1 100% 59%; /* #FF3B30 */
-    --apple-cyan: 199 95% 67%; /* #5AC8FA */
-    --apple-pink: 339 100% 59%; /* #FF2D55 */
-    --apple-yellow: 50 100% 50%; /* #FFCC00 */
-
-    /* 玻璃质感 */
-    --glass-bg: 0 0% 100% / 0.72;
-    --glass-border: 0 0% 100% / 0.08;
-    --glass-shadow: 0 2px 8px rgb(0 0 0 / 0.04);
-
-    /* 进度条渐变 */
-    --progress-cpu: linear-gradient(90deg, #007AFF, #5AC8FA);
-    --progress-ram: linear-gradient(90deg, #34C759, #5AC8FA);
-    --progress-disk: linear-gradient(90deg, #FF9500, #FFCC00);
-    --progress-traffic: linear-gradient(90deg, #AF52DE, #FF2D55);
+    /* 背景配色调色板 [base, accent] */
+    --bg-base: 245 248 251;             /* #F5F8FB */
+    --bg-accent: 183 196 214;           /* #B7C4D6 */
   }
 
   .dark {
-    /* ── Apple HIG 深色主题 ── */
-    --background: 216 28% 7%; /* #0d1117 */
-    --foreground: 0 0% 100%; /* #FFFFFF */
+    /* ── 深色主题（默认） ── */
+    --background: 220 24% 13%;          /* #19212E */
+    --foreground: 210 40% 94%;          /* #DDE6F0 */
 
-    --card: 240 4% 11%; /* #1c1c1e */
-    --card-foreground: 0 0% 100%;
-    --card-elevated: 240 2% 18%; /* #2c2c2e */
+    --card: 220 22% 16%;                /* #202938 */
+    --card-foreground: 210 40% 94%;
+    --card-elevated: 220 20% 20%;       /* #2A3243 */
 
-    --primary: 211 100% 50%; /* Apple Blue #007AFF */
-    --primary-foreground: 0 0% 100%;
+    --primary: 142 58% 66%;             /* #5FD894 */
+    --primary-foreground: 220 26% 14%;  /* #1A2230 */
 
-    --secondary: 240 2% 18%; /* #2c2c2e */
-    --secondary-foreground: 0 0% 100%;
+    --secondary: 218 21% 21%;           /* #2A3243 */
+    --secondary-foreground: 210 40% 94%;
 
-    --muted: 240 4% 11%; /* #1c1c1e */
-    --muted-foreground: 240 2% 57%; /* #8E8E93 */
+    --muted: 218 21% 21%;
+    --muted-foreground: 214 22% 70%;    /* #9CABC0 */
 
-    --accent: 240 2% 18%; /* #2c2c2e */
-    --accent-foreground: 0 0% 100%;
+    --accent: 218 21% 21%;
+    --accent-foreground: 142 51% 62%;   /* #52CC8A */
 
-    --destructive: 1 100% 59%; /* Apple Red #FF3B30 */
+    --destructive: 0 63% 44%;           /* #B53030 */
     --destructive-foreground: 0 0% 100%;
 
-    --success: 142 69% 59%; /* Apple Green #34C759 */
+    --success: 142 69% 59%;
     --success-foreground: 0 0% 100%;
 
-    --warning: 37 100% 50%; /* Apple Orange #FF9500 */
+    --warning: 37 100% 50%;
     --warning-foreground: 0 0% 100%;
 
-    --border: 0 0% 100% / 0.08; /* rgba(255,255,255,0.08) */
-    --input: 0 0% 100% / 0.1;
-    --ring: 211 100% 50%;
+    --border: 218 17% 34%;              /* #48525F */
+    --input: 218 17% 36%;               /* #4E5969 */
+    --ring: 142 58% 66%;
 
-    /* Apple 强调色（暗色模式保持一致） */
-    --apple-blue: 211 100% 50%;
-    --apple-green: 142 69% 59%;
-    --apple-orange: 37 100% 50%;
-    --apple-purple: 281 68% 60%;
-    --apple-red: 1 100% 59%;
-    --apple-cyan: 199 95% 67%;
-    --apple-pink: 339 100% 59%;
-    --apple-yellow: 50 100% 50%;
-
-    /* 玻璃质感 */
-    --glass-bg: 240 4% 11% / 0.72;
-    --glass-border: 0 0% 100% / 0.08;
-    --glass-shadow: 0 2px 8px rgb(0 0 0 / 0.3);
+    /* 背景配色调色板 [base, accent] */
+    --bg-base: 17 24 39;                /* #111827 */
+    --bg-accent: 148 163 184;           /* #94A3B8 */
   }
 }
 
@@ -133,79 +104,111 @@
   body {
     @apply bg-background text-foreground;
     font-family: var(--font-sans);
-    font-feature-settings: 'rlig' 1, 'calt' 1;
+    font-feature-settings: "kern" 1, "tnum" 1;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.6;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    letter-spacing: -0.01em;
+    transition: background-color 0.18s ease-out, color 0.18s ease-out;
   }
 
-  /* 等宽字体 */
- code, pre, .font-mono {
+  /* 主题切换时禁用所有过渡（防止闪烁） */
+  .theme-changing * {
+    transition-duration: 0s !important;
+    animation-duration: 0s !important;
+  }
+
+  /* 交互元素统一过渡 */
+  button, a, [role="button"], input, select, textarea {
+    transition-property: color, background-color, border-color, box-shadow, opacity, transform, filter;
+    transition-duration: 160ms;
+    transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
+  }
+
+  button:active, a:active, [role="button"]:active {
+    transform: scale(0.985);
+  }
+
+  code, pre, .font-mono {
     font-family: var(--font-mono);
   }
 }
 
 @layer components {
-  /* ── 毛玻璃质感卡片 ── */
+  /* ── 渐变卡片（.card-soft） ── */
+  .card-soft {
+    border-radius: 0.72rem;
+    background: linear-gradient(180deg, hsl(var(--card)) 0%, hsl(var(--card) / 0.975) 100%);
+    box-shadow:
+      0 10px 28px rgba(15, 23, 42, 0.055),
+      0 2px 7px rgba(15, 23, 42, 0.035),
+      0 0 0 1px rgba(255, 255, 255, 0.84) inset;
+  }
+
+  .dark .card-soft {
+    box-shadow:
+      0 12px 30px rgba(0, 0, 0, 0.30),
+      0 2px 8px rgba(0, 0, 0, 0.18),
+      0 0 0 1px rgba(255, 255, 255, 0.04) inset;
+  }
+
+  /* ── 卡片 hover 效果（.node-card-hover） ── */
+  .node-card-hover {
+    transition: border-color 200ms, box-shadow 200ms, opacity 200ms, background-color 200ms;
+  }
+
+  .node-card-hover:hover {
+    border-color: hsl(var(--primary) / 0.9);
+    box-shadow:
+      0 0 0 1px hsl(var(--primary) / 0.26),
+      0 14px 32px rgba(15, 23, 42, 0.08),
+      0 0 24px hsl(var(--primary) / 0.055);
+  }
+
+  .dark .node-card-hover:hover {
+    border-color: hsl(var(--primary) / 0.9);
+    box-shadow:
+      0 0 0 1px hsl(var(--primary) / 0.30),
+      0 16px 36px rgba(0, 0, 0, 0.34),
+      0 0 24px hsl(var(--primary) / 0.08);
+  }
+
+  /* ── 网格背景（.bg-soft） ── */
+  .bg-soft {
+    background-image:
+      linear-gradient(hsl(var(--muted-foreground) / 0.045) 1px, transparent 1px),
+      linear-gradient(90deg, hsl(var(--muted-foreground) / 0.045) 1px, transparent 1px);
+    background-size: 22px 22px;
+  }
+
+  .dark .bg-soft {
+    background-image:
+      linear-gradient(hsl(var(--muted-foreground) / 0.06) 1px, transparent 1px),
+      linear-gradient(90deg, hsl(var(--muted-foreground) / 0.06) 1px, transparent 1px);
+  }
+
+  /* ── 毛玻璃质感 ── */
   .glass {
-    background: hsl(var(--card) / 0.72);
-    backdrop-filter: blur(20px) saturate(180%);
-    -webkit-backdrop-filter: blur(20px) saturate(180%);
-    border: 1px solid hsl(var(--glass-border));
-    box-shadow: var(--glass-shadow);
+    background: hsl(var(--card) / 0.92);
+    backdrop-filter: blur(16px) saturate(180%);
+    -webkit-backdrop-filter: blur(16px) saturate(180%);
   }
 
-  /* ── Apple 风格卡片 ── */
-  .apple-card {
-    background: hsl(var(--card));
-    border: 1px solid hsl(var(--glass-border));
-    border-radius: var(--radius-lg);
-    box-shadow: 0 2px 8px rgb(0 0 0 / 0.3);
-  }
-
-  .dark .apple-card {
-    background: hsl(var(--card));
-  }
-
-  /* ── 悬浮层 ── */
-  .apple-elevated {
-    background: hsl(var(--card-elevated));
-    border: 1px solid hsl(var(--glass-border));
-    border-radius: var(--radius-lg);
-    box-shadow: 0 4px 16px rgb(0 0 0 / 0.4);
-  }
-
-  /* ── Apple 风格进度条 ── */
+  /* ── 进度条 ── */
   .progress-bar {
     height: 6px;
     border-radius: 9999px;
     overflow: hidden;
-    background: hsl(0 0% 100% / 0.06);
+    background: hsl(var(--muted));
   }
 
   .progress-bar-fill {
     height: 100%;
     border-radius: 9999px;
-    transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    transition: width 0.3s cubic-bezier(0.2, 0, 0, 1);
   }
 
-  .progress-cpu {
-    background: var(--progress-cpu);
-  }
-
-  .progress-ram {
-    background: var(--progress-ram);
-  }
-
-  .progress-disk {
-    background: var(--progress-disk);
-  }
-
-  .progress-traffic {
-    background: var(--progress-traffic);
-  }
-
-  /* ── Apple 风格药丸徽章 ── */
+  /* ── 药丸徽章 ── */
   .badge-pill {
     display: inline-flex;
     align-items: center;
@@ -232,13 +235,18 @@
     color: hsl(var(--primary));
   }
 
-  /* ── Apple 风格筛选胶囊 ── */
+  .badge-warning {
+    background: hsl(var(--warning) / 0.12);
+    color: hsl(var(--warning));
+  }
+
+  /* ── 筛选胶囊 ── */
   .filter-pill {
     padding: 6px 14px;
     border-radius: 9999px;
     font-size: 13px;
     font-weight: 500;
-    transition: all 0.2s ease;
+    transition: all 0.16s cubic-bezier(0.2, 0, 0, 1);
     border: 1px solid transparent;
   }
 
@@ -247,15 +255,10 @@
     color: hsl(var(--primary-foreground));
   }
 
-  .dark .filter-pill-active {
-    background: hsl(0 0% 100%);
-    color: hsl(0 0% 0%);
-  }
-
   .filter-pill-inactive {
-    background: hsl(var(--card));
+    background: hsl(var(--secondary));
     color: hsl(var(--muted-foreground));
-    border-color: hsl(var(--glass-border));
+    border-color: hsl(var(--border));
   }
 
   .filter-pill-inactive:hover {
@@ -268,12 +271,12 @@
   /* ── 滚动条 ── */
   .scrollbar-thin {
     scrollbar-width: thin;
-    scrollbar-color: hsl(var(--muted-foreground) / 0.3) transparent;
+    scrollbar-color: hsl(var(--muted-foreground) / 0.35) transparent;
   }
 
   .scrollbar-thin::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
+    width: 10px;
+    height: 10px;
   }
 
   .scrollbar-thin::-webkit-scrollbar-track {
@@ -282,7 +285,9 @@
 
   .scrollbar-thin::-webkit-scrollbar-thumb {
     background-color: hsl(var(--muted-foreground) / 0.3);
-    border-radius: 3px;
+    border: 2px solid transparent;
+    border-radius: 999px;
+    background-clip: padding-box;
   }
 
   .scrollbar-thin::-webkit-scrollbar-thumb:hover {
@@ -291,43 +296,21 @@
 
   /* ── 动画 ── */
   .animate-fade-in {
-    animation: fadeIn 0.3s ease-in-out;
+    animation: fadeIn 0.2s ease-out;
   }
 
   @keyframes fadeIn {
-    from {
-      opacity: 0;
-      transform: translateY(4px);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0);
-    }
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
   }
 
-  .animate-pulse-slow {
-    animation: pulseSlow 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  .animate-scale-in {
+    animation: scaleIn 0.15s cubic-bezier(0.2, 0, 0, 1);
   }
 
-  @keyframes pulseSlow {
-    0%, 100% {
-      opacity: 1;
-    }
-    50% {
-      opacity: 0.5;
-    }
-  }
-
-  /* ── Apple 风格过渡 ── */
-  .transition-apple {
-    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-  }
-
-  /* ── 迷你柱状图竖条 ── */
-  .mini-bar {
-    width: 4px;
-    border-radius: 2px;
-    transition: height 0.3s ease;
+  @keyframes scaleIn {
+    from { opacity: 0; transform: scale(0.95); }
+    to { opacity: 1; transform: scale(1); }
   }
 
   /* ── 文字截断 ── */
@@ -335,5 +318,18 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  /* ── Tooltip 阴影 ── */
+  .shadow-tooltip {
+    box-shadow:
+      0 4px 16px rgba(15, 23, 42, 0.12),
+      0 1px 4px rgba(15, 23, 42, 0.08);
+  }
+
+  .dark .shadow-tooltip {
+    box-shadow:
+      0 4px 16px rgba(0, 0, 0, 0.28),
+      0 1px 4px rgba(0, 0, 0, 0.16);
   }
 }

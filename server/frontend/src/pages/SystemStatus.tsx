@@ -22,10 +22,10 @@ function formatUptimeFull(seconds: number): string {
 /** 进度条组件 */
 function ProgressBar({ value, color }: { value: number; color: string }) {
   return (
-    <div className="h-2 w-full overflow-hidden rounded-full bg-secondary">
+    <div className="progress-bar">
       <div
-        className={`h-full rounded-full transition-all duration-500 ${color}`}
-        style={{ width: `${Math.min(value, 100)}%` }}
+        className="progress-bar-fill"
+        style={{ width: `${Math.min(value, 100)}%`, backgroundColor: color }}
       />
     </div>
   )
@@ -46,12 +46,12 @@ function MetricCard({
   icon?: string
 }) {
   return (
-    <div className="rounded-xl border border-border bg-card p-4">
+    <div className="card-soft p-4">
       <div className="flex items-center gap-2 text-xs text-muted-foreground">
         {icon && <span className="text-sm">{icon}</span>}
         <span>{label}</span>
       </div>
-      <div className={`mt-2 text-2xl font-bold ${color || 'text-foreground'}`}>
+      <div className={`mt-2 text-2xl font-bold tabular-nums ${color || 'text-foreground'}`}>
         {value}
       </div>
       {subValue && (
@@ -137,21 +137,21 @@ export default function SystemStatus() {
       {/* 页面标题 */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold text-foreground">系统状态</h1>
+          <h1 className="text-xl font-bold text-primary">系统状态</h1>
           <p className="mt-0.5 text-sm text-muted-foreground">
             服务端运行状态监控，每 5 秒自动刷新
           </p>
         </div>
         <div className="flex items-center gap-3">
           {lastUpdate > 0 && (
-            <span className="text-xs text-muted-foreground">
+            <span className="text-xs tabular-nums text-muted-foreground">
               最后更新：{new Date(lastUpdate).toLocaleTimeString('zh-CN')}
             </span>
           )}
           <button
             onClick={loadStatus}
             disabled={loading}
-            className="flex h-9 items-center gap-1.5 rounded-lg border border-border bg-card px-3 text-sm text-foreground transition-colors hover:bg-accent disabled:opacity-50"
+            className="flex h-10 items-center gap-1.5 rounded-xl border border-border bg-secondary px-3 text-sm font-semibold text-foreground transition-colors hover:bg-accent disabled:opacity-50"
           >
             {loading ? (
               <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
@@ -166,7 +166,7 @@ export default function SystemStatus() {
       </div>
 
       {error && (
-        <div className="rounded-xl border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
+        <div className="rounded-md border border-dashed border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
           {error}
         </div>
       )}
@@ -232,10 +232,10 @@ export default function SystemStatus() {
           </div>
 
           {/* 磁盘空间使用情况 */}
-          <div className="rounded-xl border border-border bg-card p-4">
+          <div className="card-soft p-4">
             <div className="mb-4 flex items-center justify-between">
               <h2 className="text-sm font-semibold text-foreground">磁盘空间使用</h2>
-              <span className={`text-sm font-medium ${getUsageTextColor(diskUsagePercent)}`}>
+              <span className={`text-sm font-bold tabular-nums ${getUsageTextColor(diskUsagePercent)}`}>
                 {diskUsagePercent.toFixed(1)}%
               </span>
             </div>
@@ -245,21 +245,21 @@ export default function SystemStatus() {
             />
             <div className="mt-3 flex items-center justify-between text-sm">
               <div className="text-muted-foreground">
-                已用 <span className="font-medium text-foreground">{formatBytes(diskUsed)}</span>
+                已用 <span className="font-bold tabular-nums text-foreground">{formatBytes(diskUsed)}</span>
                 {' '}/ 总{' '}
-                <span className="font-medium text-foreground">{formatBytes(status.disk_total)}</span>
+                <span className="font-bold tabular-nums text-foreground">{formatBytes(status.disk_total)}</span>
               </div>
               <div className="text-muted-foreground">
-                可用 <span className="font-medium text-success">{formatBytes(status.disk_free)}</span>
+                可用 <span className="font-bold tabular-nums text-success">{formatBytes(status.disk_free)}</span>
               </div>
             </div>
           </div>
 
           {/* 内存使用情况 */}
-          <div className="rounded-xl border border-border bg-card p-4">
+          <div className="card-soft p-4">
             <div className="mb-4 flex items-center justify-between">
               <h2 className="text-sm font-semibold text-foreground">Go 运行时内存使用</h2>
-              <span className={`text-sm font-medium ${getUsageTextColor(memPercent)}`}>
+              <span className={`text-sm font-bold tabular-nums ${getUsageTextColor(memPercent)}`}>
                 {memPercent.toFixed(1)}%
               </span>
             </div>
@@ -269,21 +269,21 @@ export default function SystemStatus() {
             />
             <div className="mt-3 flex items-center justify-between text-sm">
               <div className="text-muted-foreground">
-                已分配 <span className="font-medium text-foreground">{formatBytes(status.mem_alloc)}</span>
+                已分配 <span className="font-bold tabular-nums text-foreground">{formatBytes(status.mem_alloc)}</span>
                 {' '}/ 系统{' '}
-                <span className="font-medium text-foreground">{formatBytes(status.mem_sys)}</span>
+                <span className="font-bold tabular-nums text-foreground">{formatBytes(status.mem_sys)}</span>
               </div>
               <div className="text-muted-foreground">
-                GC 次数 <span className="font-medium text-foreground">{status.mem_num_gc}</span>
+                GC 次数 <span className="font-bold tabular-nums text-foreground">{status.mem_num_gc}</span>
               </div>
             </div>
           </div>
 
           {/* 版本信息 */}
-          <div className="rounded-xl border border-border bg-card p-4">
+          <div className="card-soft p-4">
             <h2 className="mb-3 text-sm font-semibold text-foreground">版本信息</h2>
             <div className="flex items-center gap-3">
-              <span className="rounded-lg bg-primary/10 px-3 py-1.5 text-sm font-medium text-primary">
+              <span className="badge-pill badge-primary font-bold">
                 v{status.version}
               </span>
               <span className="text-xs text-muted-foreground">

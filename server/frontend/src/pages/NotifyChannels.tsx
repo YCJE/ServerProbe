@@ -293,21 +293,21 @@ export default function NotifyChannels() {
 
   /** 输入框通用样式 */
   const inputClass =
-    'h-9 w-full rounded-lg border border-border bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground/60 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary'
+    'h-10 w-full rounded-md border border-input bg-background px-3 text-sm shadow-sm text-foreground placeholder:text-muted-foreground/60 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary'
 
   return (
     <div className="space-y-6">
       {/* 页面标题 */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold text-foreground">通知渠道</h1>
+          <h1 className="text-xl font-bold text-primary">通知渠道</h1>
           <p className="mt-0.5 text-sm text-muted-foreground">
             管理告警通知渠道（Webhook / Telegram / 邮件），用于接收告警消息
           </p>
         </div>
         <button
           onClick={handleOpenAdd}
-          className="flex h-9 items-center gap-1.5 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+          className="flex h-10 items-center gap-1.5 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
         >
           <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -317,8 +317,8 @@ export default function NotifyChannels() {
       </div>
 
       {/* 渠道列表 */}
-      <div className="rounded-xl border border-border bg-card">
-        <div className="border-b border-border px-4 py-3">
+      <div className="card-soft overflow-hidden">
+        <div className="border-b border-dashed border-border px-4 py-3">
           <h2 className="text-sm font-semibold text-foreground">通知渠道列表 ({channels.length})</h2>
         </div>
 
@@ -335,48 +335,48 @@ export default function NotifyChannels() {
             <p className="mt-1 text-xs text-muted-foreground/70">点击"添加渠道"创建第一个通知渠道</p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto scrollbar-thin">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-border text-left text-xs text-muted-foreground">
-                  <th className="px-4 py-2 font-medium">ID</th>
-                  <th className="px-4 py-2 font-medium">名称</th>
-                  <th className="px-4 py-2 font-medium">类型</th>
-                  <th className="px-4 py-2 font-medium">创建时间</th>
-                  <th className="px-4 py-2 font-medium">操作</th>
+                <tr className="border-b border-border bg-secondary/30">
+                  <th className="h-10 px-3 text-left font-medium text-muted-foreground">ID</th>
+                  <th className="h-10 px-3 text-left font-medium text-muted-foreground">名称</th>
+                  <th className="h-10 px-3 text-left font-medium text-muted-foreground">类型</th>
+                  <th className="h-10 px-3 text-left font-medium text-muted-foreground">创建时间</th>
+                  <th className="h-10 px-3 text-left font-medium text-muted-foreground">操作</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-border">
+              <tbody className="divide-y divide-dashed divide-border">
                 {channels.map((channel) => (
-                  <tr key={channel.id} className="text-foreground">
-                    <td className="px-4 py-3 text-muted-foreground">{channel.id}</td>
-                    <td className="px-4 py-3 font-medium">{channel.name}</td>
-                    <td className="px-4 py-3">
-                      <span className="rounded bg-secondary px-1.5 py-0.5 text-xs text-secondary-foreground">
+                  <tr key={channel.id} className="text-foreground transition-colors hover:bg-muted/50">
+                    <td className="px-3 py-3 tabular-nums text-muted-foreground">{channel.id}</td>
+                    <td className="px-3 py-3 font-medium">{channel.name}</td>
+                    <td className="px-3 py-3">
+                      <span className="badge-pill badge-primary">
                         {getTypeLabel(channel.type)}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-xs text-muted-foreground">
+                    <td className="px-3 py-3 text-xs tabular-nums text-muted-foreground">
                       {channel.created_at ? new Date(channel.created_at).toLocaleString('zh-CN') : '-'}
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-3 py-3">
                       <div className="flex items-center gap-2">
                         <button
                           onClick={() => handleOpenEdit(channel)}
-                          className="text-xs text-primary transition-colors hover:underline"
+                          className="text-xs font-medium text-primary transition-colors hover:underline"
                         >
                           编辑
                         </button>
                         <button
                           onClick={() => handleTest(channel)}
                           disabled={testingId === channel.id}
-                          className="text-xs text-success transition-colors hover:underline disabled:opacity-50"
+                          className="text-xs font-medium text-success transition-colors hover:underline disabled:opacity-50"
                         >
                           {testingId === channel.id ? '测试中...' : '测试'}
                         </button>
                         <button
                           onClick={() => setDeleteTarget(channel)}
-                          className="text-xs text-destructive transition-colors hover:underline"
+                          className="text-xs font-medium text-destructive transition-colors hover:underline"
                         >
                           删除
                         </button>
@@ -394,7 +394,7 @@ export default function NotifyChannels() {
       {modalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={handleCloseModal}>
           <div
-            className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-xl border border-border bg-card p-4 shadow-lg sm:p-6"
+            className="max-h-[90vh] w-full max-w-md overflow-y-auto card-soft p-4 sm:p-6 scrollbar-thin"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="mb-4 flex items-center justify-between">
@@ -608,14 +608,14 @@ export default function NotifyChannels() {
             <div className="mt-6 flex items-center justify-end gap-2">
               <button
                 onClick={handleCloseModal}
-                className="flex h-9 items-center rounded-lg border border-border px-4 text-sm text-foreground transition-colors hover:bg-accent"
+                className="flex h-10 items-center rounded-xl border border-border bg-secondary px-4 text-sm font-semibold text-foreground transition-colors hover:bg-accent"
               >
                 取消
               </button>
               <button
                 onClick={handleSubmit}
                 disabled={submitting}
-                className="flex h-9 items-center rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+                className="flex h-10 items-center rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
               >
                 {submitting ? '提交中...' : editingId !== null ? '保存' : '添加'}
               </button>
@@ -628,7 +628,7 @@ export default function NotifyChannels() {
       {deleteTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => !deleting && setDeleteTarget(null)}>
           <div
-            className="w-full max-w-sm rounded-xl border border-border bg-card p-6 shadow-lg"
+            className="w-full max-w-sm card-soft p-6"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="mb-4 flex items-center gap-3">
@@ -648,14 +648,14 @@ export default function NotifyChannels() {
               <button
                 onClick={() => setDeleteTarget(null)}
                 disabled={deleting}
-                className="flex h-9 items-center rounded-lg border border-border px-4 text-sm text-foreground transition-colors hover:bg-accent disabled:opacity-50"
+                className="flex h-10 items-center rounded-xl border border-border bg-secondary px-4 text-sm font-semibold text-foreground transition-colors hover:bg-accent disabled:opacity-50"
               >
                 取消
               </button>
               <button
                 onClick={handleDelete}
                 disabled={deleting}
-                className="flex h-9 items-center rounded-lg bg-destructive px-4 text-sm font-medium text-destructive-foreground transition-colors hover:bg-destructive/90 disabled:opacity-50"
+                className="flex h-10 items-center rounded-xl bg-destructive px-4 text-sm font-semibold text-destructive-foreground transition-colors hover:bg-destructive/90 disabled:opacity-50"
               >
                 {deleting ? '删除中...' : '删除'}
               </button>
