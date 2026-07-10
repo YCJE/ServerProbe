@@ -1,4 +1,4 @@
-import { memo, useMemo, useRef, useState, useEffect } from 'react'
+import { memo, useMemo, useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { ServerData, PingResult } from '@/types'
 import {
@@ -26,104 +26,265 @@ interface ServerCardProps {
   basePath?: string
 }
 
-/** 三网类别 */
-type PingCategory = '电信' | '联通' | '移动' | '其他'
+/** 卡片本地历史数据点 */
+interface CardHistoryPoint {
+  timestamp: number
+  ping_data: PingResult[]
+  online: boolean
+}
 
-/** 将 ping target 归类为三网类别 */
-function categorizePing(ping: PingResult): PingCategory {
-  const text = `${ping.target || ''} ${ping.name || ''}`.toLowerCase()
-  // 使用词边界匹配短代码，避免子串误判（如 "connect" 含 "ct"）
-  const wordTest = (t: string, kw: string) =>
-    new RegExp(`(^|[^a-z])${kw}([^a-z]|$)`).test(t)
-  if (text.includes('电信') || text.includes('telecom') || wordTest(text, 'ct')) return '电信'
-  if (text.includes('联通') || text.includes('unicom') || wordTest(text, 'cu')) return '联通'
-  if (text.includes('移动') || text.includes('mobile') || text.includes('cmcc')) return '移动'
-  return '其他'
+/** 最大缓存历史点数（约 12 分钟，按 3s 上报间隔） */
+const MAX_HISTORY_POINTS = 240
+
+/** 紧凑图表桶数 */
+const COMPACT_BUCKETS = 30
+
+/** 延迟质量桶颜色（与 LatencyQualityBar 保持一致） */
+const BUCKET_COLORS = {
+  deepGreen: '#69BE7B',
+  lightGreen: '#A7D879',
+  lightYellow: '#E8CC68',
+  deepYellow: '#EFA85F',
+  lightRed: '#E98686',
+  deepRed: '#D96B6B',
+  empty: 'rgba(148, 163, 184, 0.22)',
+} as const
+
+/** 根据平均延迟和丢包率返回桶颜色 */
+function getBucketColor(avgLatency: number, avgLoss: number, hasData: boolean): string {
+  if (!hasData) return BUCKET_COLORS.empty
+  if (avgLoss > 50) return BUCKET_COLORS.deepRed
+  if (avgLatency <= 50) return BUCKET_COLORS.deepGreen
+  if (avgLatency <= 100) return BUCKET_COLORS.lightGreen
+  if (avgLatency <= 180) return BUCKET_COLORS.lightYellow
+  if (avgLatency <= 300) return BUCKET_COLORS.deepYellow
+  return BUCKET_COLORS.lightRed
+}
+
+/** 延迟桶聚合结果 */
+interface LatencyBucket {
+  index: number
+  color: string
+  hasData: boolean
+  avgLatency: number
+  avgLoss: number
+  count: number
+}
+
+/** 在线状态格子类型 */
+type OnlineStatus = 'online' | 'offline' | 'empty'
+
+/** 在线状态格子 */
+interface OnlineCell {
+  index: number
+  status: OnlineStatus
+}
+
+/** 在线状态格子颜色（内联样式用） */
+function getOnlineCellColor(status: OnlineStatus): string {
+  switch (status) {
+    case 'online':
+      return 'hsl(var(--primary))'
+    case 'offline':
+      return 'hsl(var(--destructive) / 0.45)'
+    case 'empty':
+      return 'hsl(var(--muted) / 0.3)'
+  }
 }
 
 /**
- * 根据延迟值返回颜色（NodeGet 延迟分桶色）
- * - <= 50ms: 深绿  #69BE7B
- * - <= 100ms: 浅绿 #A7D879
- * - <= 180ms: 浅黄 #E8CC68
- * - <= 300ms: 深黄 #EFA85F
- * - > 300ms:  浅红 #E98686
- * - 丢包:     深红 #D96B6B
- * - 无数据:   灰   rgba(148,163,184,0.28)
+ * 紧凑延迟质量分布条（卡片专用）
+ *
+ * - 30 个时间桶，自适应历史数据范围
+ * - 高度 16px，悬停显示延迟和丢包率
+ * - 颜色与 LatencyQualityBar 保持一致
  */
-function getLatencyColor(latency: number, loss: number): string {
-  if (loss > 0) return '#D96B6B'
-  if (latency <= 0) return 'rgba(148, 163, 184, 0.28)'
-  if (latency <= 50) return '#69BE7B'
-  if (latency <= 100) return '#A7D879'
-  if (latency <= 180) return '#E8CC68'
-  if (latency <= 300) return '#EFA85F'
-  return '#E98686'
-}
-
-/** 横向延迟条形图 - 每个探测目标一行：名称 + 横条 + 数值，有丢包时标红 */
-function LatencyBars({
-  targets,
+function CompactLatencyBar({
+  points,
   online,
+  currentAvgLatency,
 }: {
-  targets: Array<{ name: string; latency: number; loss: number }>
+  points: CardHistoryPoint[]
   online: boolean
+  currentAvgLatency: number | null
 }) {
-  if (!online || targets.length === 0) {
-    return (
-      <div className="flex h-10 items-center justify-center">
-        <span className="text-[10px] text-muted-foreground/60">---</span>
-      </div>
-    )
-  }
+  const [hoveredIdx, setHoveredIdx] = useState<number | null>(null)
 
-  const maxLatency = targets.reduce((max, t) => (t.latency > max ? t.latency : max), 0) || 100
+  const buckets = useMemo<LatencyBucket[]>(() => {
+    const result: LatencyBucket[] = Array.from({ length: COMPACT_BUCKETS }, (_, i) => ({
+      index: i,
+      color: BUCKET_COLORS.empty,
+      hasData: false,
+      avgLatency: 0,
+      avgLoss: 0,
+      count: 0,
+    }))
+
+    if (points.length === 0) return result
+
+    const oldestTs = points[0].timestamp
+    const newestTs = points[points.length - 1].timestamp
+    const range = newestTs - oldestTs || 1
+
+    for (const point of points) {
+      const ratio = (point.timestamp - oldestTs) / range
+      const bucketIdx = Math.min(
+        Math.max(0, Math.floor(ratio * COMPACT_BUCKETS)),
+        COMPACT_BUCKETS - 1,
+      )
+      const bucket = result[bucketIdx]
+      const pings = point.ping_data || []
+      if (pings.length === 0) continue
+
+      let latencySum = 0
+      let lossSum = 0
+      let validCount = 0
+      for (const ping of pings) {
+        if (ping.avg_latency != null && ping.avg_latency >= 0) {
+          latencySum += ping.avg_latency
+          lossSum += ping.loss || 0
+          validCount++
+        }
+      }
+
+      if (validCount > 0) {
+        const pointAvgLatency = latencySum / validCount
+        const pointAvgLoss = lossSum / validCount
+        bucket.avgLatency =
+          (bucket.avgLatency * bucket.count + pointAvgLatency) / (bucket.count + 1)
+        bucket.avgLoss =
+          (bucket.avgLoss * bucket.count + pointAvgLoss) / (bucket.count + 1)
+        bucket.count++
+        bucket.hasData = true
+      }
+    }
+
+    for (const bucket of result) {
+      if (bucket.hasData) {
+        bucket.color = getBucketColor(bucket.avgLatency, bucket.avgLoss, true)
+      }
+    }
+
+    return result
+  }, [points])
+
+  const hoveredBucket = hoveredIdx !== null ? buckets[hoveredIdx] : null
 
   return (
-    <div className="space-y-1.5">
-      {targets.map((t, i) => {
-        const ratio = t.latency > 0 ? t.latency / maxLatency : 0
-        const barWidth = Math.max(8, ratio * 100)
-        const hasLoss = t.loss > 0
-        const color = getLatencyColor(t.latency, t.loss)
-        return (
-          <div key={i} className="flex items-center gap-2">
-            {/* 左侧：颜色点 + 名称 */}
-            <span className="flex w-16 shrink-0 items-center gap-1">
-              <span
-                className="inline-block h-1.5 w-1.5 shrink-0 rounded-full"
-                style={{ backgroundColor: color }}
-              />
-              <span className="truncate text-[9px] text-muted-foreground">
-                {t.name || '--'}
-              </span>
-            </span>
-            {/* 中间：横向进度条（flex-1 自适应填充剩余空间） */}
-            <div className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-secondary">
-              <div
-                className="h-full rounded-full transition-all duration-500"
-                style={{ width: `${barWidth}%`, backgroundColor: hasLoss ? '#D96B6B' : color }}
-              />
-            </div>
-            {/* 右侧：延迟数值（固定） */}
-            <span
-              className={`shrink-0 text-[9px] font-medium tabular-nums ${
-                hasLoss ? 'text-amber-500' : 'text-foreground/80'
-              }`}
-            >
-              {t.latency > 0 ? `${t.latency.toFixed(0)}ms` : '--'}
-            </span>
-            {/* 丢包率（固定显示，0% 也展示） */}
-            <span
-              className={`shrink-0 text-[9px] font-medium tabular-nums ${
-                hasLoss ? 'text-amber-500' : 'text-muted-foreground/60'
-              }`}
-            >
-              {t.loss.toFixed(1)}%
-            </span>
+    <div>
+      {/* 标题行 */}
+      <div className="mb-1.5 flex items-center justify-between">
+        <span className="text-[10px] font-medium text-muted-foreground">延迟质量分布</span>
+        <span className="text-[10px] font-medium tabular-nums text-foreground/70">
+          {online && currentAvgLatency !== null
+            ? `${currentAvgLatency.toFixed(0)}ms`
+            : '---'}
+        </span>
+      </div>
+      {/* 桶条 */}
+      <div className="relative">
+        <div className="flex items-end gap-[2px]" style={{ height: 16 }}>
+          {buckets.map((bucket) => (
+            <div
+              key={bucket.index}
+              className="flex-1 cursor-pointer rounded-[2px] transition-all"
+              style={{
+                height: '100%',
+                backgroundColor: bucket.color,
+                opacity: hoveredIdx !== null && hoveredIdx !== bucket.index ? 0.45 : 1,
+                transform: hoveredIdx === bucket.index ? 'scaleY(1.18)' : 'scaleY(1)',
+                transitionProperty: 'opacity, transform',
+                transitionDuration: '150ms',
+              }}
+              onMouseEnter={() => setHoveredIdx(bucket.index)}
+              onMouseLeave={() => setHoveredIdx(null)}
+            />
+          ))}
+        </div>
+        {/* 悬停 Tooltip */}
+        {hoveredBucket && (
+          <div className="pointer-events-none absolute -top-1.5 left-1/2 z-10 -translate-x-1/2 -translate-y-full rounded-md border border-border bg-card px-2.5 py-1.5 text-[10px] shadow-tooltip">
+            {hoveredBucket.hasData ? (
+              <div className="whitespace-nowrap">
+                <span className="font-medium text-foreground">
+                  {hoveredBucket.avgLatency.toFixed(0)}ms
+                </span>
+                <span className="ml-2 text-muted-foreground">
+                  丢包 {hoveredBucket.avgLoss.toFixed(0)}%
+                </span>
+              </div>
+            ) : (
+              <span className="text-muted-foreground">无数据</span>
+            )}
           </div>
-        )
-      })}
+        )}
+      </div>
+    </div>
+  )
+}
+
+/**
+ * 紧凑在线状态时间线（卡片专用）
+ *
+ * - 30 个格子，自适应历史数据范围
+ * - 高度 8px，右侧显示可用率百分比
+ * - 在线格子 primary 色，离线格子 destructive/45%，空格子 muted/30%
+ */
+function CompactOnlineTimeline({ points }: { points: CardHistoryPoint[] }) {
+  const cells = useMemo<OnlineCell[]>(() => {
+    const result: OnlineCell[] = Array.from({ length: COMPACT_BUCKETS }, (_, i) => ({
+      index: i,
+      status: 'empty' as OnlineStatus,
+    }))
+
+    if (points.length === 0) return result
+
+    const oldestTs = points[0].timestamp
+    const newestTs = points[points.length - 1].timestamp
+    const range = newestTs - oldestTs || 1
+
+    for (const point of points) {
+      const ratio = (point.timestamp - oldestTs) / range
+      const cellIdx = Math.min(
+        Math.max(0, Math.floor(ratio * COMPACT_BUCKETS)),
+        COMPACT_BUCKETS - 1,
+      )
+      result[cellIdx].status = point.online ? 'online' : 'offline'
+    }
+
+    return result
+  }, [points])
+
+  const availability = useMemo(() => {
+    const withData = cells.filter((c) => c.status !== 'empty')
+    if (withData.length === 0) return 0
+    return (withData.filter((c) => c.status === 'online').length / withData.length) * 100
+  }, [cells])
+
+  return (
+    <div>
+      {/* 标题行 */}
+      <div className="mb-1.5 flex items-center justify-between">
+        <span className="text-[10px] font-medium text-muted-foreground">在线状态</span>
+        <span className="text-[10px] font-medium tabular-nums text-primary">
+          {availability.toFixed(0)}%
+        </span>
+      </div>
+      {/* 格子条 */}
+      <div className="flex items-center gap-2">
+        <div className="flex flex-1 gap-[2px]" style={{ height: 8 }}>
+          {cells.map((cell) => (
+            <div
+              key={cell.index}
+              className="flex-1 rounded-[1.5px] transition-all"
+              style={{
+                height: '100%',
+                backgroundColor: getOnlineCellColor(cell.status),
+              }}
+            />
+          ))}
+        </div>
+      </div>
     </div>
   )
 }
@@ -131,10 +292,30 @@ function LatencyBars({
 /** 服务器卡片组件（NodeGet 风格） */
 function ServerCard({ server, basePath = '/admin' }: ServerCardProps) {
   const navigate = useNavigate()
-  const [showAllPings, setShowAllPings] = useState(false)
 
-  // 视口懒加载：仅当卡片进入视口时才渲染延迟探测部分
+  // 视口懒加载：仅当卡片进入视口时才渲染延迟和在线状态部分
   const { ref: viewportRef, isInViewport } = useInViewport<HTMLDivElement>(320)
+
+  // 本地历史数据（按 WS 上报间隔累积，最多保留 MAX_HISTORY_POINTS 个点）
+  const [history, setHistory] = useState<CardHistoryPoint[]>([])
+  const lastSeenRef = useRef<number>(0)
+
+  // 当 last_seen 变化时，追加历史数据点
+  useEffect(() => {
+    if (server.last_seen && server.last_seen !== lastSeenRef.current) {
+      lastSeenRef.current = server.last_seen
+      setHistory((prev) =>
+        [
+          ...prev,
+          {
+            timestamp: server.last_seen,
+            ping_data: server.ping_data || [],
+            online: server.online,
+          },
+        ].slice(-MAX_HISTORY_POINTS),
+      )
+    }
+  }, [server.last_seen, server.ping_data, server.online])
 
   // 记录上一次网速值，用于判断上升/下降趋势
   const prevNetRxRef = useRef<number>(server.net_rx || 0)
@@ -185,33 +366,20 @@ function ServerCard({ server, basePath = '/admin' }: ServerCardProps) {
     ? ((server.mem_used || 0) / server.mem_total) * 100
     : server.mem || 0
 
-  // 三网延迟目标列表（最多展示3个）
-  const pingTargets = useMemo(() => {
+  // 当前平均延迟（所有探测目标的平均值）
+  const currentAvgLatency = useMemo(() => {
     const pings = server.ping_data || []
-    // 按类别排序：电信 > 联通 > 移动 > 其他
-    const categoryOrder: PingCategory[] = ['电信', '联通', '移动', '其他']
-    const sorted = [...pings].sort((a, b) => {
-      const ca = categorizePing(a)
-      const cb = categorizePing(b)
-      return categoryOrder.indexOf(ca) - categoryOrder.indexOf(cb)
-    })
-    // 默认只展示前3个，点击可展开全部
-    const display = showAllPings ? sorted : sorted.slice(0, 3)
-    return display.map((p) => ({
-      name: p.name || categorizePing(p),
-      latency: p.avg_latency ?? 0,
-      loss: p.loss ?? 0,
-    }))
-  }, [server.ping_data, showAllPings])
-
-  const hasPingData = (server.ping_data || []).length > 0
-  const totalPingCount = (server.ping_data || []).length
+    const valid = pings.filter((p) => p.avg_latency != null && p.avg_latency >= 0)
+    if (valid.length === 0) return null
+    return valid.reduce((sum, p) => sum + (p.avg_latency || 0), 0) / valid.length
+  }, [server.ping_data])
 
   const displayName = server.display_name || server.hostname
 
   // 虚拟化 Badge（仅在存在数据时显示）
   const virtualization = server.virtualization
-  const showVirtualizationBadge = virtualization && virtualization !== 'None' && virtualization !== 'none'
+  const showVirtualizationBadge =
+    virtualization && virtualization !== 'None' && virtualization !== 'none'
 
   // OS 显示文本
   const osText = server.os || ''
@@ -228,8 +396,8 @@ function ServerCard({ server, basePath = '/admin' }: ServerCardProps) {
       }}
       role="button"
       tabIndex={0}
-      className={`group relative flex min-h-[360px] cursor-pointer flex-col rounded-2xl border border-border p-4 card-soft node-card-hover animate-fade-in focus:outline-none focus-visible:ring-2 focus-visible:ring-primary sm:min-h-[430px] sm:p-5 ${
-        server.online ? '' : 'opacity-75'
+      className={`group relative flex min-h-[360px] cursor-pointer flex-col rounded-2xl border border-border p-4 card-soft node-card-hover animate-fade-in focus:outline-none focus-visible:ring-2 focus-visible:ring-primary sm:min-h-[420px] sm:p-5 ${
+        server.online ? '' : 'opacity-80'
       }`}
     >
       {/* 1. 头部行：StatusDot + DistroIcon + 名称 + 国旗 */}
@@ -300,33 +468,20 @@ function ServerCard({ server, basePath = '/admin' }: ServerCardProps) {
         </div>
       </div>
 
-      {/* 5. 延迟探测面板 - 仅在卡片进入视口时渲染 */}
-      <div className="mt-3 rounded-xl border border-dashed border-border/80 px-3 py-3">
-        {isInViewport && hasPingData ? (
-          <>
-            <div className="mb-1.5 flex items-center justify-between">
-              <span className="text-[10px] font-medium text-muted-foreground">延迟探测</span>
-              {totalPingCount > 3 && (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    setShowAllPings(!showAllPings)
-                  }}
-                  className="text-[9px] text-primary hover:text-primary/80"
-                >
-                  {showAllPings ? '收起' : `查看全部 ${totalPingCount}`}
-                </button>
-              )}
-            </div>
-            <LatencyBars targets={pingTargets} online={server.online} />
-          </>
-        ) : isInViewport ? (
-          <div className="flex h-10 items-center justify-center text-[10px] text-muted-foreground/60">
-            暂无延迟数据
+      {/* 5. 延迟质量分布 + 在线状态（仅在卡片进入视口时渲染） */}
+      <div className="mt-3 rounded-xl border border-dashed border-border/80 px-3 py-2.5">
+        {isInViewport ? (
+          <div className="space-y-2.5">
+            <CompactLatencyBar
+              points={history}
+              online={server.online}
+              currentAvgLatency={currentAvgLatency}
+            />
+            <CompactOnlineTimeline points={history} />
           </div>
         ) : (
-          // 占位符：不在视口时不渲染延迟数据，显示占位高度避免布局抖动
-          <div className="flex h-10 items-center justify-center">
+          // 占位符：不在视口时不渲染，显示占位高度避免布局抖动
+          <div className="flex h-16 items-center justify-center">
             <span className="text-[10px] text-muted-foreground/40">加载中...</span>
           </div>
         )}
@@ -370,10 +525,7 @@ export default memo(ServerCard, (prev, next) => {
     a.display_name === b.display_name &&
     a.hostname === b.hostname &&
     a.os === b.os &&
-    a.distro === b.distro &&
     a.virtualization === b.virtualization &&
-    a.processes === b.processes &&
-    a.time_offset === b.time_offset &&
-    prev.basePath === next.basePath
+    a.distro === b.distro
   )
 })
