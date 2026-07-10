@@ -50,6 +50,8 @@ func main() {
 	netCollector := collector.NewNetworkCollector(fileReader)
 	sysCollector := collector.NewSystemCollector(fileReader, "v1.0.0")
 	pingCollector := collector.NewPingCollector(cfg.PingMethod, cfg.InsecureTLS)
+	processCollector := collector.NewProcessCollector(fileReader)
+	ntpCollector := collector.NewNTPCollector("") // 使用默认 NTP 服务器
 
 	// 创建 WebSocket 客户端
 	wsClient := reporter.NewWSClient(cfg.ServerURL, cfg.Token, cfg.RegisterCode, cfg.InsecureTLS)
@@ -58,7 +60,12 @@ func main() {
 	var configSyncer *config.Syncer
 	var pingTargets []sharedmodel.PingTarget
 	var pingTargetsMu sync.Mutex
-	var pingInterval int64 = 60 // 默认 60 秒，会被配置更新覆盖
+	var pingInterval int64 = 60    // 默认 60 秒，会被配置更新覆盖
+	var reportIntervalVal int64    // 上报间隔（秒），原子操作，支持热重载
+
+	cfgMu.Lock()
+	reportIntervalVal = int64(cfg.ReportInterval)
+	cfgMu.Unlock()
 
 	wsClient.SetCallbacks(
 		// 注册成功回调
@@ -77,12 +84,17 @@ func main() {
 		},
 		// 配置更新回调
 		func(config *sharedmodel.AgentConfig) {
-			log.Printf("收到配置更新，探测目标 %d 个，间隔 %ds", len(config.PingTargets), config.PingInterval)
+			log.Printf("收到配置更新，探测目标 %d 个，间隔 %ds，上报间隔 %ds",
+				len(config.PingTargets), config.PingInterval, config.ReportInterval)
 			pingTargetsMu.Lock()
 			pingTargets = config.PingTargets
 			pingTargetsMu.Unlock()
 			if config.PingInterval > 0 {
 				atomic.StoreInt64(&pingInterval, int64(config.PingInterval))
+			}
+			// 支持 Server 下发新的上报间隔
+			if config.ReportInterval > 0 {
+				atomic.StoreInt64(&reportIntervalVal, int64(config.ReportInterval))
 			}
 		},
 		nil,
@@ -110,9 +122,11 @@ func main() {
 	cfgMu.Lock()
 	reportInterval := time.Duration(cfg.ReportInterval) * time.Second
 	cfgMu.Unlock()
-	uploader := reporter.NewUploader(wsClient, reportInterval)
+	var collectCounter int64 // 采集计数器，用于控制静态数据采集频率
+	uploader := reporter.NewUploader(wsClient, reportInterval, &reportIntervalVal)
 	uploader.Start(func() (*sharedmodel.MetricData, error) {
-		return collectAllData(cpuCollector, memCollector, diskCollector, netCollector, sysCollector)
+		collectCounter++
+		return collectAllData(cpuCollector, memCollector, diskCollector, netCollector, sysCollector, processCollector, ntpCollector, collectCounter)
 	})
 
 	// 启动 Ping 探测 (使用动态间隔，支持优雅停止)
@@ -140,12 +154,16 @@ func main() {
 
 // collectAllData 采集所有监控数据
 // 各采集器独立采集：单个采集器失败不影响其他指标，只要有一项成功就上报数据
+// counter 为采集计数器，每 100 次才采集一次静态数据（SystemInfo），降低开销
 func collectAllData(
 	cpu *collector.CPUCollector,
 	mem *collector.MemoryCollector,
 	disk *collector.DiskCollector,
 	net *collector.NetworkCollector,
 	sys *collector.SystemCollector,
+	proc *collector.ProcessCollector,
+	ntp *collector.NTPCollector,
+	counter int64,
 ) (*sharedmodel.MetricData, error) {
 	var (
 		data    sharedmodel.MetricData
@@ -193,14 +211,18 @@ func collectAllData(
 		success++
 	}
 
-	// 采集系统信息
-	if sysResult, err := sys.Collect(); err != nil {
-		errs = append(errs, fmt.Sprintf("System: %v", err))
-	} else if sysInfo, ok := sysResult.(sharedmodel.SystemInfo); !ok {
-		errs = append(errs, fmt.Sprintf("System 采集器返回类型错误: %T", sysResult))
-	} else {
-		data.System = sysInfo
-		success++
+	// 采集系统信息（静态数据）- 每 100 次动态采集才采集一次静态数据
+	// counter 从 1 开始（collectCounter++ 后首次调用），counter%100 == 1 使首次即采集静态数据
+	// 非静态采集周期中，SystemInfo 字段为零值，Server 端通过 SystemInfo.OS == "" 判断
+	if counter%100 == 1 {
+		if sysResult, err := sys.Collect(); err != nil {
+			errs = append(errs, fmt.Sprintf("System: %v", err))
+		} else if sysInfo, ok := sysResult.(sharedmodel.SystemInfo); !ok {
+			errs = append(errs, fmt.Sprintf("System 采集器返回类型错误: %T", sysResult))
+		} else {
+			data.System = sysInfo
+			success++
+		}
 	}
 
 	// 采集运行时间（失败不影响整体上报）
@@ -211,6 +233,24 @@ func collectAllData(
 	// 采集进程数（失败不影响整体上报）
 	if processCount, err := sys.CollectProcessCount(); err == nil {
 		data.ProcessCount = processCount
+	}
+
+	// 采集进程列表 Top 10（失败不影响整体上报）
+	if procResult, err := proc.Collect(); err != nil {
+		errs = append(errs, fmt.Sprintf("Process: %v", err))
+	} else if processes, ok := procResult.([]sharedmodel.ProcessInfo); !ok {
+		errs = append(errs, fmt.Sprintf("Process 采集器返回类型错误: %T", procResult))
+	} else {
+		data.Processes = processes
+	}
+
+	// 采集 NTP 时间偏移（失败不影响整体上报，返回 0）
+	if ntpResult, err := ntp.Collect(); err != nil {
+		errs = append(errs, fmt.Sprintf("NTP: %v", err))
+	} else if offset, ok := ntpResult.(int64); !ok {
+		errs = append(errs, fmt.Sprintf("NTP 采集器返回类型错误: %T", ntpResult))
+	} else {
+		data.TimeOffset = offset
 	}
 
 	// 所有采集器均失败才放弃本轮上报

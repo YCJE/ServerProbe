@@ -3,6 +3,7 @@ package repository
 import (
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -12,7 +13,8 @@ import (
 
 // RecordRepository 历史聚合数据 CRUD
 type RecordRepository struct {
-	db *gorm.DB
+	db          *gorm.DB
+	batchWriter *BatchWriter // 批量写入缓冲器（可选，设置后 CreateRecord 走异步通道）
 }
 
 // NewRecordRepository 创建历史数据 repository
@@ -20,17 +22,78 @@ func NewRecordRepository(db *gorm.DB) *RecordRepository {
 	return &RecordRepository{db: db}
 }
 
-// Create 创建历史记录
+// SetBatchWriter 设置批量写入缓冲器
+// 设置后 CreateRecord 将数据推入 BatchWriter 的 channel，由后台 goroutine 异步批量写入
+func (r *RecordRepository) SetBatchWriter(bw *BatchWriter) {
+	r.batchWriter = bw
+}
+
+// Create 创建历史记录（直接写入数据库）
 func (r *RecordRepository) Create(record *model.MetricRecord) error {
 	return r.db.Create(record).Error
 }
 
-// CreateBatch 批量创建历史记录
+// CreateRecord 创建单条历史记录
+// 如果已设置 BatchWriter，则推入异步缓冲 channel；否则直接写入数据库
+func (r *RecordRepository) CreateRecord(record *model.MetricRecord) error {
+	if r.batchWriter != nil {
+		r.batchWriter.Submit(*record)
+		return nil
+	}
+	return r.db.Create(record).Error
+}
+
+// CreateBatch 批量创建历史记录（直接同步写入）
 func (r *RecordRepository) CreateBatch(records []model.MetricRecord) error {
 	if len(records) == 0 {
 		return nil
 	}
-	return r.db.CreateInBatches(records, 100).Error
+	return r.db.CreateInBatches(records, 50).Error
+}
+
+// FlushBatch 执行实际批量 INSERT（由 BatchWriter 调用）
+// 使用多值 INSERT 语法（INSERT INTO ... VALUES (...), (...), ...）
+// 注意 SQLite 单条 SQL 参数限制（999 个），每批最多 50 行（50 × 19 = 950 < 999）
+func (r *RecordRepository) FlushBatch(records []model.MetricRecord) error {
+	if len(records) == 0 {
+		return nil
+	}
+
+	const fieldsPerRow = 19
+	const maxRowsPerInsert = 50 // 50 × 19 = 950 < 999 SQLite 参数限制
+
+	for start := 0; start < len(records); start += maxRowsPerInsert {
+		end := start + maxRowsPerInsert
+		if end > len(records) {
+			end = len(records)
+		}
+		batch := records[start:end]
+
+		// 构建多值 INSERT SQL
+		var sqlBuilder strings.Builder
+		sqlBuilder.WriteString("INSERT INTO metric_records (agent_id, timestamp, cpu_usage, mem_usage, mem_total, mem_used, swap_total, swap_used, disk_usage, net_rx, net_tx, tcp_connections, udp_connections, load_1, load_5, load_15, uptime, process_count, ping_data) VALUES ")
+
+		args := make([]interface{}, 0, len(batch)*fieldsPerRow)
+		for i, rec := range batch {
+			if i > 0 {
+				sqlBuilder.WriteString(", ")
+			}
+			sqlBuilder.WriteString("(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+			args = append(args,
+				rec.AgentID, rec.Timestamp, rec.CPUUsage, rec.MemUsage,
+				rec.MemTotal, rec.MemUsed, rec.SwapTotal, rec.SwapUsed,
+				rec.DiskUsage, rec.NetRx, rec.NetTx, rec.TCPConns, rec.UDPConns,
+				rec.Load1, rec.Load5, rec.Load15, rec.Uptime,
+				rec.ProcessCount, rec.PingData,
+			)
+		}
+
+		if err := r.db.Exec(sqlBuilder.String(), args...).Error; err != nil {
+			return fmt.Errorf("批量插入失败 (%d 条): %w", len(batch), err)
+		}
+	}
+
+	return nil
 }
 
 // GetByAgentAndTimeRange 根据 Agent ID 和时间范围查询历史数据

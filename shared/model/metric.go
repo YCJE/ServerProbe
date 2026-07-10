@@ -2,13 +2,24 @@ package model
 
 // MetricData 是 Agent 上报的完整监控数据
 type MetricData struct {
-	CPU          CPUInfo      `json:"cpu"`
-	Memory       MemoryInfo   `json:"memory"`
-	Disks        []DiskInfo   `json:"disk"`
-	Network      NetworkInfo  `json:"network"`
-	Uptime       uint64       `json:"uptime"`
-	ProcessCount int          `json:"process_count"`
-	System       SystemInfo   `json:"system"`
+	CPU          CPUInfo        `json:"cpu"`
+	Memory       MemoryInfo     `json:"memory"`
+	Disks        []DiskInfo     `json:"disk"`
+	Network      NetworkInfo    `json:"network"`
+	Uptime       uint64         `json:"uptime"`
+	ProcessCount int            `json:"process_count"`
+	System       SystemInfo     `json:"system"`
+	Processes    []ProcessInfo  `json:"processes"`  // Top N 进程列表
+	TimeOffset   int64          `json:"time_offset"` // NTP 时间偏移（毫秒）
+}
+
+// ProcessInfo 进程信息（Top N，按 CPU 或内存排序）
+type ProcessInfo struct {
+	PID     int     `json:"pid"`
+	Name    string  `json:"name"`
+	CPU     float64 `json:"cpu"`     // CPU 使用率（%）
+	Memory uint64 `json:"memory"` // 内存使用（字节）
+	RSS    uint64 `json:"rss"`    // RSS（物理内存使用）
 }
 
 // CPUInfo CPU 监控数据
@@ -48,11 +59,13 @@ type NetworkInfo struct {
 
 // SystemInfo 系统信息
 type SystemInfo struct {
-	OS           string `json:"os"`            // 操作系统
-	Arch         string `json:"arch"`          // 架构
-	Kernel       string `json:"kernel"`        // 内核版本
-	Hostname     string `json:"hostname"`      // 主机名
-	AgentVersion string `json:"agent_version"` // Agent 版本
+	OS             string `json:"os"`             // 操作系统
+	Arch           string `json:"arch"`           // 架构
+	Kernel         string `json:"kernel"`         // 内核版本
+	Hostname       string `json:"hostname"`       // 主机名
+	AgentVersion   string `json:"agent_version"`  // Agent 版本
+	Virtualization string `json:"virtualization"` // 虚拟化类型（KVM/LXC/Docker/VMware/空）
+	Distro         string `json:"distro"`         // Linux 发行版名称（如 Ubuntu 22.04）
 }
 
 // PingResult Ping 探测结果
@@ -80,6 +93,7 @@ type PingTarget struct {
 
 // AgentConfig Agent 从 Server 拉取的配置
 type AgentConfig struct {
-	PingTargets  []PingTarget `json:"ping_targets"`
-	PingInterval int          `json:"ping_interval"` // 探测间隔（秒）
+	PingTargets    []PingTarget `json:"ping_targets"`
+	PingInterval   int          `json:"ping_interval"`    // 探测间隔（秒）
+	ReportInterval int          `json:"report_interval"`  // 上报间隔（秒），0 表示不更新
 }

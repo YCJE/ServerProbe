@@ -157,6 +157,10 @@ func NewRouter(
 			protected.GET("/ping-targets/interval", pingTargetHandler.HandleGetPingInterval)
 			protected.PUT("/ping-targets/interval", pingTargetHandler.HandleSetPingInterval)
 
+			// Agent 上报间隔管理
+			protected.GET("/agent/config/interval", agentHandler.HandleGetReportInterval)
+			protected.PUT("/agent/config/interval", agentHandler.HandleSetReportInterval)
+
 			// 系统状态
 			protected.GET("/system/status", serverHandler.HandleSystemStatus)
 

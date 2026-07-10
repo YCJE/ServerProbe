@@ -106,7 +106,7 @@ func main() {
 	log.Println("日志捕获服务已启动（缓冲区容量: 500）")
 
 	// 创建 services
-	monitor := service.NewMonitorService(agentRepo, *dataDir)
+	monitor := service.NewMonitorService(agentRepo, recordRepo, *dataDir)
 	registry := service.NewAgentRegistryService(agentRepo, registerCodeRepo, db.DB())
 	configSync := service.NewConfigSyncService(pingTargetRepo, db.DB())
 	validator := service.NewDataValidator()
@@ -212,8 +212,10 @@ func main() {
 	}
 
 	// 停止各后台服务
-	monitor.Stop()
+	// 注意：先停止 aggregation（生产者），再停止 monitor（含 BatchWriter 消费者），
+	// 确保 BatchWriter flush 时所有聚合数据已提交
 	aggregation.Stop()
+	monitor.Stop()
 	alertEngine.Stop()
 	validator.Stop()
 

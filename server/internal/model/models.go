@@ -12,6 +12,9 @@ type Agent struct {
 	DisplayName     string    `json:"display_name"` // 用户自定义名称
 	OS              string    `json:"os"`
 	Arch            string    `json:"arch"`
+	Kernel          string    `json:"kernel"`           // 内核版本
+	Virtualization  string    `json:"virtualization"`   // 虚拟化类型（KVM/LXC/Docker/VMware/空）
+	Distro          string    `json:"distro"`           // Linux 发行版名称
 	AgentVersion    string    `json:"agent_version"`
 	HostFingerprint string    `gorm:"uniqueIndex" json:"-"`
 	LastSeen        time.Time `json:"last_seen"`

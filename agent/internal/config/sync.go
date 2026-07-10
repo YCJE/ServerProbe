@@ -139,7 +139,7 @@ func (s *Syncer) sync() {
 	s.currentConfig = &config
 	s.mu.Unlock()
 
-	log.Printf("配置拉取成功，探测目标 %d 个", len(config.PingTargets))
+	log.Printf("配置拉取成功，探测目标 %d 个，上报间隔 %ds", len(config.PingTargets), config.ReportInterval)
 }
 
 // SetToken 设置 Token（注册成功后调用）

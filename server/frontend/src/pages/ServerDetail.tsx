@@ -6,6 +6,9 @@ import { getServerHistory } from '@/lib/api'
 import type { TimeRange, HistoryData } from '@/types'
 import NetworkQualityChart, { type ChartSeries } from '@/components/NetworkQualityChart'
 import Sparkline from '@/components/Sparkline'
+import LatencyQualityBar, { type LatencyPoint } from '@/components/LatencyQualityBar'
+import OnlineTimeline, { type OnlineTimelinePoint } from '@/components/OnlineTimeline'
+import DistroIcon from '@/components/DistroIcon'
 import {
   formatBytes,
   formatSpeed,
@@ -186,6 +189,11 @@ export default function ServerDetail() {
         udp_connections: liveData.udp_connections || 0,
         process_count: liveData.process_count || 0,
         ping_data: liveData.ping_data || [],
+        // 新增字段
+        virtualization: liveData.virtualization || currentServer.virtualization,
+        distro: liveData.distro || currentServer.distro,
+        processes: liveData.processes || currentServer.processes,
+        time_offset: liveData.time_offset ?? currentServer.time_offset,
       }
     }
     return currentServer
@@ -297,6 +305,51 @@ export default function ServerDetail() {
     return count > 0 ? totalLoss / count : 0
   }, [networkChartData])
 
+  // 延迟质量条形图数据：优先使用实时历史，其次使用 1h 历史数据
+  const latencyQualityPoints = useMemo<LatencyPoint[]>(() => {
+    // 实时历史数据（最近的数据点）
+    if (realtimeHistory.length > 0) {
+      return realtimeHistory.map((p) => ({
+        timestamp: p.timestamp,
+        ping_data: p.ping_data,
+      }))
+    }
+    // 回退到历史数据
+    if (historyData && historyData.points && historyData.points.length > 0) {
+      return historyData.points.map((p) => ({
+        timestamp: p.timestamp,
+        ping_data: p.ping_data,
+      }))
+    }
+    return []
+  }, [realtimeHistory, historyData])
+
+  // 在线状态时间线数据：从历史数据点提取在线状态
+  const onlineTimelinePoints = useMemo<OnlineTimelinePoint[]>(() => {
+    const result: OnlineTimelinePoint[] = []
+    // 从历史数据中提取（如果有 online 字段）
+    if (historyData && historyData.points && historyData.points.length > 0) {
+      for (const p of historyData.points) {
+        if (p.online !== undefined) {
+          result.push({
+            timestamp: p.timestamp,
+            online: p.online,
+          })
+        }
+      }
+    }
+    // 补充实时历史数据（假设当前在线状态）
+    if (realtimeHistory.length > 0 && displayServer) {
+      for (const p of realtimeHistory) {
+        result.push({
+          timestamp: p.timestamp,
+          online: displayServer.online ? 1 : 0,
+        })
+      }
+    }
+    return result
+  }, [historyData, realtimeHistory, displayServer])
+
   // ==================== 加载 / 错误状态 ====================
 
   if (currentServerLoading && !currentServer) {
@@ -368,6 +421,8 @@ export default function ServerDetail() {
             <h1 className="min-w-0 flex-1 truncate text-base font-bold text-foreground">
               {displayServer.display_name || displayServer.hostname}
             </h1>
+            {/* 发行版图标 */}
+            <DistroIcon distro={displayServer.distro} os={displayServer.os} size={18} showLabel />
           </div>
           <div className="mt-2 flex items-center gap-2">
             <span
@@ -380,6 +435,14 @@ export default function ServerDetail() {
             <span className="truncate text-xs text-muted-foreground">
               {displayServer.hostname}
             </span>
+            {/* 虚拟化 Badge */}
+            {displayServer.virtualization &&
+              displayServer.virtualization !== 'None' &&
+              displayServer.virtualization !== 'none' && (
+                <span className="shrink-0 rounded bg-secondary px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                  {displayServer.virtualization}
+                </span>
+              )}
           </div>
         </div>
 
@@ -397,6 +460,23 @@ export default function ServerDetail() {
             <InfoRow label="内存" value={formatBytes(displayServer.mem_total)} />
             <InfoRow label="硬盘" value={diskTotal > 0 ? formatBytes(diskTotal) : '-'} />
             <InfoRow label="系统" value={displayServer.os || '-'} />
+            {/* 发行版信息（如果有） */}
+            {displayServer.distro && (
+              <InfoRow label="发行版" value={displayServer.distro} />
+            )}
+            {/* 虚拟化信息（如果有） */}
+            {displayServer.virtualization &&
+              displayServer.virtualization !== 'None' &&
+              displayServer.virtualization !== 'none' && (
+                <InfoRow label="虚拟化" value={displayServer.virtualization} />
+              )}
+            {/* NTP 时间偏移（如果有） */}
+            {displayServer.time_offset !== undefined && displayServer.time_offset !== null && (
+              <InfoRow
+                label="NTP 偏移"
+                value={`${displayServer.time_offset > 0 ? '+' : ''}${displayServer.time_offset.toFixed(2)} ms`}
+              />
+            )}
             <InfoRow label="架构" value={displayServer.arch || '-'} />
             <InfoRow label="Agent 版本" value={displayServer.agent_version || '-'} />
           </div>
@@ -584,6 +664,16 @@ export default function ServerDetail() {
           >
             <Sparkline data={sparklineData.netTx} color={SPARK_TX} height={40} />
           </ResourceCard>
+        </div>
+
+        {/* 延迟质量分桶条形图（最近 1 小时） */}
+        <div className="rounded-2xl border border-border bg-card p-4">
+          <LatencyQualityBar points={latencyQualityPoints} />
+        </div>
+
+        {/* 在线状态时间线（最近 4 小时） */}
+        <div className="rounded-2xl border border-border bg-card p-4">
+          <OnlineTimeline points={onlineTimelinePoints} />
         </div>
       </div>
     </div>

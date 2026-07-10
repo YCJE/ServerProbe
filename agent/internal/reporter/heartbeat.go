@@ -3,6 +3,7 @@ package reporter
 import (
 	"log"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	sharedmodel "github.com/server-probe/shared/model"
@@ -53,18 +54,21 @@ func (h *Heartbeat) Stop() {
 
 // Uploader 数据上报器
 type Uploader struct {
-	client   *WSClient
-	interval time.Duration
-	stopCh   chan struct{}
-	stopOnce sync.Once
+	client      *WSClient
+	interval    time.Duration        // 初始间隔（用于首次创建 ticker）
+	intervalPtr *int64               // 动态间隔指针（原子操作），允许运行时热重载
+	stopCh      chan struct{}
+	stopOnce    sync.Once
 }
 
 // NewUploader 创建数据上报器
-func NewUploader(client *WSClient, interval time.Duration) *Uploader {
+// intervalPtr 为可选的动态间隔指针（非 nil 时支持热重载），可为 nil
+func NewUploader(client *WSClient, interval time.Duration, intervalPtr *int64) *Uploader {
 	return &Uploader{
-		client:   client,
-		interval: interval,
-		stopCh:   make(chan struct{}),
+		client:      client,
+		interval:    interval,
+		intervalPtr: intervalPtr,
+		stopCh:      make(chan struct{}),
 	}
 }
 
@@ -72,12 +76,33 @@ func NewUploader(client *WSClient, interval time.Duration) *Uploader {
 // collectFn 是数据采集函数，返回采集到的监控数据
 func (u *Uploader) Start(collectFn func() (*sharedmodel.MetricData, error)) {
 	go func() {
-		ticker := time.NewTicker(u.interval)
+		// 初始 ticker，优先使用 intervalPtr 的值
+		currentInterval := int64(u.interval / time.Second)
+		if u.intervalPtr != nil {
+			if v := atomic.LoadInt64(u.intervalPtr); v > 0 {
+				currentInterval = v
+			}
+		}
+		ticker := time.NewTicker(time.Duration(currentInterval) * time.Second)
 		defer ticker.Stop()
 
 		for {
 			select {
 			case <-ticker.C:
+				// 检查间隔是否变化，如变化则重建 ticker
+				if u.intervalPtr != nil {
+					newInterval := atomic.LoadInt64(u.intervalPtr)
+					if newInterval < 1 {
+						newInterval = currentInterval
+					}
+					if newInterval != currentInterval {
+						ticker.Stop()
+						currentInterval = newInterval
+						ticker = time.NewTicker(time.Duration(currentInterval) * time.Second)
+						log.Printf("数据上报间隔已更新为 %ds", currentInterval)
+					}
+				}
+
 				if !u.client.IsConnected() {
 					continue
 				}

@@ -106,6 +106,22 @@ func (r *AgentRepository) UpdateDisplayName(id int64, displayName string) error 
 		Update("display_name", displayName).Error
 }
 
+// UpdateStaticInfo 更新 Agent 静态信息（OS、Arch、Kernel、Hostname、AgentVersion、Virtualization、Distro）
+// 仅更新静态字段，不触碰 Online/LastSeen/Token 等动态字段，避免竞态
+func (r *AgentRepository) UpdateStaticInfo(id int64, os, arch, kernel, hostname, agentVersion, virtualization, distro string) error {
+	return r.db.Model(&model.Agent{}).
+		Where("id = ?", id).
+		Updates(map[string]interface{}{
+			"os":             os,
+			"arch":           arch,
+			"kernel":         kernel,
+			"hostname":       hostname,
+			"agent_version":  agentVersion,
+			"virtualization": virtualization,
+			"distro":         distro,
+		}).Error
+}
+
 // Delete 删除 Agent
 func (r *AgentRepository) Delete(id int64) error {
 	return r.db.Delete(&model.Agent{}, id).Error

@@ -55,6 +55,15 @@ export interface PingResult {
   packets_recv: number
 }
 
+/** 进程信息（资源占用 Top N 进程） */
+export interface ProcessInfo {
+  pid: number
+  name: string
+  cpu: number
+  memory: number
+  rss: number
+}
+
 /** 服务器数据（完整） */
 export interface ServerData {
   id: number
@@ -87,6 +96,14 @@ export interface ServerData {
   udp_connections: number
   process_count: number
   ping_data: PingResult[]
+  /** 虚拟化类型（如 KVM、OpenVZ、Docker、None 等） */
+  virtualization?: string
+  /** Linux 发行版名称（如 Ubuntu 22.04、Debian 12 等） */
+  distro?: string
+  /** 资源占用 Top N 进程列表 */
+  processes?: ProcessInfo[]
+  /** NTP 时间偏移（毫秒） */
+  time_offset?: number
 }
 
 /** 仪表盘实时数据项 */
@@ -120,6 +137,14 @@ export interface DashboardItem {
   udp_connections: number
   process_count: number
   ping_data: PingResult[]
+  /** 虚拟化类型（如 KVM、OpenVZ、Docker、None 等） */
+  virtualization?: string
+  /** Linux 发行版名称（如 Ubuntu 22.04、Debian 12 等） */
+  distro?: string
+  /** 资源占用 Top N 进程列表 */
+  processes?: ProcessInfo[]
+  /** NTP 时间偏移（毫秒） */
+  time_offset?: number
   timestamp: number
 }
 
@@ -153,6 +178,8 @@ export interface HistoryPoint {
   uptime: number
   process_count: number
   ping_data: PingResult[]
+  /** 在线状态（1=在线，0=离线），用于在线状态时间线渲染 */
+  online?: number
 }
 
 /** 历史数据响应 */

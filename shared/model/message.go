@@ -16,8 +16,9 @@ type WSMessage struct {
 	Reason          string      `json:"reason"`          // 失败原因（仅 register_fail 消息）
 
 	// config_update 消息字段
-	PingTargets  []PingTarget `json:"ping_targets"`
-	PingInterval int          `json:"ping_interval"`
+	PingTargets    []PingTarget `json:"ping_targets"`
+	PingInterval   int          `json:"ping_interval"`
+	ReportInterval int          `json:"report_interval"` // Agent 上报间隔（秒），0 表示不更新
 }
 
 // 消息类型常量 - Agent → Server

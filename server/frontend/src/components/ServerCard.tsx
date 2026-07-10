@@ -1,4 +1,4 @@
-import { memo, useMemo, useState } from 'react'
+import { memo, useMemo, useRef, useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { ServerData, PingResult } from '@/types'
 import {
@@ -9,6 +9,10 @@ import {
   getRegionFromServer,
   getFlagEmoji,
 } from '@/lib/utils'
+import ResourceRing from '@/components/ResourceRing'
+import DistroIcon from '@/components/DistroIcon'
+import { useAnimatedNumber } from '@/hooks/useAnimatedNumber'
+import { useInViewport } from '@/hooks/useInViewport'
 
 interface ServerCardProps {
   server: ServerData
@@ -38,37 +42,6 @@ function categorizePing(ping: PingResult): PingCategory {
 
 /** ping 目标线条颜色池（与详情页 NetworkQualityChart 保持一致） */
 const PING_COLORS = ['#5AC8FA', '#34C759', '#FF9500', '#AF52DE', '#FF2D55', '#FFCC00']
-
-/** 指标进度条格子 */
-function MetricCell({
-  label,
-  value,
-  color,
-  suffix = '%',
-}: {
-  label: string
-  value: number
-  color: string
-  suffix?: string
-}) {
-  return (
-    <div className="space-y-1.5">
-      <div className="flex items-center justify-between">
-        <span className="text-[10px] text-muted-foreground">{label}</span>
-        <span className="text-xs font-medium text-foreground">
-          {Math.min(Math.max(value, 0), 100).toFixed(1)}
-          {suffix}
-        </span>
-      </div>
-      <div className="h-1 w-full overflow-hidden rounded-full bg-secondary">
-        <div
-          className="h-full rounded-full transition-all duration-500"
-          style={{ width: `${Math.min(value, 100)}%`, backgroundColor: color }}
-        />
-      </div>
-    </div>
-  )
-}
 
 /** 横向延迟条形图 - 每个探测目标一行：名称 + 横条 + 数值，有丢包时标红 */
 function LatencyBars({
@@ -141,6 +114,38 @@ function ServerCard({ server, basePath = '/admin' }: ServerCardProps) {
   const navigate = useNavigate()
   const [showAllPings, setShowAllPings] = useState(false)
 
+  // 视口懒加载：仅当卡片进入视口时才渲染延迟探测部分
+  const { ref: viewportRef, isInViewport } = useInViewport<HTMLDivElement>(320)
+
+  // 记录上一次网速值，用于判断上升/下降趋势
+  const prevNetRxRef = useRef<number>(server.net_rx || 0)
+  const prevNetTxRef = useRef<number>(server.net_tx || 0)
+  const [rxRising, setRxRising] = useState<boolean>(true)
+  const [txRising, setTxRising] = useState<boolean>(true)
+
+  // 网速数值动画
+  const { value: animatedRx } = useAnimatedNumber(server.net_rx || 0)
+  const { value: animatedTx } = useAnimatedNumber(server.net_tx || 0)
+
+  // 监听网速变化，判断上升/下降
+  useEffect(() => {
+    const prev = prevNetRxRef.current
+    const cur = server.net_rx || 0
+    if (cur !== prev) {
+      setRxRising(cur >= prev)
+      prevNetRxRef.current = cur
+    }
+  }, [server.net_rx])
+
+  useEffect(() => {
+    const prev = prevNetTxRef.current
+    const cur = server.net_tx || 0
+    if (cur !== prev) {
+      setTxRising(cur >= prev)
+      prevNetTxRef.current = cur
+    }
+  }, [server.net_tx])
+
   const handleClick = () => {
     const selection = window.getSelection()
     if (selection && selection.toString().length > 0) return
@@ -191,8 +196,13 @@ function ServerCard({ server, basePath = '/admin' }: ServerCardProps) {
 
   const displayName = server.display_name || server.hostname
 
+  // 虚拟化 Badge（仅在存在数据时显示）
+  const virtualization = server.virtualization
+  const showVirtualizationBadge = virtualization && virtualization !== 'None' && virtualization !== 'none'
+
   return (
     <div
+      ref={viewportRef}
       onClick={handleClick}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
@@ -204,7 +214,7 @@ function ServerCard({ server, basePath = '/admin' }: ServerCardProps) {
       tabIndex={0}
       className="group cursor-pointer rounded-2xl border border-border bg-card p-4 transition-all hover:border-primary/30 hover:shadow-lg animate-fade-in focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
     >
-      {/* 1. 头部行：状态圆点 + 名称 + 国旗 + 在线/离线标签 */}
+      {/* 1. 头部行：状态圆点 + 名称 + 发行版图标 + 国旗 + 在线/离线标签 */}
       <div className="mb-3 flex items-center gap-2">
         <span className="relative flex h-2 w-2 shrink-0">
           {server.online && (
@@ -221,6 +231,14 @@ function ServerCard({ server, basePath = '/admin' }: ServerCardProps) {
         <h3 className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
           {displayName}
         </h3>
+        {/* 发行版图标 */}
+        <DistroIcon distro={server.distro} os={server.os} size={14} />
+        {/* 虚拟化 Badge */}
+        {showVirtualizationBadge && (
+          <span className="shrink-0 rounded bg-secondary px-1.5 py-0.5 text-[9px] font-medium text-muted-foreground">
+            {virtualization}
+          </span>
+        )}
         {flag && <span className="shrink-0 text-sm leading-none">{flag}</span>}
         <span
           className={`shrink-0 text-xs font-medium ${
@@ -231,27 +249,33 @@ function ServerCard({ server, basePath = '/admin' }: ServerCardProps) {
         </span>
       </div>
 
-      {/* 2. 指标网格：CPU / 内存 / 硬盘（三列，参考 dstatus 紧凑布局） */}
-      <div className="mb-3 grid grid-cols-3 gap-2.5">
-        <MetricCell label="CPU" value={server.cpu || 0} color="#007AFF" />
-        <MetricCell label="内存" value={memUsagePercent} color="#AF52DE" />
-        <MetricCell label="硬盘" value={diskUsage} color="#FF9500" />
+      {/* 2. 资源环形图：CPU / 内存 / 硬盘（三个圆环） */}
+      <div className="mb-3 grid grid-cols-3 gap-1">
+        <ResourceRing label="CPU" value={server.cpu || 0} size={80} />
+        <ResourceRing label="内存" value={memUsagePercent} size={80} />
+        <ResourceRing label="硬盘" value={diskUsage} size={80} />
       </div>
 
-      {/* 3. 网络信息：实时速率 + 累计流量（参考 dstatus 单行四项紧凑布局） */}
+      {/* 3. 网络信息：实时速率（动画过渡）+ 累计流量 */}
       <div className="mb-3 rounded-lg bg-secondary/30 px-3 py-2">
-        {/* 实时速率行 */}
+        {/* 实时速率行 - 使用动画数值，上升显示主题色，下降显示橙色 */}
         <div className="flex items-center justify-between">
           <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
-            <span style={{ color: '#5AC8FA' }}>↓</span>
-            <span className="font-medium" style={{ color: '#5AC8FA' }}>
-              {server.online ? formatSpeed(server.net_rx) : '---'}
+            <span style={{ color: rxRising ? 'hsl(var(--primary))' : '#FF9500' }}>↓</span>
+            <span
+              className="font-medium tabular-nums"
+              style={{ color: rxRising ? 'hsl(var(--primary))' : '#FF9500' }}
+            >
+              {server.online ? formatSpeed(animatedRx) : '---'}
             </span>
           </span>
           <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
-            <span style={{ color: '#AF52DE' }}>↑</span>
-            <span className="font-medium" style={{ color: '#AF52DE' }}>
-              {server.online ? formatSpeed(server.net_tx) : '---'}
+            <span style={{ color: txRising ? 'hsl(var(--primary))' : '#FF9500' }}>↑</span>
+            <span
+              className="font-medium tabular-nums"
+              style={{ color: txRising ? 'hsl(var(--primary))' : '#FF9500' }}
+            >
+              {server.online ? formatSpeed(animatedTx) : '---'}
             </span>
           </span>
         </div>
@@ -272,9 +296,9 @@ function ServerCard({ server, basePath = '/admin' }: ServerCardProps) {
         </div>
       </div>
 
-      {/* 4. 三网延迟行 */}
+      {/* 4. 三网延迟行 - 仅在卡片进入视口时渲染 */}
       <div className="mb-3 border-t border-border pt-3">
-        {hasPingData ? (
+        {isInViewport && hasPingData ? (
           <>
             <div className="mb-1 flex items-center justify-between">
               <span className="text-[10px] text-muted-foreground">延迟探测</span>
@@ -292,9 +316,14 @@ function ServerCard({ server, basePath = '/admin' }: ServerCardProps) {
             </div>
             <LatencyBars targets={pingTargets} online={server.online} />
           </>
-        ) : (
+        ) : isInViewport ? (
           <div className="py-2 text-center text-[10px] text-muted-foreground/60">
             暂无延迟数据
+          </div>
+        ) : (
+          // 占位符：不在视口时不渲染延迟数据，显示占位高度避免布局抖动
+          <div className="flex h-10 items-center justify-center">
+            <span className="text-[10px] text-muted-foreground/40">加载中...</span>
           </div>
         )}
       </div>
@@ -335,6 +364,11 @@ export default memo(ServerCard, (prev, next) => {
     a.ping_data === b.ping_data &&
     a.display_name === b.display_name &&
     a.hostname === b.hostname &&
+    a.os === b.os &&
+    a.distro === b.distro &&
+    a.virtualization === b.virtualization &&
+    a.processes === b.processes &&
+    a.time_offset === b.time_offset &&
     prev.basePath === next.basePath
   )
 })

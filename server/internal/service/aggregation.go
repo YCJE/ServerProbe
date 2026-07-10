@@ -191,10 +191,12 @@ func (s *AggregationService) aggregate() {
 		})
 	}
 
-	// 批量写入聚合记录
+	// 批量写入聚合记录（通过 BatchWriter 异步缓冲，每条记录推入 channel）
 	if len(records) > 0 {
-		if err := s.recordRepo.CreateBatch(records); err != nil {
-			log.Printf("批量写入聚合数据失败: %v", err)
+		for i := range records {
+			if err := s.recordRepo.CreateRecord(&records[i]); err != nil {
+				log.Printf("写入聚合数据失败 (agent_id=%d): %v", records[i].AgentID, err)
+			}
 		}
 	}
 }

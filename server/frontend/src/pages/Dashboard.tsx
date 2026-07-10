@@ -1,16 +1,203 @@
-import { useMemo } from 'react'
+import { useMemo, useState, useEffect, useCallback } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useServerStore } from '@/store/useServerStore'
 import ServerCard from '@/components/ServerCard'
-import { formatSpeed } from '@/lib/utils'
+import DistroIcon from '@/components/DistroIcon'
+import { formatSpeed, formatUptime } from '@/lib/utils'
+import type { ServerData } from '@/types'
 
-/** 仪表盘页（服务器卡片网格） */
+/** 视图模式 */
+type ViewMode = 'card' | 'table'
+
+/** 排序选项 */
+type SortOption = 'default' | 'name' | 'cpu' | 'mem' | 'disk' | 'net' | 'uptime'
+
+/** 排序选项列表 */
+const SORT_OPTIONS: { value: SortOption; label: string }[] = [
+  { value: 'default', label: '默认' },
+  { value: 'name', label: '名称' },
+  { value: 'cpu', label: 'CPU' },
+  { value: 'mem', label: '内存' },
+  { value: 'disk', label: '磁盘' },
+  { value: 'net', label: '网速' },
+  { value: 'uptime', label: '运行时长' },
+]
+
+/** localStorage 键名 */
+const LS_VIEW_MODE = 'probe_dashboard_view'
+const LS_SORT = 'probe_dashboard_sort'
+
+/** 安全读取 localStorage */
+function loadLS<T extends string>(key: string, validValues: T[], defaultValue: T): T {
+  try {
+    const v = localStorage.getItem(key)
+    if (v && validValues.includes(v as T)) return v as T
+  } catch {
+    // localStorage 不可用
+  }
+  return defaultValue
+}
+
+/** 获取内存使用率 */
+function getMemUsage(server: ServerData): number {
+  return server.mem_total > 0
+    ? ((server.mem_used || 0) / server.mem_total) * 100
+    : server.mem || 0
+}
+
+/** 获取总网速（下行+上行） */
+function getTotalNetSpeed(server: ServerData): number {
+  return (server.net_rx || 0) + (server.net_tx || 0)
+}
+
+/** 紧凑进度条单元格 */
+function ProgressCell({ value, color }: { value: number; color: string }) {
+  const v = Math.min(Math.max(value, 0), 100)
+  return (
+    <div className="flex items-center gap-2">
+      <div className="h-1.5 w-12 shrink-0 overflow-hidden rounded-full bg-secondary">
+        <div
+          className="h-full rounded-full transition-all duration-500"
+          style={{ width: `${v}%`, backgroundColor: color }}
+        />
+      </div>
+      <span className="shrink-0 text-[10px] font-medium tabular-nums text-foreground/80">
+        {v.toFixed(1)}%
+      </span>
+    </div>
+  )
+}
+
+/** 表格行组件 */
+function ServerTableRow({
+  server,
+  basePath,
+}: {
+  server: ServerData
+  basePath: string
+}) {
+  const navigate = useNavigate()
+  const memUsage = getMemUsage(server)
+  const diskUsage = server.disk_usage || 0
+  const totalNet = (server.net_rx || 0) + (server.net_tx || 0)
+  const showVirt = server.virtualization && server.virtualization !== 'None' && server.virtualization !== 'none'
+
+  const handleClick = () => {
+    navigate(`${basePath}/server/${server.id}`)
+  }
+
+  return (
+    <tr
+      onClick={handleClick}
+      className="cursor-pointer border-b border-border/50 transition-colors last:border-0 hover:bg-accent/50"
+    >
+      {/* 状态灯 */}
+      <td className="px-3 py-2">
+        <span className="relative flex h-2 w-2">
+          {server.online && (
+            <span
+              className="absolute inline-flex h-full w-full animate-ping rounded-full opacity-75"
+              style={{ backgroundColor: '#34C759' }}
+            />
+          )}
+          <span
+            className="relative inline-flex h-2 w-2 rounded-full"
+            style={{ backgroundColor: server.online ? '#34C759' : '#6b7280' }}
+          />
+        </span>
+      </td>
+      {/* 名称 */}
+      <td className="px-3 py-2">
+        <div className="flex items-center gap-2">
+          <DistroIcon distro={server.distro} os={server.os} size={14} />
+          <span className="truncate text-sm font-medium text-foreground">
+            {server.display_name || server.hostname}
+          </span>
+          {showVirt && (
+            <span className="shrink-0 rounded bg-secondary px-1.5 py-0.5 text-[9px] font-medium text-muted-foreground">
+              {server.virtualization}
+            </span>
+          )}
+        </div>
+      </td>
+      {/* CPU */}
+      <td className="px-3 py-2">
+        <ProgressCell value={server.cpu || 0} color="#007AFF" />
+      </td>
+      {/* 内存 */}
+      <td className="px-3 py-2">
+        <ProgressCell value={memUsage} color="#AF52DE" />
+      </td>
+      {/* 磁盘 */}
+      <td className="px-3 py-2">
+        <ProgressCell value={diskUsage} color="#FF9500" />
+      </td>
+      {/* 下行速度 */}
+      <td className="px-3 py-2">
+        <span className="text-xs font-medium tabular-nums text-foreground/80">
+          {server.online ? formatSpeed(server.net_rx) : '---'}
+        </span>
+      </td>
+      {/* 上行速度 */}
+      <td className="px-3 py-2">
+        <span className="text-xs font-medium tabular-nums text-foreground/80">
+          {server.online ? formatSpeed(server.net_tx) : '---'}
+        </span>
+      </td>
+      {/* 运行时长 */}
+      <td className="px-3 py-2">
+        <span className="text-xs tabular-nums text-muted-foreground">
+          {server.online ? formatUptime(server.uptime) : '---'}
+        </span>
+      </td>
+      {/* 隐藏：总网速列仅用于排序 */}
+      <td className="hidden">{totalNet}</td>
+    </tr>
+  )
+}
+
+/** 仪表盘页（服务器卡片网格 + 表格视图） */
 export default function Dashboard() {
   const servers = useServerStore((s) => s.servers)
   const fetchServers = useServerStore((s) => s.fetchServers)
   const wsConnected = useServerStore((s) => s.wsConnected)
 
-  // 服务器列表由 Layout 组件统一获取，此处不再重复调用 fetchServers
-  // 仅保留 fetchServers 引用用于手动刷新按钮
+  // 视图模式（持久化）
+  const [viewMode, setViewMode] = useState<ViewMode>(() =>
+    loadLS<ViewMode>(LS_VIEW_MODE, ['card', 'table'], 'card'),
+  )
+  // 排序选项（持久化）
+  const [sortOption, setSortOption] = useState<SortOption>(() =>
+    loadLS<SortOption>(LS_SORT, SORT_OPTIONS.map((o) => o.value), 'default'),
+  )
+  // 搜索关键字
+  const [searchInput, setSearchInput] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
+
+  // 视图模式 / 排序选项持久化
+  useEffect(() => {
+    try {
+      localStorage.setItem(LS_VIEW_MODE, viewMode)
+    } catch {
+      // 忽略
+    }
+  }, [viewMode])
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(LS_SORT, sortOption)
+    } catch {
+      // 忽略
+    }
+  }, [sortOption])
+
+  // 搜索防抖 400ms
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchInput.trim().toLowerCase())
+    }, 400)
+    return () => clearTimeout(timer)
+  }, [searchInput])
 
   // 统计信息
   const stats = useMemo(() => {
@@ -30,8 +217,62 @@ export default function Dashboard() {
     return { total, online, offline, avgCpu, avgMem, totalRx, totalTx }
   }, [servers])
 
-  // 不再显示全屏加载 spinner，直接显示内容
-  // 如果正在加载且无数据，显示"加载中"文本而非 spinner
+  // 搜索 + 排序
+  const processedServers = useMemo(() => {
+    // 1. 搜索筛选
+    let result = servers
+    if (debouncedSearch) {
+      result = servers.filter((s) => {
+        const name = (s.display_name || '').toLowerCase()
+        const hostname = (s.hostname || '').toLowerCase()
+        return name.includes(debouncedSearch) || hostname.includes(debouncedSearch)
+      })
+    }
+
+    // 2. 排序（在线节点排在离线节点之前）
+    if (sortOption === 'default') {
+      // 默认排序：在线优先，然后保持原顺序
+      result = [...result].sort((a, b) => {
+        if (a.online !== b.online) return a.online ? -1 : 1
+        return 0
+      })
+    } else {
+      result = [...result].sort((a, b) => {
+        // 在线优先
+        if (a.online !== b.online) return a.online ? -1 : 1
+
+        let cmp = 0
+        switch (sortOption) {
+          case 'name':
+            cmp = (a.display_name || a.hostname || '').localeCompare(b.display_name || b.hostname || '')
+            break
+          case 'cpu':
+            cmp = (a.cpu || 0) - (b.cpu || 0)
+            break
+          case 'mem':
+            cmp = getMemUsage(a) - getMemUsage(b)
+            break
+          case 'disk':
+            cmp = (a.disk_usage || 0) - (b.disk_usage || 0)
+            break
+          case 'net':
+            cmp = getTotalNetSpeed(a) - getTotalNetSpeed(b)
+            break
+          case 'uptime':
+            cmp = (a.uptime || 0) - (b.uptime || 0)
+            break
+        }
+        // 降序排列（值大的在前），名称升序
+        return sortOption === 'name' ? cmp : -cmp
+      })
+    }
+
+    return result
+  }, [servers, debouncedSearch, sortOption])
+
+  const handleSearchChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    setSearchInput(e.target.value)
+  }, [])
 
   return (
     <div className="space-y-4">
@@ -118,7 +359,96 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* 服务器卡片网格 */}
+      {/* 工具栏：视图切换 + 搜索 + 排序 */}
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        {/* 视图切换按钮组 */}
+        <div className="flex items-center gap-1 rounded-lg border border-border bg-card p-1">
+          <button
+            onClick={() => setViewMode('card')}
+            className={`flex h-8 items-center gap-1.5 rounded-md px-3 text-xs font-medium transition-colors ${
+              viewMode === 'card'
+                ? 'bg-primary text-primary-foreground'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
+            </svg>
+            卡片视图
+          </button>
+          <button
+            onClick={() => setViewMode('table')}
+            className={`flex h-8 items-center gap-1.5 rounded-md px-3 text-xs font-medium transition-colors ${
+              viewMode === 'table'
+                ? 'bg-primary text-primary-foreground'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+            表格视图
+          </button>
+        </div>
+
+        {/* 搜索框 + 排序 */}
+        <div className="flex items-center gap-2">
+          {/* 搜索框 */}
+          <div className="relative">
+            <svg
+              className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+            <input
+              type="text"
+              value={searchInput}
+              onChange={handleSearchChange}
+              placeholder="搜索名称/主机名"
+              className="h-9 w-44 rounded-lg border border-border bg-card pl-8 pr-3 text-sm text-foreground placeholder:text-muted-foreground/60 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary sm:w-56"
+            />
+            {searchInput && (
+              <button
+                onClick={() => setSearchInput('')}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                aria-label="清除搜索"
+              >
+                <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            )}
+          </div>
+
+          {/* 排序下拉菜单 */}
+          <div className="relative">
+            <select
+              value={sortOption}
+              onChange={(e) => setSortOption(e.target.value as SortOption)}
+              className="h-9 cursor-pointer appearance-none rounded-lg border border-border bg-card pl-3 pr-8 text-sm text-foreground transition-colors hover:bg-accent focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+            >
+              {SORT_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  排序: {opt.label}
+                </option>
+              ))}
+            </select>
+            <svg
+              className="pointer-events-none absolute right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </div>
+        </div>
+      </div>
+
+      {/* 服务器列表 */}
       {servers.length === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border py-16">
           <svg className="mb-3 h-12 w-12 text-muted-foreground/50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -129,11 +459,46 @@ export default function Dashboard() {
             请在服务器上安装 Agent 并注册
           </p>
         </div>
-      ) : (
+      ) : processedServers.length === 0 ? (
+        // 搜索无结果
+        <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border py-16">
+          <svg className="mb-3 h-10 w-10 text-muted-foreground/50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+          </svg>
+          <p className="text-sm font-medium text-foreground">未找到匹配的服务器</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            尝试使用其他关键字搜索
+          </p>
+        </div>
+      ) : viewMode === 'card' ? (
+        // 卡片视图
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {servers.map((server) => (
+          {processedServers.map((server) => (
             <ServerCard key={server.id} server={server} />
           ))}
+        </div>
+      ) : (
+        // 表格视图
+        <div className="overflow-x-auto rounded-xl border border-border bg-card">
+          <table className="w-full min-w-[640px]">
+            <thead>
+              <tr className="border-b border-border bg-secondary/30">
+                <th className="px-3 py-2 text-left text-[10px] font-medium uppercase tracking-wider text-muted-foreground">状态</th>
+                <th className="px-3 py-2 text-left text-[10px] font-medium uppercase tracking-wider text-muted-foreground">名称</th>
+                <th className="px-3 py-2 text-left text-[10px] font-medium uppercase tracking-wider text-muted-foreground">CPU</th>
+                <th className="px-3 py-2 text-left text-[10px] font-medium uppercase tracking-wider text-muted-foreground">内存</th>
+                <th className="px-3 py-2 text-left text-[10px] font-medium uppercase tracking-wider text-muted-foreground">磁盘</th>
+                <th className="px-3 py-2 text-left text-[10px] font-medium uppercase tracking-wider text-muted-foreground">下行</th>
+                <th className="px-3 py-2 text-left text-[10px] font-medium uppercase tracking-wider text-muted-foreground">上行</th>
+                <th className="px-3 py-2 text-left text-[10px] font-medium uppercase tracking-wider text-muted-foreground">运行时长</th>
+              </tr>
+            </thead>
+            <tbody>
+              {processedServers.map((server) => (
+                <ServerTableRow key={server.id} server={server} basePath="/admin" />
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
 

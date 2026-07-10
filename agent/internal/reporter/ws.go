@@ -415,8 +415,9 @@ func (c *WSClient) handleMessage(msg *sharedmodel.WSMessage) {
 	switch msg.Type {
 	case sharedmodel.MsgTypeConfigUpdate:
 		config := &sharedmodel.AgentConfig{
-			PingTargets:  msg.PingTargets,
-			PingInterval: msg.PingInterval,
+			PingTargets:    msg.PingTargets,
+			PingInterval:   msg.PingInterval,
+			ReportInterval: msg.ReportInterval,
 		}
 		if c.onConfigUpdate != nil {
 			c.onConfigUpdate(config)

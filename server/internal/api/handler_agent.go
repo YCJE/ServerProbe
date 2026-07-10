@@ -62,16 +62,17 @@ func NewAgentHandler(
 		}
 
 		msg := sharedmodel.WSMessage{
-			Type:         sharedmodel.MsgTypeConfigUpdate,
-			PingTargets:  config.PingTargets,
-			PingInterval: config.PingInterval,
+			Type:            sharedmodel.MsgTypeConfigUpdate,
+			PingTargets:     config.PingTargets,
+			PingInterval:    config.PingInterval,
+			ReportInterval:  config.ReportInterval,
 		}
 
 		if err := ws.writeJSON(msg); err != nil {
 			log.Printf("推送配置更新到 Agent %d 失败: %v", agentID, err)
 		} else {
-			log.Printf("已推送配置更新到 Agent %d (探测目标 %d 个, 间隔 %ds)",
-				agentID, len(config.PingTargets), config.PingInterval)
+			log.Printf("已推送配置更新到 Agent %d (探测目标 %d 个, 间隔 %ds, 上报间隔 %ds)",
+				agentID, len(config.PingTargets), config.PingInterval, config.ReportInterval)
 		}
 	})
 
@@ -359,8 +360,8 @@ func (h *AgentHandler) handleReport(ws *agentWSConn, msg *sharedmodel.WSMessage,
 		return
 	}
 
-	// 写入实时数据
-	if err := h.monitor.WriteMetricData(id, msg.Data); err != nil {
+	// 写入实时数据（含静态/动态数据分离 + 哈希去重）
+	if err := h.monitor.HandleAgentReport(id, msg.Data); err != nil {
 		log.Printf("Agent %d 写入数据失败: %v", id, err)
 		return
 	}
@@ -480,9 +481,10 @@ func (h *AgentHandler) sendConfigUpdate(ws *agentWSConn, agentID int64) {
 	}
 
 	response := sharedmodel.WSMessage{
-		Type:         sharedmodel.MsgTypeConfigUpdate,
-		PingTargets:  config.PingTargets,
-		PingInterval: config.PingInterval,
+		Type:           sharedmodel.MsgTypeConfigUpdate,
+		PingTargets:    config.PingTargets,
+		PingInterval:   config.PingInterval,
+		ReportInterval: config.ReportInterval,
 	}
 	_ = ws.writeJSON(response)
 }
@@ -515,4 +517,53 @@ func (h *AgentHandler) HandleGetAgentConfig(c *gin.Context) {
 
 	_ = agent
 	c.JSON(http.StatusOK, config)
+}
+
+// HandleGetReportInterval 获取 Agent 上报间隔
+// 路由: GET /api/v1/agent/config/interval (管理员)
+func (h *AgentHandler) HandleGetReportInterval(c *gin.Context) {
+	interval := 3
+	if h.configSync != nil {
+		interval = h.configSync.GetReportInterval()
+	}
+	c.JSON(http.StatusOK, gin.H{"interval": interval})
+}
+
+// HandleSetReportInterval 设置 Agent 上报间隔
+// 路由: PUT /api/v1/agent/config/interval (管理员)
+// 修改后自动推送配置更新到所有在线 Agent
+func (h *AgentHandler) HandleSetReportInterval(c *gin.Context) {
+	var req struct {
+		Interval int `json:"interval"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的请求体"})
+		return
+	}
+
+	if req.Interval < 1 || req.Interval > 3600 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "上报间隔必须在 1-3600 秒之间"})
+		return
+	}
+
+	if h.configSync == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "配置服务不可用"})
+		return
+	}
+
+	if err := h.configSync.SetReportInterval(req.Interval); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "设置上报间隔失败"})
+		return
+	}
+
+	// 推送配置更新到所有在线 Agent
+	if h.monitor != nil {
+		config, err := h.configSync.GetAgentConfig()
+		if err == nil {
+			h.monitor.BroadcastConfigUpdate(config)
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{"success": true, "interval": req.Interval})
 }

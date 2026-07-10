@@ -54,7 +54,37 @@ func (s *ConfigSyncService) SetPingInterval(interval int) error {
 		FirstOrCreate(&setting).Error
 }
 
-// GetAgentConfig 获取 Agent 配置（探测目标）
+// GetReportInterval 从数据库获取 Agent 上报间隔 (默认 3 秒)
+func (s *ConfigSyncService) GetReportInterval() int {
+	if s.db == nil {
+		return 3
+	}
+	var setting model.SystemSetting
+	if err := s.db.Where("key = ?", "report_interval").First(&setting).Error; err != nil {
+		return 3 // 默认 3 秒
+	}
+	interval, err := strconv.Atoi(setting.Value)
+	if err != nil || interval < 1 || interval > 3600 {
+		return 3
+	}
+	return interval
+}
+
+// SetReportInterval 设置 Agent 上报间隔
+func (s *ConfigSyncService) SetReportInterval(interval int) error {
+	if interval < 1 || interval > 3600 {
+		interval = 3
+	}
+	setting := model.SystemSetting{
+		Key:   "report_interval",
+		Value: strconv.Itoa(interval),
+	}
+	return s.db.Where("key = ?", "report_interval").
+		Assign(model.SystemSetting{Value: strconv.Itoa(interval)}).
+		FirstOrCreate(&setting).Error
+}
+
+// GetAgentConfig 获取 Agent 配置（探测目标 + 上报间隔）
 func (s *ConfigSyncService) GetAgentConfig() (*sharedmodel.AgentConfig, error) {
 	targets, err := s.pingTargetRepo.ListEnabled()
 	if err != nil {
@@ -73,7 +103,8 @@ func (s *ConfigSyncService) GetAgentConfig() (*sharedmodel.AgentConfig, error) {
 	}
 
 	return &sharedmodel.AgentConfig{
-		PingTargets:  pingTargets,
-		PingInterval: s.GetPingInterval(),
+		PingTargets:    pingTargets,
+		PingInterval:   s.GetPingInterval(),
+		ReportInterval: s.GetReportInterval(),
 	}, nil
 }

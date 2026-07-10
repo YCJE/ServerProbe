@@ -306,14 +306,15 @@ export const useServerStore = create<ServerStoreState>((set, get) => ({
       _recentlyDeletedIds: newDeletedIds,
     })
     // 异步刷新服务器列表，完成后清除删除标记
+    // 使用 finally 确保即使 fetchServers 失败，_recentlyDeletedIds 也会被清理，
+    // 避免标记永久残留导致该 Agent 的后续 WS 消息被一直忽略
     get().fetchServers()
-      .then(() => {
+      .finally(() => {
         const cur = get()
         const next = new Set(cur._recentlyDeletedIds)
         next.delete(id)
         useServerStore.setState({ _recentlyDeletedIds: next })
       })
-      .catch(() => {})
   },
 
   // 连接 WebSocket
@@ -429,6 +430,10 @@ export const useServerStore = create<ServerStoreState>((set, get) => ({
           udp_connections: item.udp_connections || 0,
           process_count: item.process_count || 0,
           ping_data: item.ping_data || [],
+          virtualization: item.virtualization,
+          distro: item.distro,
+          processes: item.processes,
+          time_offset: item.time_offset,
         })
       }
     }
@@ -467,6 +472,9 @@ export const useServerStore = create<ServerStoreState>((set, get) => ({
           server.os === (live.os || server.os) &&
           server.arch === (live.arch || server.arch) &&
           server.agent_version === (live.agent_version || server.agent_version) &&
+          server.virtualization === (live.virtualization ?? server.virtualization) &&
+          server.distro === (live.distro ?? server.distro) &&
+          server.time_offset === (live.time_offset ?? server.time_offset) &&
           pingDataEqual(server.ping_data, live.ping_data || [])
         ) {
           return server
@@ -505,6 +513,10 @@ export const useServerStore = create<ServerStoreState>((set, get) => ({
           os: live.os || server.os,
           arch: live.arch || server.arch,
           agent_version: live.agent_version || server.agent_version,
+          virtualization: live.virtualization ?? server.virtualization,
+          distro: live.distro ?? server.distro,
+          processes: live.processes ?? server.processes,
+          time_offset: live.time_offset ?? server.time_offset,
         }
       }
       return server

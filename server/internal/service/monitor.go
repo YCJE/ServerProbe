@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"log"
 	"sync"
@@ -24,6 +26,7 @@ type AgentConn struct {
 // MonitorService 实时数据管理服务
 type MonitorService struct {
 	agentRepo    *repository.AgentRepository
+	recordRepo   *repository.RecordRepository // 历史数据 repository（用于 BatchWriter）
 	ringBuffers  map[int64]*repository.RingBuffer
 	connections  map[int64]*AgentConn
 	mu           sync.RWMutex
@@ -40,18 +43,40 @@ type MonitorService struct {
 	agentListCache     []model.Agent
 	agentListCacheAt   time.Time
 	agentListCacheLock sync.Mutex // 防止惊群效应：确保同一时刻只有一个 goroutine 刷新缓存
+
+	// 批量写入缓冲器
+	batchWriter *repository.BatchWriter
+
+	// 静态数据哈希缓存：agentID → 上次上报的 SystemInfo SHA-256 哈希
+	// 用于去重，避免静态数据未变化时重复写入数据库
+	staticHashCache map[int64]string
+	staticHashMu    sync.RWMutex
 }
 
 // NewMonitorService 创建监控服务
-func NewMonitorService(agentRepo *repository.AgentRepository, dataDir string) *MonitorService {
-	return &MonitorService{
-		agentRepo:    agentRepo,
-		ringBuffers:  make(map[int64]*repository.RingBuffer),
-		connections:  make(map[int64]*AgentConn),
-		dataDir:      dataDir,
-		stopCh:       make(chan struct{}),
-		lastDBUpdate: make(map[int64]time.Time),
+// recordRepo 用于初始化 BatchWriter 实现批量写入缓冲
+func NewMonitorService(agentRepo *repository.AgentRepository, recordRepo *repository.RecordRepository, dataDir string) *MonitorService {
+	m := &MonitorService{
+		agentRepo:       agentRepo,
+		recordRepo:      recordRepo,
+		ringBuffers:     make(map[int64]*repository.RingBuffer),
+		connections:     make(map[int64]*AgentConn),
+		dataDir:         dataDir,
+		stopCh:          make(chan struct{}),
+		lastDBUpdate:    make(map[int64]time.Time),
+		staticHashCache: make(map[int64]string),
 	}
+
+	// 初始化 BatchWriter（批量写入缓冲）
+	if recordRepo != nil {
+		bw := repository.NewBatchWriter(recordRepo.FlushBatch)
+		recordRepo.SetBatchWriter(bw)
+		m.batchWriter = bw
+		bw.Start()
+		log.Println("BatchWriter 已启动（缓冲容量 10000，每 500ms 或 100 条 flush）")
+	}
+
+	return m
 }
 
 // GetOnlineAgentCount 获取在线 Agent 数量
@@ -178,6 +203,8 @@ func (m *MonitorService) UnregisterConnectionIfMatch(agentID int64, conn *websoc
 		if ac.Conn == conn {
 			ac.Conn.Close()
 			delete(m.connections, agentID)
+			// 清理 lastDBUpdate 记录，防止内存泄漏
+			delete(m.lastDBUpdate, agentID)
 			needCleanup = true
 		}
 		// 连接已被新连接替换，不执行注销
@@ -188,6 +215,11 @@ func (m *MonitorService) UnregisterConnectionIfMatch(agentID int64, conn *websoc
 		return false
 	}
 
+	// 清理静态数据哈希缓存，防止内存泄漏
+	m.staticHashMu.Lock()
+	delete(m.staticHashCache, agentID)
+	m.staticHashMu.Unlock()
+
 	// 在锁外执行数据库写入，避免持锁阻塞监控服务
 	// 更新 last_seen 时间戳（标记离线）
 	_ = m.agentRepo.UpdateLastSeen(agentID, false)
@@ -196,10 +228,9 @@ func (m *MonitorService) UnregisterConnectionIfMatch(agentID int64, conn *websoc
 }
 
 // UnregisterAgent 完全移除 Agent (删除 Agent 时调用)
-// 关闭连接、删除 ringBuffer、更新在线状态
+// 关闭连接、删除 ringBuffer、更新在线状态、清理哈希缓存
 func (m *MonitorService) UnregisterAgent(agentID int64) {
 	m.mu.Lock()
-	defer m.mu.Unlock()
 
 	// 关闭 WebSocket 连接
 	if conn, ok := m.connections[agentID]; ok {
@@ -213,12 +244,20 @@ func (m *MonitorService) UnregisterAgent(agentID int64) {
 	// 清理 lastDBUpdate 记录，防止内存泄漏
 	delete(m.lastDBUpdate, agentID)
 
+	m.mu.Unlock()
+
+	// 在锁外执行数据库写入，避免持锁阻塞监控服务
 	// 更新数据库在线状态
 	if err := m.agentRepo.UpdateOnlineStatus(agentID, false); err != nil {
 		log.Printf("[Monitor] UpdateOnlineStatus failed for agent %d: %v", agentID, err)
 	}
 
-	log.Printf("Agent %d 已完全移除 (连接+ringBuffer)", agentID)
+	// 清理静态数据哈希缓存，防止内存泄漏
+	m.staticHashMu.Lock()
+	delete(m.staticHashCache, agentID)
+	m.staticHashMu.Unlock()
+
+	log.Printf("Agent %d 已完全移除 (连接+ringBuffer+哈希缓存)", agentID)
 }
 
 // BroadcastConfigUpdate 向所有在线 Agent 推送配置更新
@@ -366,6 +405,66 @@ func (m *MonitorService) WriteMetricData(agentID int64, data *sharedmodel.Metric
 	return nil
 }
 
+// HandleAgentReport 处理 Agent 上报的监控数据（任务 1 + 任务 3）
+//   - 动态数据（CPU、内存、磁盘、网络等）写入环形缓冲，照常存储
+//   - 静态数据（SystemInfo）通过 SHA-256 哈希去重后更新 Agent 表
+//   - 如果 SystemInfo.OS 为空（非静态采集周期），跳过静态数据的数据库写入
+func (m *MonitorService) HandleAgentReport(agentID int64, data *sharedmodel.MetricData) error {
+	// 1. 写入动态数据到环形缓冲（照常存储）
+	if err := m.WriteMetricData(agentID, data); err != nil {
+		return err
+	}
+
+	// 2. 处理静态数据 - 如果 SystemInfo.OS 为空，跳过静态数据写入
+	if data.System.OS == "" {
+		return nil
+	}
+
+	// 3. 计算 SHA-256 哈希，去重
+	hash := computeStaticHash(&data.System)
+
+	m.staticHashMu.RLock()
+	cachedHash, exists := m.staticHashCache[agentID]
+	m.staticHashMu.RUnlock()
+
+	// 哈希与上次相同，跳过静态数据的数据库写入
+	if exists && cachedHash == hash {
+		return nil
+	}
+
+	// 4. 哈希不同（或首次上报），写入新数据并更新哈希缓存
+	if err := m.agentRepo.UpdateStaticInfo(
+		agentID,
+		data.System.OS,
+		data.System.Arch,
+		data.System.Kernel,
+		data.System.Hostname,
+		data.System.AgentVersion,
+		data.System.Virtualization,
+		data.System.Distro,
+	); err != nil {
+		log.Printf("[Monitor] 更新 Agent %d 静态信息失败: %v", agentID, err)
+		return err
+	}
+
+	m.staticHashMu.Lock()
+	m.staticHashCache[agentID] = hash
+	m.staticHashMu.Unlock()
+
+	log.Printf("[Monitor] Agent %d 静态信息已更新 (hash=%s)", agentID, hash[:16])
+	return nil
+}
+
+// computeStaticHash 计算静态数据的 SHA-256 哈希
+// 将 SystemInfo 的所有字段拼接为确定性字符串后计算哈希
+func computeStaticHash(sys *sharedmodel.SystemInfo) string {
+	data := fmt.Sprintf("%s|%s|%s|%s|%s|%s|%s",
+		sys.OS, sys.Arch, sys.Kernel, sys.Hostname,
+		sys.AgentVersion, sys.Virtualization, sys.Distro)
+	h := sha256.Sum256([]byte(data))
+	return hex.EncodeToString(h[:])
+}
+
 // WritePingData 写入 Ping 探测数据
 func (m *MonitorService) WritePingData(agentID int64, pingData []sharedmodel.PingResult) error {
 	m.mu.RLock()
@@ -442,6 +541,13 @@ func (m *MonitorService) CheckHeartbeatTimeout(timeout time.Duration) {
 
 	m.mu.Unlock()
 
+	// 清理静态数据哈希缓存，防止内存泄漏
+	m.staticHashMu.Lock()
+	for _, agentID := range timedOut {
+		delete(m.staticHashCache, agentID)
+	}
+	m.staticHashMu.Unlock()
+
 	// 在锁外执行数据库写入，避免持锁阻塞监控服务
 	for _, agentID := range timedOut {
 		if err := m.agentRepo.UpdateOnlineStatus(agentID, false); err != nil {
@@ -469,7 +575,7 @@ func (m *MonitorService) StartHeartbeatChecker(timeout time.Duration) {
 	}()
 }
 
-// Stop 停止监控服务（停止心跳检查器）
+// Stop 停止监控服务（停止心跳检查器，flush 批量写入缓冲）
 func (m *MonitorService) Stop() {
 	m.stopOnce.Do(func() {
 		if m.ticker != nil {
@@ -477,6 +583,11 @@ func (m *MonitorService) Stop() {
 		}
 		close(m.stopCh)
 		m.wg.Wait()
+		// 优雅关闭 BatchWriter，flush 剩余数据
+		if m.batchWriter != nil {
+			m.batchWriter.FlushAndShutdown()
+			log.Println("BatchWriter 已关闭")
+		}
 	})
 }
 
