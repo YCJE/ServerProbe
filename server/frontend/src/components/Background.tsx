@@ -32,7 +32,7 @@ export default function Background() {
           linear-gradient(${lineColor} 1px, transparent 1px),
           linear-gradient(90deg, ${lineColor} 1px, transparent 1px)
         `,
-        backgroundSize: '24px 24px',
+        backgroundSize: '22px 22px',
       }}
       aria-hidden="true"
     />

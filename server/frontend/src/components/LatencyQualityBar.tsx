@@ -23,15 +23,15 @@ interface LatencyQualityBarProps {
   className?: string
 }
 
-/** 桶颜色配置（NodeGet 色系） */
+/** 桶颜色配置（NodeGet 色系，与 ServerCard.getLatencyColor 保持一致） */
 const BUCKET_COLORS = {
-  green: '#34C759',        // <=50ms
-  lightGreen: '#5AC8FA',   // 50-100ms
-  yellow: '#FFCC00',       // 100-180ms
-  orange: '#FF9500',       // 180-300ms
-  red: '#FF3B30',          // >300ms
-  packetLoss: '#8B0000',   // 丢包深红
-  empty: 'hsl(var(--muted) / 0.4)', // 无数据
+  deepGreen: '#69BE7B',    // <= 50ms
+  lightGreen: '#A7D879',   // <= 100ms
+  lightYellow: '#E8CC68',  // <= 180ms
+  deepYellow: '#EFA85F',   // <= 300ms
+  lightRed: '#E98686',     // > 300ms
+  deepRed: '#D96B6B',      // 丢包
+  empty: 'rgba(148, 163, 184, 0.28)', // 无数据
 } as const
 
 /** 根据平均延迟和丢包率返回桶颜色 */
@@ -39,13 +39,13 @@ function getBucketColor(avgLatency: number, avgLoss: number, hasData: boolean): 
   // 无数据时返回空颜色
   if (!hasData) return BUCKET_COLORS.empty
   // 丢包率 > 50% 视为严重丢包
-  if (avgLoss > 50) return BUCKET_COLORS.packetLoss
+  if (avgLoss > 50) return BUCKET_COLORS.deepRed
   // 有数据时 avgLatency=0 归入绿色
-  if (avgLatency <= 50) return BUCKET_COLORS.green
+  if (avgLatency <= 50) return BUCKET_COLORS.deepGreen
   if (avgLatency <= 100) return BUCKET_COLORS.lightGreen
-  if (avgLatency <= 180) return BUCKET_COLORS.yellow
-  if (avgLatency <= 300) return BUCKET_COLORS.orange
-  return BUCKET_COLORS.red
+  if (avgLatency <= 180) return BUCKET_COLORS.lightYellow
+  if (avgLatency <= 300) return BUCKET_COLORS.deepYellow
+  return BUCKET_COLORS.lightRed
 }
 
 /** 时间桶聚合结果 */
@@ -267,12 +267,12 @@ function LatencyQualityBar({
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <span className="text-sm font-bold text-primary">延迟质量分布</span>
         <div className="flex flex-wrap items-center gap-2 text-[10px] text-muted-foreground">
-          <LegendItem color={BUCKET_COLORS.green} label="≤50ms" />
+          <LegendItem color={BUCKET_COLORS.deepGreen} label="≤50ms" />
           <LegendItem color={BUCKET_COLORS.lightGreen} label="50-100" />
-          <LegendItem color={BUCKET_COLORS.yellow} label="100-180" />
-          <LegendItem color={BUCKET_COLORS.orange} label="180-300" />
-          <LegendItem color={BUCKET_COLORS.red} label=">300" />
-          <LegendItem color={BUCKET_COLORS.packetLoss} label="丢包" />
+          <LegendItem color={BUCKET_COLORS.lightYellow} label="100-180" />
+          <LegendItem color={BUCKET_COLORS.deepYellow} label="180-300" />
+          <LegendItem color={BUCKET_COLORS.lightRed} label=">300" />
+          <LegendItem color={BUCKET_COLORS.deepRed} label="丢包" />
         </div>
       </div>
 

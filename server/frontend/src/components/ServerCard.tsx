@@ -286,13 +286,13 @@ function ServerCard({ server, basePath = '/admin' }: ServerCardProps) {
         {/* 累计流量行 */}
         <div className="mt-1 flex items-center justify-between border-t border-dashed border-border/60 pt-1 text-[10px]">
           <span className="flex items-center gap-1 text-muted-foreground">
-            <span style={{ color: '#5AC8FA' }}>↓</span>
+            <span style={{ color: 'hsl(var(--primary))' }}>↓</span>
             <span className="font-medium tabular-nums text-foreground/70">
               {server.online ? formatTraffic(server.total_rx || 0) : '---'}
             </span>
           </span>
           <span className="flex items-center gap-1 text-muted-foreground">
-            <span style={{ color: '#AF52DE' }}>↑</span>
+            <span style={{ color: 'hsl(var(--accent-foreground))' }}>↑</span>
             <span className="font-medium tabular-nums text-foreground/70">
               {server.online ? formatTraffic(server.total_tx || 0) : '---'}
             </span>

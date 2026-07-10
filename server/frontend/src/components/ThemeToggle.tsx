@@ -8,6 +8,7 @@ export default function ThemeToggle() {
   const setTheme = useServerStore((s) => s.setTheme)
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // 点击外部关闭下拉菜单
   useEffect(() => {
@@ -18,6 +19,11 @@ export default function ThemeToggle() {
     }
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
+  // 组件卸载时清理未完成的 setTimeout，避免内存泄漏与对已卸载组件的操作
+  useEffect(() => () => {
+    if (timeoutRef.current) clearTimeout(timeoutRef.current)
   }, [])
 
   const options: { value: Theme; label: string; icon: string }[] = [
@@ -32,7 +38,8 @@ export default function ThemeToggle() {
   const handleChange = (value: Theme) => {
     document.documentElement.classList.add('theme-changing')
     setTheme(value)
-    window.setTimeout(() => {
+    if (timeoutRef.current) clearTimeout(timeoutRef.current)
+    timeoutRef.current = setTimeout(() => {
       document.documentElement.classList.remove('theme-changing')
     }, 90)
     setOpen(false)
@@ -42,7 +49,7 @@ export default function ThemeToggle() {
     <div className="relative" ref={ref}>
       <button
         onClick={() => setOpen(!open)}
-        className="flex h-11 w-11 items-center justify-center rounded-xl border border-border bg-secondary text-foreground transition-colors hover:bg-accent"
+        className="flex h-9 w-9 items-center justify-center rounded-xl border border-border bg-secondary text-foreground transition-colors hover:bg-accent"
         title="切换主题"
         aria-label="切换主题"
         aria-expanded={open}

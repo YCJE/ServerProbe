@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useMemo } from 'react'
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom'
 import { useServerStore } from '@/store/useServerStore'
 import ThemeToggle from './ThemeToggle'
@@ -35,16 +35,24 @@ export default function Layout() {
   const servers = useServerStore((s) => s.servers)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const [scrolled, setScrolled] = useState(false)
+  // 防止 disconnectWebSocket 在 effect cleanup 中被重复调用
+  const hasDisconnectedRef = useRef(false)
 
   // 首次加载时获取服务器列表并连接 WebSocket
   useEffect(() => {
     if (isAuthenticated) {
+      // 重置断开标记，确保本次 effect 生命周期内可正常断开
+      hasDisconnectedRef.current = false
       fetchServers().catch(() => {
         // 错误处理在 API 层已做
       })
       connectWebSocket()
       return () => {
-        disconnectWebSocket()
+        // 使用 ref 防止 disconnectWebSocket 被重复调用
+        if (!hasDisconnectedRef.current) {
+          hasDisconnectedRef.current = true
+          disconnectWebSocket()
+        }
       }
     }
   }, [isAuthenticated, fetchServers, connectWebSocket, disconnectWebSocket])

@@ -8,8 +8,8 @@ export default function StatusDot({ online, size = 'sm' }: { online: boolean; si
     <span
       className={`inline-block ${dim} shrink-0 rounded-full ${
         online
-          ? 'bg-emerald-500 ring-2 ring-emerald-500/25'
-          : 'bg-rose-500 ring-2 ring-rose-500/25'
+          ? 'bg-success ring-2 ring-success/25'
+          : 'bg-destructive ring-2 ring-destructive/25'
       }`}
       aria-label={online ? '在线' : '离线'}
     />

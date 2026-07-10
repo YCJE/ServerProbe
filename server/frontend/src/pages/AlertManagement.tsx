@@ -312,7 +312,7 @@ export default function AlertManagement() {
                     <td className="px-3 py-3">
                       <button
                         onClick={() => handleToggleEnabled(rule)}
-                        className="badge-pill badge-success"
+                        className={`badge-pill ${rule.enabled ? 'badge-success' : 'badge-warning'}`}
                       >
                         <span
                           className={`inline-block h-1.5 w-1.5 rounded-full ${

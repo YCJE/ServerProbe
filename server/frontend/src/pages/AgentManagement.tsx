@@ -186,16 +186,20 @@ export default function AgentManagement() {
   }
 
   // 复制到剪贴板
+  const setCopiedWithTimeout = (id: string) => {
+    setCopied(id)
+    const t = setTimeout(() => {
+      setCopied(null)
+      // 超时执行后从数组中移除自身，避免过期 ID 无限累积
+      timeoutRefs.current = timeoutRefs.current.filter((ref) => ref !== t)
+    }, 2000)
+    timeoutRefs.current.push(t)
+  }
+
   const handleCopy = async (text: string, id: string) => {
     try {
       await navigator.clipboard.writeText(text)
-      setCopied(id)
-      const t = setTimeout(() => {
-        setCopied(null)
-        // 超时执行后从数组中移除自身，避免过期 ID 无限累积
-        timeoutRefs.current = timeoutRefs.current.filter((ref) => ref !== t)
-      }, 2000)
-      timeoutRefs.current.push(t)
+      setCopiedWithTimeout(id)
     } catch {
       // 降级方案
       const textarea = document.createElement('textarea')
@@ -204,13 +208,7 @@ export default function AgentManagement() {
       textarea.select()
       document.execCommand('copy')
       document.body.removeChild(textarea)
-      setCopied(id)
-      const t = setTimeout(() => {
-        setCopied(null)
-        // 超时执行后从数组中移除自身，避免过期 ID 无限累积
-        timeoutRefs.current = timeoutRefs.current.filter((ref) => ref !== t)
-      }, 2000)
-      timeoutRefs.current.push(t)
+      setCopiedWithTimeout(id)
     }
   }
 
@@ -480,7 +478,7 @@ export default function AgentManagement() {
                     <td className="px-3 py-3 text-muted-foreground">{agent.arch || '-'}</td>
                     <td className="px-3 py-3 text-muted-foreground">{agent.agent_version || '-'}</td>
                     <td className="px-3 py-3">
-                      <span className="badge-pill badge-success">
+                      <span className={`badge-pill ${agent.online ? 'badge-success' : 'badge-destructive'}`}>
                         <span className={`inline-block h-1.5 w-1.5 rounded-full ${agent.online ? 'bg-success' : 'bg-muted-foreground'}`} />
                         {agent.online ? '在线' : '离线'}
                       </span>

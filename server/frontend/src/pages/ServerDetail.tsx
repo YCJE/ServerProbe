@@ -36,7 +36,7 @@ function isRealtimeRange(range: TimeRange): boolean {
   return range === 'realtime'
 }
 
-/** ping 目标线条颜色池（Apple 强调色） */
+/** ping 目标线条颜色池 */
 const PING_COLORS = ['#5AC8FA', '#34C759', '#FF9500', '#AF52DE', '#FF2D55', '#FFCC00']
 
 /** Sparkline 配色 */

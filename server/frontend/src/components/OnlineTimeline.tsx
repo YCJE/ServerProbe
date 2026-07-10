@@ -24,7 +24,7 @@ type CellStatus = 'online' | 'offline' | 'empty'
 
 /** 格子 className（NodeGet 风格） */
 const CELL_CLASS: Record<CellStatus, string> = {
-  online: 'bg-primary shadow-[0_0_0_1px_rgba(66,185,131,0.09)]',
+  online: 'bg-primary shadow-[0_0_0_1px_hsl(var(--primary)/0.09)]',
   offline: 'bg-border/90',
   empty: 'bg-muted/40',
 }

@@ -80,13 +80,14 @@ export default function LogViewer() {
   useEffect(() => {
     loadLogs()
     if (!autoRefresh) return
-    const interval = setInterval(loadLogs, 3000)
+    let interval = setInterval(loadLogs, 3000)
 
     const handleVisibilityChange = () => {
       if (document.hidden) {
         clearInterval(interval)
       } else if (mountedRef.current) {
         loadLogs()
+        interval = setInterval(loadLogs, 3000)
       }
     }
     document.addEventListener('visibilitychange', handleVisibilityChange)
@@ -259,7 +260,7 @@ export default function LogViewer() {
       )}
 
       {/* 日志终端区域 */}
-      <div className="flex-1 min-h-0 overflow-hidden rounded-xl border border-border bg-[#1a1b26] shadow-lg">
+      <div className="flex-1 min-h-0 flex flex-col overflow-hidden rounded-xl border border-border bg-[#1a1b26] shadow-lg">
         {/* 终端标题栏 */}
         <div className="flex items-center justify-between border-b border-white/5 bg-white/[0.02] px-4 py-2">
           <div className="flex items-center gap-2">
@@ -288,7 +289,7 @@ export default function LogViewer() {
         {/* 日志内容 */}
         <div
           ref={logContainerRef}
-          className="h-[calc(100%-37px)] overflow-y-auto scrollbar-thin"
+          className="flex-1 overflow-y-auto scrollbar-thin"
           style={{ fontFamily: 'var(--font-mono)' }}
         >
           {loading && logs.length === 0 ? (

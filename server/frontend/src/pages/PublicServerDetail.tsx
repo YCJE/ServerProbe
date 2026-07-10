@@ -28,14 +28,12 @@ import {
 
 /** 扩展类型：访问可能由后端附加但尚未在 ServerData 中声明的字段 */
 type ServerDataExt = ServerData & {
-  cpu_model?: string
-  cpu_cores?: number
   monthly_fee?: number
   expires_at?: string
   country_code?: string
 }
 
-/** 时间范围选项（仅 1h / 6h / 24h） */
+/** 时间范围选项（含实时模式 + 多种历史范围） */
 const TIME_RANGES: { value: TimeRange; label: string }[] = [
   { value: 'realtime', label: '实时' },
   { value: '1h', label: '1小时' },
@@ -46,7 +44,7 @@ const TIME_RANGES: { value: TimeRange; label: string }[] = [
   { value: '3d', label: '3天' },
 ]
 
-/** ping 目标线条颜色池（Apple 强调色） */
+/** ping 目标线条颜色池 */
 const PING_COLORS = ['#5AC8FA', '#34C759', '#FF9500', '#AF52DE', '#FF2D55', '#FFCC00']
 
 /** Sparkline 配色 */
