@@ -552,7 +552,8 @@ export const useServerStore = create<ServerStoreState>((set, get) => ({
           load_5: live.load_5 || 0,
           load_15: live.load_15 || 0,
           disk_usage: live.disk_usage || 0,
-          disks: live.disks || [],
+          // P1-1: DashboardSummary 不含 disks 字段，保留 fetchServers 获取的已有值
+          disks: live.disks ?? server.disks ?? [],
           tcp_connections: live.tcp_connections || 0,
           udp_connections: live.udp_connections || 0,
           process_count: live.process_count || 0,

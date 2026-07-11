@@ -57,13 +57,6 @@ func (w *wsConn) writeMessage(messageType int, data []byte) error {
 	return w.conn.WriteMessage(messageType, data)
 }
 
-func (w *wsConn) writeJSON(v interface{}) error {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	w.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
-	return w.conn.WriteJSON(v)
-}
-
 // HandleDashboardWS 仪表盘 WebSocket 端点
 // 路由: GET /ws/dashboard
 // 认证方式: HttpOnly Cookie（浏览器自动携带，无需通过 URL 参数传递，防止日志泄露）

@@ -978,6 +978,7 @@ func (m *MonitorService) GetPublicDashboardJSON() []byte {
 
 	data, err := json.Marshal(message)
 	if err != nil {
+		log.Printf("Public Dashboard JSON 序列化失败: %v", err)
 		return nil
 	}
 
