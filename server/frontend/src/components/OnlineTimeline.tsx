@@ -102,10 +102,16 @@ function OnlineTimeline({
 
     if (!points || points.length === 0) return result
 
+    // 过滤掉 timestamp 无效的数据点，防止排序和比较异常
+    const validPoints = points.filter(
+      (p) => typeof p.timestamp === 'number' && !isNaN(p.timestamp) && isFinite(p.timestamp),
+    )
+    if (validPoints.length === 0) return result
+
     // 将数据点分配到格子中
     // 对每个格子，找到落在其时间范围内的数据点，取最后一个数据点的状态
     // 如果没有数据点落在该格子，则根据前后数据点推断状态（向前查找最近的数据点）
-    const sortedPoints = [...points].sort((a, b) => a.timestamp - b.timestamp)
+    const sortedPoints = [...validPoints].sort((a, b) => a.timestamp - b.timestamp)
 
     for (const cell of result) {
       if (sortedPoints.length === 0) continue

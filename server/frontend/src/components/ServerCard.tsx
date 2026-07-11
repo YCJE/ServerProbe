@@ -123,17 +123,26 @@ function CompactLatencyBar({
 
     if (points.length === 0) return result
 
-    const oldestTs = points[0].timestamp
-    const newestTs = points[points.length - 1].timestamp
+    // 过滤掉 timestamp 无效的数据点，防止 bucketIdx 计算为 NaN 导致数组越界
+    const validPoints = points.filter(
+      (p) => typeof p.timestamp === 'number' && !isNaN(p.timestamp) && p.ping_data,
+    )
+    if (validPoints.length === 0) return result
+
+    const oldestTs = validPoints[0].timestamp
+    const newestTs = validPoints[validPoints.length - 1].timestamp
     const range = newestTs - oldestTs || 1
 
-    for (const point of points) {
+    for (const point of validPoints) {
       const ratio = (point.timestamp - oldestTs) / range
+      // 确保比值在 [0, 1] 范围内，防止 NaN 或 Infinity
+      if (!isFinite(ratio)) continue
       const bucketIdx = Math.min(
         Math.max(0, Math.floor(ratio * COMPACT_BUCKETS)),
         COMPACT_BUCKETS - 1,
       )
       const bucket = result[bucketIdx]
+      if (!bucket) continue
       const pings = point.ping_data || []
       if (pings.length === 0) continue
 
@@ -240,17 +249,26 @@ function CompactOnlineTimeline({ points }: { points: CardHistoryPoint[] }) {
 
     if (points.length === 0) return result
 
-    const oldestTs = points[0].timestamp
-    const newestTs = points[points.length - 1].timestamp
+    // 过滤掉 timestamp 无效的数据点
+    const validPoints = points.filter(
+      (p) => typeof p.timestamp === 'number' && !isNaN(p.timestamp),
+    )
+    if (validPoints.length === 0) return result
+
+    const oldestTs = validPoints[0].timestamp
+    const newestTs = validPoints[validPoints.length - 1].timestamp
     const range = newestTs - oldestTs || 1
 
-    for (const point of points) {
+    for (const point of validPoints) {
       const ratio = (point.timestamp - oldestTs) / range
+      if (!isFinite(ratio)) continue
       const cellIdx = Math.min(
         Math.max(0, Math.floor(ratio * COMPACT_BUCKETS)),
         COMPACT_BUCKETS - 1,
       )
-      result[cellIdx].status = point.online ? 'online' : 'offline'
+      const cell = result[cellIdx]
+      if (!cell) continue
+      cell.status = point.online ? 'online' : 'offline'
     }
 
     return result

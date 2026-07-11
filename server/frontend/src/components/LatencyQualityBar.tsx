@@ -134,12 +134,15 @@ function LatencyQualityBar({
     // 将数据点分配到桶中
     for (const point of points) {
       const ts = point.timestamp
+      // 防御性检查：跳过无效 timestamp 防止 bucketIdx 为 NaN
+      if (typeof ts !== 'number' || isNaN(ts) || !isFinite(ts)) continue
       if (ts < startTime || ts > now) continue
 
       const bucketIdx = Math.floor((ts - startTime) / bucketSeconds)
       if (bucketIdx < 0 || bucketIdx >= desktopBucketCount) continue
 
       const bucket = result[bucketIdx]
+      if (!bucket) continue
       const pings = parsePingData(point.ping_data)
       if (pings.length === 0) continue
 
