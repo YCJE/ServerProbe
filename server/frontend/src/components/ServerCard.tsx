@@ -72,25 +72,35 @@ interface LatencyBucket {
   count: number
 }
 
-/** 在线状态格子类型 */
-type OnlineStatus = 'online' | 'offline' | 'empty'
+/** 丢包率桶颜色 */
+const LOSS_COLORS = {
+  perfect: '#69BE7B',     // 0%
+  good: '#A7D879',        // 0-5%
+  fair: '#E8CC68',        // 5-15%
+  warning: '#EFA85F',     // 15-30%
+  bad: '#E98686',         // 30-50%
+  critical: '#D96B6B',    // >50%
+  empty: 'rgba(148, 163, 184, 0.22)',
+} as const
 
-/** 在线状态格子 */
-interface OnlineCell {
-  index: number
-  status: OnlineStatus
+/** 根据丢包率返回颜色 */
+function getLossColor(avgLoss: number, hasData: boolean): string {
+  if (!hasData) return LOSS_COLORS.empty
+  if (avgLoss <= 0) return LOSS_COLORS.perfect
+  if (avgLoss <= 5) return LOSS_COLORS.good
+  if (avgLoss <= 15) return LOSS_COLORS.fair
+  if (avgLoss <= 30) return LOSS_COLORS.warning
+  if (avgLoss <= 50) return LOSS_COLORS.bad
+  return LOSS_COLORS.critical
 }
 
-/** 在线状态格子颜色（内联样式用） */
-function getOnlineCellColor(status: OnlineStatus): string {
-  switch (status) {
-    case 'online':
-      return 'hsl(var(--primary))'
-    case 'offline':
-      return 'hsl(var(--destructive) / 0.45)'
-    case 'empty':
-      return 'hsl(var(--muted) / 0.3)'
-  }
+/** 丢包率桶聚合结果 */
+interface LossBucket {
+  index: number
+  color: string
+  hasData: boolean
+  avgLoss: number
+  count: number
 }
 
 /**
@@ -234,24 +244,36 @@ function CompactLatencyBar({
 }
 
 /**
- * 紧凑在线状态时间线（卡片专用）
+ * 紧凑丢包率分布条（卡片专用）
  *
- * - 30 个格子，自适应历史数据范围
- * - 高度 8px，右侧显示可用率百分比
- * - 在线格子 primary 色，离线格子 destructive/45%，空格子 muted/30%
+ * - 30 个时间桶，自适应历史数据范围
+ * - 高度 8px，右侧显示当前平均丢包率
+ * - 0% 绿色，随丢包率升高渐变到深红
  */
-function CompactOnlineTimeline({ points }: { points: CardHistoryPoint[] }) {
-  const cells = useMemo<OnlineCell[]>(() => {
-    const result: OnlineCell[] = Array.from({ length: COMPACT_BUCKETS }, (_, i) => ({
+function CompactPacketLossBar({
+  points,
+  online,
+  currentAvgLoss,
+}: {
+  points: CardHistoryPoint[]
+  online: boolean
+  currentAvgLoss: number | null
+}) {
+  const [hoveredIdx, setHoveredIdx] = useState<number | null>(null)
+
+  const buckets = useMemo<LossBucket[]>(() => {
+    const result: LossBucket[] = Array.from({ length: COMPACT_BUCKETS }, (_, i) => ({
       index: i,
-      status: 'empty' as OnlineStatus,
+      color: LOSS_COLORS.empty,
+      hasData: false,
+      avgLoss: 0,
+      count: 0,
     }))
 
     if (points.length === 0) return result
 
-    // 过滤掉 timestamp 无效的数据点
     const validPoints = points.filter(
-      (p) => typeof p.timestamp === 'number' && !isNaN(p.timestamp),
+      (p) => typeof p.timestamp === 'number' && !isNaN(p.timestamp) && p.ping_data,
     )
     if (validPoints.length === 0) return result
 
@@ -262,47 +284,94 @@ function CompactOnlineTimeline({ points }: { points: CardHistoryPoint[] }) {
     for (const point of validPoints) {
       const ratio = (point.timestamp - oldestTs) / range
       if (!isFinite(ratio)) continue
-      const cellIdx = Math.min(
+      const bucketIdx = Math.min(
         Math.max(0, Math.floor(ratio * COMPACT_BUCKETS)),
         COMPACT_BUCKETS - 1,
       )
-      const cell = result[cellIdx]
-      if (!cell) continue
-      cell.status = point.online ? 'online' : 'offline'
+      const bucket = result[bucketIdx]
+      if (!bucket) continue
+      const pings = point.ping_data || []
+      if (pings.length === 0) continue
+
+      let lossSum = 0
+      let validCount = 0
+      for (const ping of pings) {
+        if (ping.avg_latency != null && ping.avg_latency >= 0) {
+          lossSum += ping.loss || 0
+          validCount++
+        }
+      }
+
+      if (validCount > 0) {
+        const pointAvgLoss = lossSum / validCount
+        bucket.avgLoss = (bucket.avgLoss * bucket.count + pointAvgLoss) / (bucket.count + 1)
+        bucket.count++
+        bucket.hasData = true
+      }
+    }
+
+    for (const bucket of result) {
+      if (bucket.hasData) {
+        bucket.color = getLossColor(bucket.avgLoss, true)
+      }
     }
 
     return result
   }, [points])
 
-  const availability = useMemo(() => {
-    const withData = cells.filter((c) => c.status !== 'empty')
-    if (withData.length === 0) return 0
-    return (withData.filter((c) => c.status === 'online').length / withData.length) * 100
-  }, [cells])
+  const hoveredBucket = hoveredIdx !== null ? buckets[hoveredIdx] : null
 
   return (
     <div>
       {/* 标题行 */}
       <div className="mb-1.5 flex items-center justify-between">
-        <span className="text-[10px] font-medium text-muted-foreground">在线状态</span>
-        <span className="text-[10px] font-medium tabular-nums text-primary">
-          {availability.toFixed(0)}%
+        <span className="text-[10px] font-medium text-muted-foreground">丢包率</span>
+        <span
+          className="text-[10px] font-medium tabular-nums"
+          style={{
+            color:
+              online && currentAvgLoss !== null
+                ? getLossColor(currentAvgLoss, true)
+                : 'hsl(var(--muted-foreground))',
+          }}
+        >
+          {online && currentAvgLoss !== null
+            ? `${currentAvgLoss.toFixed(1)}%`
+            : '---'}
         </span>
       </div>
-      {/* 格子条 */}
-      <div className="flex items-center gap-2">
-        <div className="flex flex-1 gap-[2px]" style={{ height: 8 }}>
-          {cells.map((cell) => (
+      {/* 桶条 */}
+      <div className="relative">
+        <div className="flex items-end gap-[2px]" style={{ height: 8 }}>
+          {buckets.map((bucket) => (
             <div
-              key={cell.index}
-              className="flex-1 rounded-[1.5px] transition-all"
+              key={bucket.index}
+              className="flex-1 cursor-pointer rounded-[1.5px] transition-all"
               style={{
                 height: '100%',
-                backgroundColor: getOnlineCellColor(cell.status),
+                backgroundColor: bucket.color,
+                opacity: hoveredIdx !== null && hoveredIdx !== bucket.index ? 0.45 : 1,
+                transform: hoveredIdx === bucket.index ? 'scaleY(1.25)' : 'scaleY(1)',
+                transitionProperty: 'opacity, transform',
+                transitionDuration: '150ms',
               }}
+              onMouseEnter={() => setHoveredIdx(bucket.index)}
+              onMouseLeave={() => setHoveredIdx(null)}
             />
           ))}
         </div>
+        {/* 悬停 Tooltip */}
+        {hoveredBucket && (
+          <div className="pointer-events-none absolute -top-1.5 left-1/2 z-10 -translate-x-1/2 -translate-y-full rounded-md border border-border bg-card px-2.5 py-1.5 text-[10px] shadow-tooltip">
+            {hoveredBucket.hasData ? (
+              <span className="whitespace-nowrap font-medium text-foreground">
+                丢包 {hoveredBucket.avgLoss.toFixed(1)}%
+              </span>
+            ) : (
+              <span className="text-muted-foreground">无数据</span>
+            )}
+          </div>
+        )}
       </div>
     </div>
   )
@@ -427,6 +496,14 @@ function ServerCard({ server, basePath = '/admin' }: ServerCardProps) {
     return valid.reduce((sum, p) => sum + (p.avg_latency || 0), 0) / valid.length
   }, [server.ping_data])
 
+  // 当前平均丢包率（所有探测目标的平均值）
+  const currentAvgLoss = useMemo(() => {
+    const pings = server.ping_data || []
+    const valid = pings.filter((p) => p.avg_latency != null && p.avg_latency >= 0)
+    if (valid.length === 0) return null
+    return valid.reduce((sum, p) => sum + (p.loss || 0), 0) / valid.length
+  }, [server.ping_data])
+
   const displayName = server.display_name || server.hostname
 
   // 虚拟化 Badge（仅在存在数据时显示）
@@ -521,7 +598,7 @@ function ServerCard({ server, basePath = '/admin' }: ServerCardProps) {
         </div>
       </div>
 
-      {/* 5. 延迟质量分布 + 在线状态（仅在卡片进入视口时渲染） */}
+      {/* 5. 延迟质量分布 + 丢包率（仅在卡片进入视口时渲染） */}
       <div className="mt-3 rounded-xl border border-dashed border-border/80 px-3 py-2.5">
         {isInViewport ? (
           <div className="space-y-2.5">
@@ -530,7 +607,11 @@ function ServerCard({ server, basePath = '/admin' }: ServerCardProps) {
               online={server.online}
               currentAvgLatency={currentAvgLatency}
             />
-            <CompactOnlineTimeline points={history} />
+            <CompactPacketLossBar
+              points={history}
+              online={server.online}
+              currentAvgLoss={currentAvgLoss}
+            />
           </div>
         ) : (
           // 占位符：不在视口时不渲染，显示占位高度避免布局抖动
