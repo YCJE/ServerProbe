@@ -376,3 +376,81 @@ func TestAdminRepository_CRUD(t *testing.T) {
 		t.Errorf("管理员数量错误: 期望 1, 得到 %d", count)
 	}
 }
+
+func TestRecordRepository_FlushBatch(t *testing.T) {
+	db := setupTestDB(t)
+	repo := NewRecordRepository(db.DB())
+
+	now := time.Now().Unix()
+
+	records := []model.MetricRecord{
+		{
+			AgentID:      1,
+			Timestamp:    now,
+			CPUUsage:     452, // 45.2% × 10
+			MemUsage:     60.0,
+			MemTotal:     8589934592,
+			MemUsed:      5153960755,
+			SwapTotal:    2147483648,
+			SwapUsed:     0,
+			DiskUsage:    `[{"device":"total","total":1000000000,"used":500000000}]`,
+			NetRx:        1048576,
+			NetTx:        524288,
+			TCPConns:     10,
+			UDPConns:     5,
+			Load1:        12, // 1.2 × 10
+			Load5:        10,
+			Load15:       8,
+			Uptime:       3600,
+			ProcessCount: 100,
+			PingData:     `[]`,
+		},
+	}
+
+	if err := repo.FlushBatch(records); err != nil {
+		t.Fatalf("FlushBatch 失败: %v", err)
+	}
+
+	result, err := repo.GetByAgentAndTimeRange(1, now-60, now+60)
+	if err != nil {
+		t.Fatalf("查询失败: %v", err)
+	}
+	if len(result) != 1 {
+		t.Errorf("记录数量错误: 期望 1, 得到 %d", len(result))
+	}
+	if len(result) > 0 {
+		if result[0].CPUUsage != 452 {
+			t.Errorf("CPUUsage 错误: 期望 452, 得到 %d", result[0].CPUUsage)
+		}
+		if result[0].TCPConns != 10 {
+			t.Errorf("TCPConns 错误: 期望 10, 得到 %d", result[0].TCPConns)
+		}
+		if result[0].UDPConns != 5 {
+			t.Errorf("UDPConns 错误: 期望 5, 得到 %d", result[0].UDPConns)
+		}
+		if result[0].Load1 != 12 {
+			t.Errorf("Load1 错误: 期望 12, 得到 %d", result[0].Load1)
+		}
+	}
+
+	// 测试批量超过 SQLite 参数限制时是否正确分批
+	var bigBatch []model.MetricRecord
+	for i := 0; i < 120; i++ {
+		bigBatch = append(bigBatch, model.MetricRecord{
+			AgentID:   1,
+			Timestamp: now + int64(i),
+			CPUUsage:  i * 10,
+		})
+	}
+	if err := repo.FlushBatch(bigBatch); err != nil {
+		t.Fatalf("大批量 FlushBatch 失败: %v", err)
+	}
+	count, err := repo.GetByAgentAndTimeRange(1, now, now+200)
+	if err != nil {
+		t.Fatalf("查询失败: %v", err)
+	}
+	// 应包含之前 1 条 + 新 120 条 = 121 条
+	if len(count) != 121 {
+		t.Errorf("大批量记录数错误: 期望 121, 得到 %d", len(count))
+	}
+}

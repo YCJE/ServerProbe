@@ -16,6 +16,9 @@ import StatusDot from '@/components/StatusDot'
 import { useAnimatedNumber } from '@/hooks/useAnimatedNumber'
 import { useInViewport } from '@/hooks/useInViewport'
 
+/** 稳定的空数组引用，避免 || [] 每次创建新引用导致 Zustand 不必要重渲染 */
+const EMPTY_HISTORY: CardHistoryPoint[] = []
+
 interface ServerCardProps {
   server: ServerData
   /**
@@ -376,7 +379,7 @@ function ServerCard({ server, basePath = '/admin' }: ServerCardProps) {
 
   // P2: 从 Store 读取卡片历史滚动窗口（统一管理，避免每张卡片各自维护状态）
   const history = useServerStore(
-    (s) => s.cardHistory.get(server.id) || [],
+    (s) => s.cardHistory.get(server.id) ?? EMPTY_HISTORY,
   )
 
   // 记录上一次网速值，用于判断上升/下降趋势

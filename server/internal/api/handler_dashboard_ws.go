@@ -271,6 +271,7 @@ func (h *DashboardWSHandler) pushPublicDashboardData(ws *wsConn) bool {
 	}
 
 	if err := ws.writeMessage(websocket.TextMessage, data); err != nil {
+		log.Printf("Public Dashboard WebSocket 写入失败: %v", err)
 		return false
 	}
 

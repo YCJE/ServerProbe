@@ -45,6 +45,15 @@ func NewSQLiteDB(dataDir string) (*SQLiteDB, error) {
 	sqlDB.SetMaxOpenConns(1) // SQLite 单写多读，限制连接数避免锁冲突
 	sqlDB.SetMaxIdleConns(1)
 
+	// 一次性迁移：检测 metric_records 是否使用旧 GORM 默认列名
+	// （tcp_conns/udp_conns/load1/load5/load15），若存在则 DROP 重建
+	// 以匹配 gorm:"column:xxx" 标签指定的新列名
+	var oldColCount int64
+	db.Raw("SELECT count(*) FROM pragma_table_info('metric_records') WHERE name IN ('tcp_conns', 'udp_conns', 'load1', 'load5', 'load15')").Scan(&oldColCount)
+	if oldColCount > 0 {
+		db.Exec("DROP TABLE IF EXISTS metric_records")
+	}
+
 	// 自动迁移表结构
 	if err := db.AutoMigrate(
 		&model.Agent{},

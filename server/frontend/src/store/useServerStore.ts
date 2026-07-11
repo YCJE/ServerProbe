@@ -408,6 +408,7 @@ export const useServerStore = create<ServerStoreState>((set, get) => ({
     const newServersToAdd: ServerData[] = []
     // P2: 更新卡片历史滚动窗口
     const newCardHistory = new Map(state.cardHistory)
+    let cardHistoryChanged = false
 
     for (const item of data) {
       // 跳过最近删除的 Agent，防止 WS 消息在 fetchServers 完成前重新引入
@@ -429,6 +430,7 @@ export const useServerStore = create<ServerStoreState>((set, get) => ({
         } else {
           newCardHistory.set(item.agent_id, updated)
         }
+        cardHistoryChanged = true
       }
 
       // 如果当前正在查看该服务器的详情页，追加实时历史数据
@@ -583,13 +585,20 @@ export const useServerStore = create<ServerStoreState>((set, get) => ({
         newMap.delete(key)
       }
     }
+    // 同步清理 cardHistory 中已删除服务器的过期条目
+    for (const key of newCardHistory.keys()) {
+      if (!serverIds.has(key)) {
+        newCardHistory.delete(key)
+        cardHistoryChanged = true
+      }
+    }
 
     // 检查是否有实际变化，若所有引用都未变则跳过 set 避免不必要重渲染
     const hasChanges = newServersToAdd.length > 0
       || updatedServers.length !== state.servers.length
       || updatedServers.some((s, i) => s !== state.servers[i])
 
-    if (!hasChanges && newRealtimeHistory === state.realtimeHistory) {
+    if (!hasChanges && newRealtimeHistory === state.realtimeHistory && !cardHistoryChanged) {
       return
     }
 

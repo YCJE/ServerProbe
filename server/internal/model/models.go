@@ -156,11 +156,11 @@ type MetricRecord struct {
 	DiskUsage     string  `json:"disk_usage"`
 	NetRx         int64   `json:"net_rx"`
 	NetTx         int64   `json:"net_tx"`
-	TCPConns      int     `json:"tcp_connections"`
-	UDPConns      int     `json:"udp_connections"`
-	Load1         int    `gorm:"type:integer" json:"load_1"`     // 存储 ×10 的值
-	Load5         int    `gorm:"type:integer" json:"load_5"`     // 存储 ×10 的值
-	Load15        int    `gorm:"type:integer" json:"load_15"`    // 存储 ×10 的值
+	TCPConns      int     `gorm:"column:tcp_connections" json:"tcp_connections"`
+	UDPConns      int     `gorm:"column:udp_connections" json:"udp_connections"`
+	Load1         int    `gorm:"column:load_1;type:integer" json:"load_1"`     // 存储 ×10 的值
+	Load5         int    `gorm:"column:load_5;type:integer" json:"load_5"`     // 存储 ×10 的值
+	Load15        int    `gorm:"column:load_15;type:integer" json:"load_15"`    // 存储 ×10 的值
 	Uptime        uint64  `json:"uptime"`
 	ProcessCount  int     `json:"process_count"`
 	PingData      string  `json:"ping_data"`
