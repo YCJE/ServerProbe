@@ -516,9 +516,9 @@ export const useServerStore = create<ServerStoreState>((set, get) => ({
           server.load_1 === (live.load_1 || 0) &&
           server.load_5 === (live.load_5 || 0) &&
           server.load_15 === (live.load_15 || 0) &&
-          server.tcp_connections === (live.tcp_connections || 0) &&
-          server.udp_connections === (live.udp_connections || 0) &&
-          server.process_count === (live.process_count || 0) &&
+          server.tcp_connections === (live.tcp_connections ?? server.tcp_connections) &&
+          server.udp_connections === (live.udp_connections ?? server.udp_connections) &&
+          server.process_count === (live.process_count ?? server.process_count) &&
           server.last_seen === live.timestamp &&
           server.display_name === (live.display_name || server.display_name) &&
           server.hostname === (live.hostname || server.hostname) &&
@@ -556,9 +556,9 @@ export const useServerStore = create<ServerStoreState>((set, get) => ({
           disk_usage: live.disk_usage || 0,
           // P1-1: DashboardSummary 不含 disks 字段，保留 fetchServers 获取的已有值
           disks: live.disks ?? server.disks ?? [],
-          tcp_connections: live.tcp_connections || 0,
-          udp_connections: live.udp_connections || 0,
-          process_count: live.process_count || 0,
+          tcp_connections: live.tcp_connections ?? server.tcp_connections ?? 0,
+          udp_connections: live.udp_connections ?? server.udp_connections ?? 0,
+          process_count: live.process_count ?? server.process_count ?? 0,
           // 若 ping_data 内容未变则保留旧引用，避免不必要重渲染
           ping_data: pingDataEqual(server.ping_data, live.ping_data || [])
             ? server.ping_data
