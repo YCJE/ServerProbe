@@ -268,11 +268,12 @@ func (h *ServerHandler) HandleGetServerHistory(c *gin.Context) {
 	}
 
 	// 将 MetricRecord 转换为统一格式 (ping_data 从 string 解析为数组)
+	// P3: CPUUsage / Load 字段以 ×10 整数存储，查询时除以 10.0 还原为浮点数
 	historyPoints := make([]historyPoint, 0, len(records))
 	for _, r := range records {
 		hp := historyPoint{
 			Timestamp:    r.Timestamp,
-			CPUUsage:     r.CPUUsage,
+			CPUUsage:     float64(r.CPUUsage) / 10.0,
 			MemUsage:     r.MemUsage,
 			MemTotal:     r.MemTotal,
 			MemUsed:      r.MemUsed,
@@ -283,9 +284,9 @@ func (h *ServerHandler) HandleGetServerHistory(c *gin.Context) {
 			NetTx:        uint64(r.NetTx),
 			TCPConns:     r.TCPConns,
 			UDPConns:     r.UDPConns,
-			Load1:        r.Load1,
-			Load5:        r.Load5,
-			Load15:       r.Load15,
+			Load1:        float64(r.Load1) / 10.0,
+			Load5:        float64(r.Load5) / 10.0,
+			Load15:       float64(r.Load15) / 10.0,
 			Uptime:       r.Uptime,
 			ProcessCount: r.ProcessCount,
 		}
@@ -414,9 +415,10 @@ func (h *ServerHandler) HandlePublicServerHistory(c *gin.Context) {
 
 	publicPoints := make([]publicHistoryPoint, 0, len(records))
 	for _, r := range records {
+		// P3: CPUUsage / Load 字段以 ×10 整数存储，查询时除以 10.0 还原为浮点数
 		hp := historyPoint{
 			Timestamp: r.Timestamp,
-			CPUUsage:  r.CPUUsage,
+			CPUUsage:  float64(r.CPUUsage) / 10.0,
 			MemUsage:  r.MemUsage,
 			MemTotal:  r.MemTotal,
 			MemUsed:   r.MemUsed,
@@ -425,9 +427,9 @@ func (h *ServerHandler) HandlePublicServerHistory(c *gin.Context) {
 			DiskUsage: r.DiskUsage,
 			NetRx:     uint64(r.NetRx),
 			NetTx:     uint64(r.NetTx),
-			Load1:     r.Load1,
-			Load5:     r.Load5,
-			Load15:    r.Load15,
+			Load1:     float64(r.Load1) / 10.0,
+			Load5:     float64(r.Load5) / 10.0,
+			Load15:    float64(r.Load15) / 10.0,
 			Uptime:    r.Uptime,
 		}
 		// 解析 ping_data JSON 字符串为数组

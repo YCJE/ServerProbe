@@ -1,7 +1,6 @@
 package api
 
 import (
-	"encoding/json"
 	"log"
 	"net/http"
 	"sync"
@@ -11,7 +10,6 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/server-probe/server/internal/pkg"
 	"github.com/server-probe/server/internal/service"
-	sharedmodel "github.com/server-probe/shared/model"
 )
 
 // 管理员与公开仪表盘 WebSocket 各自独立的连接上限，防止公开用户阻断管理员
@@ -172,18 +170,10 @@ func (h *DashboardWSHandler) HandleDashboardWS(c *gin.Context) {
 	}
 }
 
-// pushDashboardData 推送仪表盘数据，返回是否成功
+// pushDashboardData 推送仪表盘数据（P0-1: 使用预序列化缓存，所有客户端共享同一份 JSON）
 func (h *DashboardWSHandler) pushDashboardData(ws *wsConn) bool {
-	items := h.monitor.GetDashboardData()
-
-	message := gin.H{
-		"type":    "dashboard_update",
-		"servers": items,
-	}
-
-	data, err := json.Marshal(message)
-	if err != nil {
-		log.Printf("Dashboard 数据序列化失败: %v", err)
+	data := h.monitor.GetDashboardJSON()
+	if data == nil {
 		return true // 序列化失败不影响连接
 	}
 
@@ -280,113 +270,10 @@ func (h *DashboardWSHandler) HandlePublicDashboardWS(c *gin.Context) {
 	}
 }
 
-// pushPublicDashboardData 推送公开仪表盘数据 (过滤敏感字段)
+// pushPublicDashboardData 推送公开仪表盘数据（P0-1: 使用预序列化缓存，过滤敏感字段 + 摘要）
 func (h *DashboardWSHandler) pushPublicDashboardData(ws *wsConn) bool {
-	items := h.monitor.GetDashboardData()
-
-	// 过滤敏感字段
-	type PublicDiskInfo struct {
-		Total uint64 `json:"total"`
-		Used  uint64 `json:"used"`
-		// Device 字段不包含，防止泄露挂载点信息
-	}
-
-	type PublicItem struct {
-		AgentID      int64                    `json:"agent_id"`
-		Hostname     string                   `json:"hostname"`
-		DisplayName  string                   `json:"display_name"`
-		OS           string                   `json:"os"`
-		Arch         string                   `json:"arch"`
-		AgentVersion string                   `json:"agent_version"`
-		Online       bool                     `json:"online"`
-		CPU          float64                  `json:"cpu"`
-		Mem          float64                  `json:"mem"`
-		MemTotal     uint64                   `json:"mem_total"`
-		MemUsed      uint64                   `json:"mem_used"`
-		SwapTotal    uint64                   `json:"swap_total"`
-		SwapUsed     uint64                   `json:"swap_used"`
-		NetRx        uint64                   `json:"net_rx"`
-		NetTx        uint64                   `json:"net_tx"`
-		Load1        float64                  `json:"load_1"`
-		Load5        float64                  `json:"load_5"`
-		Load15       float64                  `json:"load_15"`
-		Uptime       uint64                   `json:"uptime"`
-		CPUModel     string                   `json:"cpu_model"`
-		CPUCores     int                      `json:"cpu_cores"`
-		TotalRx      uint64                   `json:"total_rx"`
-		TotalTx      uint64                   `json:"total_tx"`
-		DiskUsage    float64                  `json:"disk_usage"`
-		Disks        []PublicDiskInfo         `json:"disks"`
-		PingData     []sharedmodel.PingResult `json:"ping_data"`
-		Timestamp    int64                    `json:"timestamp"`
-	}
-
-	publicItems := make([]PublicItem, 0, len(items))
-	for _, item := range items {
-		// 过滤 PingData 中的 Target 字段 (敏感信息)
-		publicPing := make([]sharedmodel.PingResult, 0, len(item.PingData))
-		for _, p := range item.PingData {
-			publicPing = append(publicPing, sharedmodel.PingResult{
-				Name:        p.Name,
-				Method:      p.Method,
-				AvgLatency:  p.AvgLatency,
-				MinLatency:  p.MinLatency,
-				MaxLatency:  p.MaxLatency,
-				Jitter:      p.Jitter,
-				Loss:        p.Loss,
-				PacketsSent: p.PacketsSent,
-				PacketsRecv: p.PacketsRecv,
-				// Target 字段不包含，防止泄露探测目标地址
-			})
-		}
-
-		// 过滤磁盘 Device 字段 (敏感信息)，仅保留容量数据
-		publicDisks := make([]PublicDiskInfo, 0, len(item.Disks))
-		for _, d := range item.Disks {
-			publicDisks = append(publicDisks, PublicDiskInfo{
-				Total: d.Total,
-				Used:  d.Used,
-			})
-		}
-
-		publicItems = append(publicItems, PublicItem{
-			AgentID:      item.AgentID,
-			Hostname:     item.Hostname,
-			DisplayName:  item.DisplayName,
-			OS:           item.OS,
-			Arch:         item.Arch,
-			AgentVersion: item.AgentVersion,
-			Online:       item.Online,
-			CPU:          item.CPU,
-			Mem:          item.Mem,
-			MemTotal:     item.MemTotal,
-			MemUsed:      item.MemUsed,
-			SwapTotal:    item.SwapTotal,
-			SwapUsed:     item.SwapUsed,
-			NetRx:        item.NetRx,
-			NetTx:        item.NetTx,
-			Load1:        item.Load1,
-			Load5:        item.Load5,
-			Load15:       item.Load15,
-			Uptime:       item.Uptime,
-			CPUModel:     item.CPUModel,
-			CPUCores:     item.CPUCores,
-			TotalRx:      item.TotalRx,
-			TotalTx:      item.TotalTx,
-			DiskUsage:    item.DiskUsage,
-			Disks:        publicDisks,
-			PingData:     publicPing,
-			Timestamp:    item.Timestamp,
-		})
-	}
-
-	message := gin.H{
-		"type":    "dashboard_update",
-		"servers": publicItems,
-	}
-
-	data, err := json.Marshal(message)
-	if err != nil {
+	data := h.monitor.GetPublicDashboardJSON()
+	if data == nil {
 		return true
 	}
 

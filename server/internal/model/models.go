@@ -137,11 +137,17 @@ type PingTarget struct {
 func (PingTarget) TableName() string { return "ping_targets" }
 
 // MetricRecord 历史聚合数据（每5分钟一个点）
+//
+// P3 缩放整数存储规则：
+// 为减少 SQLite 存储空间并提升查询效率，CPUUsage、Load1、Load5、Load15
+// 均以"实际值 × 10"的整数形式存储。例如 CPU 53.4% 存为 534，Load 1.23 存为 12。
+//   - 写入时（见 service/aggregation.go）：int(math.Round(value * 10))
+//   - 读取时（见 api/handler_server.go）：value / 10.0 还原为浮点数
 type MetricRecord struct {
-	ID            int64   `gorm:"primaryKey;autoIncrement" json:"id"`
-	AgentID       int64   `gorm:"index:idx_metric_records_agent_time,priority:1;not null" json:"agent_id"`
-	Timestamp     int64   `gorm:"index:idx_metric_records_agent_time,priority:2;not null" json:"timestamp"`
-	CPUUsage      float64 `json:"cpu_usage"`
+	ID            int64  `gorm:"primaryKey;autoIncrement" json:"id"`
+	AgentID       int64  `gorm:"index:idx_metric_records_agent_time,priority:1;not null" json:"agent_id"`
+	Timestamp     int64  `gorm:"index:idx_metric_records_agent_time,priority:2;not null" json:"timestamp"`
+	CPUUsage      int    `gorm:"type:integer" json:"cpu_usage"`  // 存储 ×10 的值（53.4% → 534）
 	MemUsage      float64 `json:"mem_usage"`
 	MemTotal      uint64  `json:"mem_total"`
 	MemUsed       uint64  `json:"mem_used"`
@@ -152,9 +158,9 @@ type MetricRecord struct {
 	NetTx         int64   `json:"net_tx"`
 	TCPConns      int     `json:"tcp_connections"`
 	UDPConns      int     `json:"udp_connections"`
-	Load1         float64 `json:"load_1"`
-	Load5         float64 `json:"load_5"`
-	Load15        float64 `json:"load_15"`
+	Load1         int    `gorm:"type:integer" json:"load_1"`     // 存储 ×10 的值
+	Load5         int    `gorm:"type:integer" json:"load_5"`     // 存储 ×10 的值
+	Load15        int    `gorm:"type:integer" json:"load_15"`    // 存储 ×10 的值
 	Uptime        uint64  `json:"uptime"`
 	ProcessCount  int     `json:"process_count"`
 	PingData      string  `json:"ping_data"`

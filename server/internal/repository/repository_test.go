@@ -296,7 +296,7 @@ func TestRecordRepository_CRUD(t *testing.T) {
 	record := &model.MetricRecord{
 		AgentID:   1,
 		Timestamp: now,
-		CPUUsage:  45.2,
+		CPUUsage:  452, // 45.2% × 10 (P3 缩放整数存储)
 		MemUsage:  60.0,
 		NetRx:     1048576,
 		NetTx:     524288,
@@ -314,8 +314,8 @@ func TestRecordRepository_CRUD(t *testing.T) {
 	if len(records) != 1 {
 		t.Errorf("记录数量错误: 期望 1, 得到 %d", len(records))
 	}
-	if records[0].CPUUsage != 45.2 {
-		t.Errorf("CPU 使用率错误: 期望 45.2, 得到 %f", records[0].CPUUsage)
+	if records[0].CPUUsage != 452 {
+		t.Errorf("CPU 使用率错误: 期望 452, 得到 %d", records[0].CPUUsage)
 	}
 
 	// 清理过期数据
@@ -332,7 +332,7 @@ func TestRecordRepository_CRUD(t *testing.T) {
 	oldRecord := &model.MetricRecord{
 		AgentID:   1,
 		Timestamp: now - 91*24*3600, // 91 天前
-		CPUUsage:  10.0,
+		CPUUsage:  100, // 10.0% × 10 (P3 缩放整数存储)
 	}
 	_ = repo.Create(oldRecord)
 

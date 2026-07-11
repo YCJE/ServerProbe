@@ -35,6 +35,13 @@ export interface RealtimePoint {
   online: number
 }
 
+/** P2: 卡片历史数据点（用于卡片内延迟质量分布和丢包率横条） */
+export interface CardHistoryPoint {
+  timestamp: number
+  ping_data: DashboardItem['ping_data']
+  online: boolean
+}
+
 /** 服务器 Store 状态 */
 interface ServerStoreState {
   // 认证状态
@@ -60,6 +67,9 @@ interface ServerStoreState {
   currentServer: ServerData | null
   realtimeHistory: RealtimePoint[]
   currentServerLoading: boolean
+
+  // P2: 卡片历史滚动窗口（所有服务器共享，每台最多 60 点）
+  cardHistory: Map<number, CardHistoryPoint[]>
 
   // WebSocket 监听器清理函数（内部使用）
   _wsCleanups: (() => void)[] | null
@@ -89,6 +99,9 @@ interface ServerStoreState {
 
 /** 实时历史数据最大保留点数 */
 const MAX_REALTIME_POINTS = 1200
+
+/** P2: 卡片历史滚动窗口最大点数（约 3 分钟 @ 3s 上报间隔） */
+const MAX_CARD_HISTORY_POINTS = 60
 
 /** fetchServerDetail 请求 ID，用于防止快速切换服务器时旧请求覆盖新数据 */
 let fetchServerDetailRequestId = 0
@@ -155,6 +168,7 @@ export const useServerStore = create<ServerStoreState>((set, get) => ({
   currentServer: null,
   realtimeHistory: [],
   currentServerLoading: false,
+  cardHistory: new Map<number, CardHistoryPoint[]>(),
   _wsCleanups: null,
   _publicWsCleanups: null,
   _recentlyDeletedIds: new Set<number>(),
@@ -252,6 +266,7 @@ export const useServerStore = create<ServerStoreState>((set, get) => ({
       currentServerLoading: false,
       serversLoading: false,
       authLoading: false,
+      cardHistory: new Map<number, CardHistoryPoint[]>(),
       _recentlyDeletedIds: new Set<number>(),
     })
     try {
@@ -391,11 +406,30 @@ export const useServerStore = create<ServerStoreState>((set, get) => ({
     const existingIds = new Set(state.servers.map((s) => s.id))
     let newRealtimeHistory = state.realtimeHistory
     const newServersToAdd: ServerData[] = []
+    // P2: 更新卡片历史滚动窗口
+    const newCardHistory = new Map(state.cardHistory)
 
     for (const item of data) {
       // 跳过最近删除的 Agent，防止 WS 消息在 fetchServers 完成前重新引入
       if (state._recentlyDeletedIds.has(item.agent_id)) continue
       newMap.set(item.agent_id, item)
+
+      // P2: 追加卡片历史数据点（滚动窗口 60 点）
+      const cardPoint: CardHistoryPoint = {
+        timestamp: item.timestamp || now,
+        ping_data: item.ping_data || [],
+        online: item.online,
+      }
+      const prevHistory = newCardHistory.get(item.agent_id) || []
+      // 仅在 timestamp 变化时追加，避免重复点
+      if (prevHistory.length === 0 || prevHistory[prevHistory.length - 1].timestamp !== cardPoint.timestamp) {
+        const updated = [...prevHistory, cardPoint]
+        if (updated.length > MAX_CARD_HISTORY_POINTS) {
+          newCardHistory.set(item.agent_id, updated.slice(updated.length - MAX_CARD_HISTORY_POINTS))
+        } else {
+          newCardHistory.set(item.agent_id, updated)
+        }
+      }
 
       // 如果当前正在查看该服务器的详情页，追加实时历史数据
       if (state.currentServer && state.currentServer.id === item.agent_id) {
@@ -562,6 +596,7 @@ export const useServerStore = create<ServerStoreState>((set, get) => ({
       dashboardData: newMap,
       servers: updatedServers,
       realtimeHistory: newRealtimeHistory,
+      cardHistory: newCardHistory,
     })
   },
 

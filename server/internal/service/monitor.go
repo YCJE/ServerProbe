@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"log"
 	"sync"
@@ -51,6 +52,15 @@ type MonitorService struct {
 	// 用于去重，避免静态数据未变化时重复写入数据库
 	staticHashCache map[int64]string
 	staticHashMu    sync.RWMutex
+
+	// P0-1: 预序列化 JSON 缓存 — 数据变化时失效，首次请求时重建
+	// 所有 WS 客户端共享同一份序列化结果，避免 250 个客户端各自序列化
+	dashCacheMu     sync.Mutex
+	dashCacheJSON   []byte    // 管理员推送 JSON（完整摘要）
+	dashCacheTime   time.Time // 缓存生成时间
+	pubDashCacheMu  sync.Mutex
+	pubDashCacheJSON []byte    // 公开推送 JSON（过滤敏感字段）
+	pubDashCacheTime time.Time // 缓存生成时间
 }
 
 // NewMonitorService 创建监控服务
@@ -404,6 +414,9 @@ func (m *MonitorService) WriteMetricData(agentID int64, data *sharedmodel.Metric
 	}
 
 	rb.Write(point)
+
+	// P0-1: 数据变化时失效预序列化缓存
+	m.invalidateDashboardCache()
 	return nil
 }
 
@@ -480,6 +493,9 @@ func (m *MonitorService) WritePingData(agentID int64, pingData []sharedmodel.Pin
 
 	// 更新最新数据点的 PingData (不创建新数据点)
 	rb.UpdateLastPing(pingData)
+
+	// P0-1: Ping 数据变化时失效预序列化缓存
+	m.invalidateDashboardCache()
 	return nil
 }
 
@@ -710,7 +726,7 @@ func calcDiskUsage(disks []sharedmodel.DiskInfo) float64 {
 	return 0
 }
 
-// DashboardItem 仪表盘数据项
+// DashboardItem 仪表盘数据项（完整，含 Processes/Disks/TimeOffset，用于详情页 REST API）
 type DashboardItem struct {
 	AgentID      int64                    `json:"agent_id"`
 	Hostname     string                   `json:"hostname"`
@@ -744,4 +760,228 @@ type DashboardItem struct {
 	TimeOffset   int64                    `json:"time_offset"`
 	Processes    []sharedmodel.ProcessInfo `json:"processes"`
 	Timestamp    int64                    `json:"timestamp"`
+}
+
+// DashboardSummary 仪表盘摘要数据项（P1-1: 轻量级，用于 WS 推送）
+// 排除 Processes、Disks 详情、TimeOffset — 这些字段仅详情页使用，通过 REST API 按需获取
+type DashboardSummary struct {
+	AgentID      int64                    `json:"agent_id"`
+	Hostname     string                   `json:"hostname"`
+	DisplayName  string                   `json:"display_name"`
+	OS           string                   `json:"os"`
+	Arch         string                   `json:"arch"`
+	AgentVersion string                   `json:"agent_version"`
+	Online       bool                     `json:"online"`
+	CPU          float64                  `json:"cpu"`
+	CPUModel     string                   `json:"cpu_model"`
+	CPUCores     int                      `json:"cpu_cores"`
+	Mem          float64                  `json:"mem"`
+	MemTotal     uint64                   `json:"mem_total"`
+	MemUsed      uint64                   `json:"mem_used"`
+	SwapTotal    uint64                   `json:"swap_total"`
+	SwapUsed     uint64                   `json:"swap_used"`
+	NetRx        uint64                   `json:"net_rx"`
+	NetTx        uint64                   `json:"net_tx"`
+	TotalRx      uint64                   `json:"total_rx"`
+	TotalTx      uint64                   `json:"total_tx"`
+	Load1        float64                  `json:"load_1"`
+	Load5        float64                  `json:"load_5"`
+	Load15       float64                  `json:"load_15"`
+	Uptime       uint64                   `json:"uptime"`
+	DiskUsage    float64                  `json:"disk_usage"`
+	TCPConns     int                      `json:"tcp_connections"`
+	UDPConns     int                      `json:"udp_connections"`
+	ProcessCount int                      `json:"process_count"`
+	PingData     []sharedmodel.PingResult `json:"ping_data"`
+	Timestamp    int64                    `json:"timestamp"`
+}
+
+// toSummary 将 DashboardItem 转换为 DashboardSummary（剥离重型字段）
+func (item DashboardItem) toSummary() DashboardSummary {
+	return DashboardSummary{
+		AgentID:      item.AgentID,
+		Hostname:     item.Hostname,
+		DisplayName:  item.DisplayName,
+		OS:           item.OS,
+		Arch:         item.Arch,
+		AgentVersion: item.AgentVersion,
+		Online:       item.Online,
+		CPU:          item.CPU,
+		CPUModel:     item.CPUModel,
+		CPUCores:     item.CPUCores,
+		Mem:          item.Mem,
+		MemTotal:     item.MemTotal,
+		MemUsed:      item.MemUsed,
+		SwapTotal:    item.SwapTotal,
+		SwapUsed:     item.SwapUsed,
+		NetRx:        item.NetRx,
+		NetTx:        item.NetTx,
+		TotalRx:      item.TotalRx,
+		TotalTx:      item.TotalTx,
+		Load1:        item.Load1,
+		Load5:        item.Load5,
+		Load15:       item.Load15,
+		Uptime:       item.Uptime,
+		DiskUsage:    item.DiskUsage,
+		TCPConns:     item.TCPConns,
+		UDPConns:     item.UDPConns,
+		ProcessCount: item.ProcessCount,
+		PingData:     item.PingData,
+		Timestamp:    item.Timestamp,
+	}
+}
+
+// invalidateDashboardCache 失效预序列化缓存（数据变化时调用）
+func (m *MonitorService) invalidateDashboardCache() {
+	m.dashCacheMu.Lock()
+	m.dashCacheJSON = nil
+	m.dashCacheMu.Unlock()
+	m.pubDashCacheMu.Lock()
+	m.pubDashCacheJSON = nil
+	m.pubDashCacheMu.Unlock()
+}
+
+// GetDashboardJSON 获取管理员推送的预序列化 JSON（P0-1: 所有 WS 客户端共享同一份）
+// 缓存有效期 3 秒，过期或失效后首次调用时重建
+func (m *MonitorService) GetDashboardJSON() []byte {
+	m.dashCacheMu.Lock()
+	defer m.dashCacheMu.Unlock()
+
+	// 缓存有效（3 秒内且非 nil）
+	if m.dashCacheJSON != nil && time.Since(m.dashCacheTime) < 3*time.Second {
+		return m.dashCacheJSON
+	}
+
+	// 重建缓存
+	items := m.GetDashboardData()
+	summaries := make([]DashboardSummary, 0, len(items))
+	for _, item := range items {
+		summaries = append(summaries, item.toSummary())
+	}
+
+	message := struct {
+		Type    string             `json:"type"`
+		Servers []DashboardSummary `json:"servers"`
+	}{
+		Type:    "dashboard_update",
+		Servers: summaries,
+	}
+
+	data, err := json.Marshal(message)
+	if err != nil {
+		log.Printf("Dashboard JSON 序列化失败: %v", err)
+		return nil
+	}
+
+	m.dashCacheJSON = data
+	m.dashCacheTime = time.Now()
+	return data
+}
+
+// GetPublicDashboardJSON 获取公开推送的预序列化 JSON（过滤敏感字段 + 摘要）
+func (m *MonitorService) GetPublicDashboardJSON() []byte {
+	m.pubDashCacheMu.Lock()
+	defer m.pubDashCacheMu.Unlock()
+
+	// 缓存有效（3 秒内且非 nil）
+	if m.pubDashCacheJSON != nil && time.Since(m.pubDashCacheTime) < 3*time.Second {
+		return m.pubDashCacheJSON
+	}
+
+	// 重建缓存
+	items := m.GetDashboardData()
+
+	type PublicSummary struct {
+		AgentID      int64                    `json:"agent_id"`
+		Hostname     string                   `json:"hostname"`
+		DisplayName  string                   `json:"display_name"`
+		OS           string                   `json:"os"`
+		Arch         string                   `json:"arch"`
+		AgentVersion string                   `json:"agent_version"`
+		Online       bool                     `json:"online"`
+		CPU          float64                  `json:"cpu"`
+		Mem          float64                  `json:"mem"`
+		MemTotal     uint64                   `json:"mem_total"`
+		MemUsed      uint64                   `json:"mem_used"`
+		SwapTotal    uint64                   `json:"swap_total"`
+		SwapUsed     uint64                   `json:"swap_used"`
+		NetRx        uint64                   `json:"net_rx"`
+		NetTx        uint64                   `json:"net_tx"`
+		Load1        float64                  `json:"load_1"`
+		Load5        float64                  `json:"load_5"`
+		Load15       float64                  `json:"load_15"`
+		Uptime       uint64                   `json:"uptime"`
+		CPUModel     string                   `json:"cpu_model"`
+		CPUCores     int                      `json:"cpu_cores"`
+		TotalRx      uint64                   `json:"total_rx"`
+		TotalTx      uint64                   `json:"total_tx"`
+		DiskUsage    float64                  `json:"disk_usage"`
+		PingData     []sharedmodel.PingResult `json:"ping_data"`
+		Timestamp    int64                    `json:"timestamp"`
+	}
+
+	publicItems := make([]PublicSummary, 0, len(items))
+	for _, item := range items {
+		// 过滤 PingData 中的 Target 字段
+		publicPing := make([]sharedmodel.PingResult, 0, len(item.PingData))
+		for _, p := range item.PingData {
+			publicPing = append(publicPing, sharedmodel.PingResult{
+				Name:        p.Name,
+				Method:      p.Method,
+				AvgLatency:  p.AvgLatency,
+				MinLatency:  p.MinLatency,
+				MaxLatency:  p.MaxLatency,
+				Jitter:      p.Jitter,
+				Loss:        p.Loss,
+				PacketsSent: p.PacketsSent,
+				PacketsRecv: p.PacketsRecv,
+			})
+		}
+
+		publicItems = append(publicItems, PublicSummary{
+			AgentID:      item.AgentID,
+			Hostname:     item.Hostname,
+			DisplayName:  item.DisplayName,
+			OS:           item.OS,
+			Arch:         item.Arch,
+			AgentVersion: item.AgentVersion,
+			Online:       item.Online,
+			CPU:          item.CPU,
+			Mem:          item.Mem,
+			MemTotal:     item.MemTotal,
+			MemUsed:      item.MemUsed,
+			SwapTotal:    item.SwapTotal,
+			SwapUsed:     item.SwapUsed,
+			NetRx:        item.NetRx,
+			NetTx:        item.NetTx,
+			Load1:        item.Load1,
+			Load5:        item.Load5,
+			Load15:       item.Load15,
+			Uptime:       item.Uptime,
+			CPUModel:     item.CPUModel,
+			CPUCores:     item.CPUCores,
+			TotalRx:      item.TotalRx,
+			TotalTx:      item.TotalTx,
+			DiskUsage:    item.DiskUsage,
+			PingData:     publicPing,
+			Timestamp:    item.Timestamp,
+		})
+	}
+
+	message := struct {
+		Type    string          `json:"type"`
+		Servers []PublicSummary `json:"servers"`
+	}{
+		Type:    "dashboard_update",
+		Servers: publicItems,
+	}
+
+	data, err := json.Marshal(message)
+	if err != nil {
+		return nil
+	}
+
+	m.pubDashCacheJSON = data
+	m.pubDashCacheTime = time.Now()
+	return data
 }

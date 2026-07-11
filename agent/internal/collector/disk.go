@@ -49,8 +49,14 @@ func (c *DiskCollector) Collect() (interface{}, error) {
 	var totalUsed uint64
 
 	for _, mount := range mounts {
-		// 过滤特殊文件系统
+		// 过滤特殊文件系统（仅保留真实物理磁盘文件系统类型）
 		if !isRealDisk(mount.FSType) {
+			continue
+		}
+
+		// 排除容器/k8s 及伪文件系统挂载点（overlay、tmpfs 等可能通过 isRealFS，
+		// 但其挂载点位于容器运行时目录下，不应计入物理磁盘汇总）
+		if isExcludedMountPoint(mount.MountPoint) {
 			continue
 		}
 
@@ -96,11 +102,36 @@ func (c *DiskCollector) Collect() (interface{}, error) {
 func isRealFS(fsType string) bool {
 	realFS := []string{
 		"ext4", "ext3", "ext2", "xfs", "btrfs", "zfs",
-		"ntfs", "fat32", "exfat", "f2fs", "reiserfs",
-		"apfs", "hfs", "hfsplus",
+		"ntfs", "fat32", "vfat", "exfat", "f2fs",
+		"reiserfs", "jfs", "apfs", "hfs", "hfsplus",
 	}
 	for _, fs := range realFS {
 		if fsType == fs {
+			return true
+		}
+	}
+	return false
+}
+
+// excludedMountPoints 容器/虚拟化及伪文件系统的挂载点，这些挂载点对应的
+// 是 overlay/临时文件系统或内核虚拟文件系统，不应计入物理磁盘汇总。
+var excludedMountPoints = []string{
+	"/var/lib/docker",
+	"/var/lib/containerd",
+	"/var/lib/kubelet",
+	"/var/lib/rancher/k3s",
+	"/tmp",
+	"/dev",
+	"/run",
+	"/proc",
+	"/sys",
+}
+
+// isExcludedMountPoint 判断挂载点是否在排除列表中
+// 支持精确匹配和前缀匹配（如 /var/lib/docker/overlay2 也会被排除）
+func isExcludedMountPoint(mountPoint string) bool {
+	for _, p := range excludedMountPoints {
+		if mountPoint == p || strings.HasPrefix(mountPoint, p+"/") {
 			return true
 		}
 	}

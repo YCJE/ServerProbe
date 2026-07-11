@@ -45,6 +45,11 @@ func NewSQLiteDB(dataDir string) (*SQLiteDB, error) {
 	sqlDB.SetMaxOpenConns(1) // SQLite 单写多读，限制连接数避免锁冲突
 	sqlDB.SetMaxIdleConns(1)
 
+	// P3 迁移：删除旧数据，重建表以使用整数存储
+	// 旧数据为 float64 列，无法直接 ALTER 为 integer，故直接 DROP 重建。
+	// 丢失的只是 5 分钟聚合数据，会在几个小时内重新积累。
+	db.Exec("DROP TABLE IF EXISTS metric_records")
+
 	// 自动迁移表结构
 	if err := db.AutoMigrate(
 		&model.Agent{},

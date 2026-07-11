@@ -3,6 +3,7 @@ package service
 import (
 	"encoding/json"
 	"log"
+	"math"
 	"sync"
 	"time"
 
@@ -168,10 +169,11 @@ func (s *AggregationService) aggregate() {
 		}
 
 		// 收集聚合记录（批量写入，避免逐条 INSERT）
+		// P3: CPUUsage / Load 值存储为 ×10 的整数，减小存储体积并提升查询效率
 		records = append(records, model.MetricRecord{
 			AgentID:      agent.ID,
 			Timestamp:    now,
-			CPUUsage:     cpuAvg,
+			CPUUsage:     int(math.Round(cpuAvg * 10)),
 			MemUsage:     memAvg,
 			MemTotal:     memTotalFinal,
 			MemUsed:      memUsedFinal,
@@ -182,9 +184,9 @@ func (s *AggregationService) aggregate() {
 			NetTx:        int64(netTxAvg),
 			TCPConns:     tcpConnsAvg,
 			UDPConns:     udpConnsAvg,
-			Load1:        load1Avg,
-			Load5:        load5Avg,
-			Load15:       load15Avg,
+			Load1:        int(math.Round(load1Avg * 10)),
+			Load5:        int(math.Round(load5Avg * 10)),
+			Load15:       int(math.Round(load15Avg * 10)),
 			Uptime:       uptimeMax,
 			ProcessCount: processCountAvg,
 			PingData:     pingStr,

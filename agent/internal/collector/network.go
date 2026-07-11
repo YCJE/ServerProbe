@@ -108,11 +108,21 @@ func (c *NetworkCollector) Collect() (interface{}, error) {
 	}, nil
 }
 
-// virtualPrefixes 容器/虚拟网络接口前缀，这些接口在 Docker/K8s 宿主上
-// 会导致流量被重复计算（宿主与容器间流量计入两次），采集时需排除。
-var virtualPrefixes = []string{"veth", "br-", "docker", "cni", "flannel", "cilium"}
+// virtualPrefixes 容器/虚拟网络接口前缀，这些接口在 Docker/K8s/虚拟化宿主上
+// 会导致流量被重复计算（宿主与容器/VM 间流量计入两次），采集时需排除。
+// 同时包含 "lo" 回环接口，统一通过前缀匹配过滤。
+var virtualPrefixes = []string{
+	// 容器/CNI 相关
+	"veth", "br-", "docker", "cni", "flannel", "cilium",
+	// 虚拟化网桥/接口（KVM/Proxmox VE 等）
+	"tap", "fwbr", "fwpr", "virbr", "vmbr",
+	// 容器运行时 / SDN
+	"podman", "ovs",
+	// 回环接口
+	"lo",
+}
 
-// isVirtualIface 判断是否为虚拟/容器接口
+// isVirtualIface 判断是否为虚拟/容器接口或回环接口
 func isVirtualIface(name string) bool {
 	for _, p := range virtualPrefixes {
 		if strings.HasPrefix(name, p) {
@@ -123,7 +133,7 @@ func isVirtualIface(name string) bool {
 }
 
 // parseNetDev 解析 /proc/net/dev，返回总 RX 和 TX 字节数
-// 排除 lo 回环接口以及 veth/br-/docker 等虚拟接口
+// 排除 lo 回环接口以及 veth/br-/docker/tap/virbr 等虚拟/容器接口
 func parseNetDev(data string) (uint64, uint64, error) {
 	var totalRx, totalTx uint64
 	lines := strings.Split(data, "\n")
@@ -146,6 +156,7 @@ func parseNetDev(data string) (uint64, uint64, error) {
 
 		iface := strings.TrimSpace(parts[0])
 		// 排除回环接口与虚拟/容器接口，避免双重计数
+		// 注意: "lo" 已纳入 virtualPrefixes，此处显式检查作为防御性冗余
 		if iface == "lo" || isVirtualIface(iface) {
 			continue
 		}

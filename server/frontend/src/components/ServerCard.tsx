@@ -1,6 +1,6 @@
 import { memo, useMemo, useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import type { ServerData, PingResult } from '@/types'
+import type { ServerData } from '@/types'
 import {
   formatSpeed,
   formatTraffic,
@@ -9,7 +9,7 @@ import {
   getRegionFromServer,
   getFlagEmoji,
 } from '@/lib/utils'
-import { getServerHistory, getPublicServerHistory } from '@/lib/api'
+import { useServerStore, type CardHistoryPoint } from '@/store/useServerStore'
 import ResourceRing from '@/components/ResourceRing'
 import DistroIcon from '@/components/DistroIcon'
 import StatusDot from '@/components/StatusDot'
@@ -26,16 +26,6 @@ interface ServerCardProps {
    */
   basePath?: string
 }
-
-/** 卡片本地历史数据点 */
-interface CardHistoryPoint {
-  timestamp: number
-  ping_data: PingResult[]
-  online: boolean
-}
-
-/** 最大缓存历史点数（1 小时，按 3s 上报间隔约 1200 点） */
-const MAX_HISTORY_POINTS = 1200
 
 /** 紧凑图表桶数 */
 const COMPACT_BUCKETS = 30
@@ -381,63 +371,13 @@ function CompactPacketLossBar({
 function ServerCard({ server, basePath = '/admin' }: ServerCardProps) {
   const navigate = useNavigate()
 
-  // 视口懒加载：仅当卡片进入视口时才渲染延迟和在线状态部分
+  // 视口懒加载：仅当卡片进入视口时才渲染延迟和丢包率部分
   const { ref: viewportRef, isInViewport } = useInViewport<HTMLDivElement>(320)
 
-  // 本地历史数据（进入视口时从 API 获取 1h 历史，后续通过 WS 累积）
-  const [history, setHistory] = useState<CardHistoryPoint[]>([])
-  const lastSeenRef = useRef<number>(0)
-  const historyFetchedRef = useRef<boolean>(false)
-
-  // 进入视口时从 API 获取 1 小时历史数据，预填充 history
-  useEffect(() => {
-    if (!isInViewport || historyFetchedRef.current) return
-    historyFetchedRef.current = true
-
-    let cancelled = false
-    const fetchHistory = async () => {
-      try {
-        const isPublic = basePath === ''
-        const data = isPublic
-          ? await getPublicServerHistory(server.id, '1h')
-          : await getServerHistory(server.id, '1h')
-
-        if (cancelled || !data || !data.points || data.points.length === 0) return
-
-        const points: CardHistoryPoint[] = data.points.map((p) => ({
-          timestamp: p.timestamp,
-          ping_data: p.ping_data || [],
-          online: p.online === 1,
-        }))
-        setHistory(points)
-        // 记录最后一个历史点的时间戳，后续 WS 消息只追加更新的数据
-        if (points.length > 0) {
-          lastSeenRef.current = points[points.length - 1].timestamp
-        }
-      } catch {
-        // 静默失败，卡片仍可通过 WS 累积数据
-      }
-    }
-    fetchHistory()
-    return () => { cancelled = true }
-  }, [isInViewport, server.id, basePath])
-
-  // 当 last_seen 变化时，追加 WS 实时数据点
-  useEffect(() => {
-    if (server.last_seen && server.last_seen !== lastSeenRef.current) {
-      lastSeenRef.current = server.last_seen
-      setHistory((prev) =>
-        [
-          ...prev,
-          {
-            timestamp: server.last_seen,
-            ping_data: server.ping_data || [],
-            online: server.online,
-          },
-        ].slice(-MAX_HISTORY_POINTS),
-      )
-    }
-  }, [server.last_seen, server.ping_data, server.online])
+  // P2: 从 Store 读取卡片历史滚动窗口（统一管理，避免每张卡片各自维护状态）
+  const history = useServerStore(
+    (s) => s.cardHistory.get(server.id) || [],
+  )
 
   // 记录上一次网速值，用于判断上升/下降趋势
   const prevNetRxRef = useRef<number>(server.net_rx || 0)

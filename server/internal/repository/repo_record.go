@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -45,17 +46,35 @@ func (r *RecordRepository) CreateRecord(record *model.MetricRecord) error {
 
 // FlushBatch 执行实际批量 INSERT（由 BatchWriter 调用）
 // 使用多值 INSERT 语法（INSERT INTO ... VALUES (...), (...), ...）
-// 注意 SQLite 单条 SQL 参数限制（999 个），每批最多 50 行（50 × 19 = 950 < 999）
+//
+// SQLite 单条 SQL 默认参数上限为 999，当 records 数量 × 每行参数数超过该限制时
+// 整批会失败。因此根据每行参数数动态计算单批最大行数并分批写入：
+//   - maxRowsPerBatch = 999 / paramCountPerRow（不足 1 时取 1）
+//   - 每个子批次独立执行 SQL，某子批次失败不影响其他子批次
+//   - 成功数通过日志输出，所有失败子批次的错误聚合后返回
+//
+// 函数签名保持 error 不变，调用方（BatchWriter）无需修改。
 func (r *RecordRepository) FlushBatch(records []model.MetricRecord) error {
 	if len(records) == 0 {
 		return nil
 	}
 
-	const fieldsPerRow = 19
-	const maxRowsPerInsert = 50 // 50 × 19 = 950 < 999 SQLite 参数限制
+	const (
+		sqliteParamLimit = 999 // SQLite 单条 SQL 默认参数上限
+		paramCountPerRow = 19  // 每行占位符数量，须与下方 VALUES 子句保持一致
+	)
 
-	for start := 0; start < len(records); start += maxRowsPerInsert {
-		end := start + maxRowsPerInsert
+	// 动态计算单批最大行数，确保 rows × paramCountPerRow <= 999
+	maxRowsPerBatch := sqliteParamLimit / paramCountPerRow
+	if maxRowsPerBatch < 1 {
+		maxRowsPerBatch = 1
+	}
+
+	totalSuccess := 0
+	var errs []error
+
+	for start := 0; start < len(records); start += maxRowsPerBatch {
+		end := start + maxRowsPerBatch
 		if end > len(records) {
 			end = len(records)
 		}
@@ -65,7 +84,7 @@ func (r *RecordRepository) FlushBatch(records []model.MetricRecord) error {
 		var sqlBuilder strings.Builder
 		sqlBuilder.WriteString("INSERT INTO metric_records (agent_id, timestamp, cpu_usage, mem_usage, mem_total, mem_used, swap_total, swap_used, disk_usage, net_rx, net_tx, tcp_connections, udp_connections, load_1, load_5, load_15, uptime, process_count, ping_data) VALUES ")
 
-		args := make([]interface{}, 0, len(batch)*fieldsPerRow)
+		args := make([]interface{}, 0, len(batch)*paramCountPerRow)
 		for i, rec := range batch {
 			if i > 0 {
 				sqlBuilder.WriteString(", ")
@@ -81,10 +100,19 @@ func (r *RecordRepository) FlushBatch(records []model.MetricRecord) error {
 		}
 
 		if err := r.db.Exec(sqlBuilder.String(), args...).Error; err != nil {
-			return fmt.Errorf("批量插入失败 (%d 条): %w", len(batch), err)
+			errs = append(errs, fmt.Errorf("子批次插入失败 (offset=%d, %d 条): %w", start, len(batch), err))
+			continue // 某子批次失败不影响其他子批次，继续处理后续子批次
 		}
+		totalSuccess += len(batch)
 	}
 
+	log.Printf("[FlushBatch] 共 %d 条记录，分批写入成功 %d 条，失败 %d 批次",
+		len(records), totalSuccess, len(errs))
+
+	if len(errs) > 0 {
+		return fmt.Errorf("批量写入部分失败: 成功 %d/%d, 失败 %d 批次: %w",
+			totalSuccess, len(records), len(errs), errors.Join(errs...))
+	}
 	return nil
 }
 
