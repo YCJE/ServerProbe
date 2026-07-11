@@ -318,24 +318,37 @@ export default function ServerDetail() {
     return count > 0 ? totalLoss / count : 0
   }, [networkChartData])
 
-  // 延迟质量条形图数据：优先使用实时历史，其次使用 1h 历史数据
+  // 延迟质量条形图数据：实时模式用 realtimeHistory，历史模式用 historyData + 补充最新实时点
   const latencyQualityPoints = useMemo<LatencyPoint[]>(() => {
-    // 实时历史数据（最近的数据点）
-    if (realtimeHistory.length > 0) {
+    // 实时模式：使用 realtimeHistory
+    if (isRealtimeRange(timeRange)) {
       return realtimeHistory.map((p) => ({
         timestamp: p.timestamp,
         ping_data: p.ping_data,
       }))
     }
-    // 回退到历史数据
+    // 历史模式：优先使用 historyData，再补充比历史数据更新的实时点
     if (historyData && historyData.points && historyData.points.length > 0) {
-      return historyData.points.map((p) => ({
+      const historyPoints = historyData.points.map((p) => ({
         timestamp: p.timestamp,
         ping_data: p.ping_data,
       }))
+      // 补充比历史数据最后一个点更新的实时数据
+      const lastHistoryTs = historyPoints[historyPoints.length - 1].timestamp
+      const newerRealtime = realtimeHistory
+        .filter((p) => p.timestamp > lastHistoryTs)
+        .map((p) => ({
+          timestamp: p.timestamp,
+          ping_data: p.ping_data,
+        }))
+      return [...historyPoints, ...newerRealtime]
     }
-    return []
-  }, [realtimeHistory, historyData])
+    // 回退到实时数据
+    return realtimeHistory.map((p) => ({
+      timestamp: p.timestamp,
+      ping_data: p.ping_data,
+    }))
+  }, [timeRange, realtimeHistory, historyData])
 
   // 在线状态时间线数据：从历史数据点提取在线状态
   const onlineTimelinePoints = useMemo<OnlineTimelinePoint[]>(() => {
