@@ -52,12 +52,26 @@ func (h *SSLMonitorHandler) HandleCreateSSLMonitor(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "域名不能为空"})
 		return
 	}
+	if len(req.Domain) > 253 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "域名过长"})
+		return
+	}
 
 	if req.Port == 0 {
 		req.Port = 443
 	}
 	if req.AlertDays == 0 {
 		req.AlertDays = 30
+	}
+
+	// 范围校验（与前端一致）
+	if req.Port < 1 || req.Port > 65535 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "端口必须在 1-65535 之间"})
+		return
+	}
+	if req.AlertDays < 1 || req.AlertDays > 365 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "告警天数必须在 1-365 之间"})
+		return
 	}
 
 	monitor := &model.SSLCertMonitor{
@@ -119,12 +133,24 @@ func (h *SSLMonitorHandler) HandleUpdateSSLMonitor(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "域名不能为空"})
 			return
 		}
+		if len(*req.Domain) > 253 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "域名过长"})
+			return
+		}
 		monitor.Domain = *req.Domain
 	}
 	if req.Port != nil {
+		if *req.Port < 1 || *req.Port > 65535 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "端口必须在 1-65535 之间"})
+			return
+		}
 		monitor.Port = *req.Port
 	}
 	if req.AlertDays != nil {
+		if *req.AlertDays < 1 || *req.AlertDays > 365 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "告警天数必须在 1-365 之间"})
+			return
+		}
 		monitor.AlertDays = *req.AlertDays
 	}
 	if req.Enabled != nil {

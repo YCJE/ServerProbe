@@ -80,6 +80,20 @@ func (h *ServiceMonitorHandler) HandleCreateServiceMonitor(c *gin.Context) {
 		req.Interval = 60
 	}
 
+	// 范围校验（与前端一致）
+	if req.Timeout < 1 || req.Timeout > 60 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "超时时间必须在 1-60 秒之间"})
+		return
+	}
+	if req.Interval < 10 || req.Interval > 86400 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "检测间隔必须在 10-86400 秒之间"})
+		return
+	}
+	if req.Type == "http" && (req.ExpectedStatus < 100 || req.ExpectedStatus > 599) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "期望状态码必须在 100-599 之间"})
+		return
+	}
+
 	monitor := &model.ServiceMonitor{
 		Name:           req.Name,
 		Type:           req.Type,
@@ -163,12 +177,24 @@ func (h *ServiceMonitorHandler) HandleUpdateServiceMonitor(c *gin.Context) {
 		monitor.Target = *req.Target
 	}
 	if req.ExpectedStatus != nil {
+		if *req.ExpectedStatus < 100 || *req.ExpectedStatus > 599 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "期望状态码必须在 100-599 之间"})
+			return
+		}
 		monitor.ExpectedStatus = *req.ExpectedStatus
 	}
 	if req.Timeout != nil {
+		if *req.Timeout < 1 || *req.Timeout > 60 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "超时时间必须在 1-60 秒之间"})
+			return
+		}
 		monitor.Timeout = *req.Timeout
 	}
 	if req.Interval != nil {
+		if *req.Interval < 10 || *req.Interval > 86400 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "检测间隔必须在 10-86400 秒之间"})
+			return
+		}
 		monitor.Interval = *req.Interval
 	}
 	if req.Enabled != nil {
