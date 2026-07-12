@@ -13,10 +13,12 @@ import (
 
 // AlertEngine 告警引擎
 type AlertEngine struct {
-	alertRepo   *repository.AlertRepository
-	monitor     *MonitorService
-	notifySvc   *NotifyService
-	validator   *DataValidator
+	alertRepo         *repository.AlertRepository
+	monitor           *MonitorService
+	notifySvc         *NotifyService
+	validator         *DataValidator
+	serviceMonitorRepo *repository.ServiceMonitorRepository // P0-3: 服务监控告警
+	sslMonitorRepo     *repository.SSLCertMonitorRepository  // P0-4: SSL 证书告警
 
 	// 告警状态跟踪
 	states  map[string]*alertState // key: "agentID:ruleID"
@@ -51,6 +53,15 @@ func NewAlertEngine(
 		stopCh:        make(chan struct{}),
 		silencePeriod: 60 * time.Minute,
 	}
+}
+
+// SetMonitorRepos 注入服务监控和 SSL 监控 Repository（用于全局指标告警）
+func (e *AlertEngine) SetMonitorRepos(
+	serviceMonitorRepo *repository.ServiceMonitorRepository,
+	sslMonitorRepo *repository.SSLCertMonitorRepository,
+) {
+	e.serviceMonitorRepo = serviceMonitorRepo
+	e.sslMonitorRepo = sslMonitorRepo
 }
 
 // Start 启动告警引擎
@@ -123,7 +134,17 @@ func (e *AlertEngine) checkAlerts() {
 	// 清理不在 Agent 列表中的过期告警状态（Agent 已被删除但状态残留）
 	e.cleanupStaleStates(allAgents)
 
-	// 按 Agent 分组检查，每个 Agent 只读一次 RingBuffer（避免 N+1 读取）
+	// 分离 per-agent 规则和全局规则
+	var perAgentRules, globalRules []model.AlertRule
+	for _, rule := range rules {
+		if rule.Metric == model.MetricServiceStatus || rule.Metric == model.MetricSSLCertExpiry {
+			globalRules = append(globalRules, rule)
+		} else {
+			perAgentRules = append(perAgentRules, rule)
+		}
+	}
+
+	// 按 Agent 分组检查 per-agent 规则，每个 Agent 只读一次 RingBuffer（避免 N+1 读取）
 	for _, agentID := range allAgents {
 		isOnline := e.monitor.IsAgentOnline(agentID)
 		var points []repository.MetricPoint
@@ -133,7 +154,7 @@ func (e *AlertEngine) checkAlerts() {
 				points = rb.Latest(1)
 			}
 		}
-		for _, rule := range rules {
+		for _, rule := range perAgentRules {
 			if rule.Metric == model.MetricAgentOffline {
 				// agent_offline 检查所有 Agent（包括在线的）
 				e.checkRuleForAgent(rule, agentID, nil)
@@ -141,6 +162,15 @@ func (e *AlertEngine) checkAlerts() {
 				e.checkRuleForAgent(rule, agentID, points)
 			}
 		}
+	}
+
+	// 检查全局规则（service_status, ssl_cert_expiry），使用 agentID=0 作为状态键
+	for _, rule := range globalRules {
+		value := e.getGlobalMetricValue(rule.Metric)
+		if value < 0 {
+			continue
+		}
+		e.checkRuleGlobal(rule, value)
 	}
 }
 
@@ -158,6 +188,10 @@ func (e *AlertEngine) cleanupStaleStates(activeAgentIDs []int64) {
 		// key 格式为 "agentID:ruleID"
 		var agentID, ruleID int64
 		if _, err := fmt.Sscanf(key, "%d:%d", &agentID, &ruleID); err != nil {
+			continue
+		}
+		// 保留 agentID=0 的全局规则状态（service_status, ssl_cert_expiry）
+		if agentID == 0 {
 			continue
 		}
 		if !activeSet[agentID] {
@@ -286,6 +320,119 @@ func (e *AlertEngine) getMetricValue(agentID int64, metric string, points []repo
 	}
 }
 
+// getGlobalMetricValue 获取全局指标值（非 per-agent 指标）
+// service_status: 返回 1 如果有任一服务 down，0 如果全部 up
+// ssl_cert_expiry: 返回所有 SSL 证书中最小的剩余天数
+func (e *AlertEngine) getGlobalMetricValue(metric string) float64 {
+	switch metric {
+	case model.MetricServiceStatus:
+		if e.serviceMonitorRepo == nil {
+			return -1
+		}
+		monitors, err := e.serviceMonitorRepo.ListEnabled()
+		if err != nil {
+			log.Printf("获取服务监控列表失败: %v", err)
+			return -1
+		}
+		for _, m := range monitors {
+			if m.LastStatus == "down" {
+				return 1
+			}
+		}
+		return 0
+
+	case model.MetricSSLCertExpiry:
+		if e.sslMonitorRepo == nil {
+			return -1
+		}
+		monitors, err := e.sslMonitorRepo.ListEnabled()
+		if err != nil {
+			log.Printf("获取 SSL 证书监控列表失败: %v", err)
+			return -1
+		}
+		minDays := -1
+		for _, m := range monitors {
+			if m.LastRemainingDays < minDays || minDays == -1 {
+				minDays = m.LastRemainingDays
+			}
+		}
+		if minDays == -1 {
+			return -1 // 无已检查的监控项
+		}
+		return float64(minDays)
+
+	default:
+		return -1
+	}
+}
+
+// checkRuleGlobal 检查全局规则（使用 agentID=0 作为状态键）
+func (e *AlertEngine) checkRuleGlobal(rule model.AlertRule, value float64) {
+	key := fmt.Sprintf("0:%d", rule.ID)
+
+	thresholdExceeded := e.checkThreshold(value, rule.Operator, rule.Threshold)
+	now := time.Now()
+
+	type pendingNotification struct {
+		rule    model.AlertRule
+		agentID int64
+		value   float64
+		state   model.AlertState
+	}
+	var pendingNotifications []pendingNotification
+
+	e.mu.Lock()
+
+	state, ok := e.states[key]
+	if !ok {
+		state = &alertState{state: model.AlertStateOK}
+		e.states[key] = state
+	}
+
+	if thresholdExceeded {
+		switch state.state {
+		case model.AlertStateOK:
+			state.state = model.AlertStatePending
+			state.firstTriggered = now
+
+		case model.AlertStatePending:
+			if now.Sub(state.firstTriggered) >= time.Duration(rule.Duration)*time.Second {
+				state.state = model.AlertStateFiring
+				state.lastNotified = now
+				pendingNotifications = append(pendingNotifications, pendingNotification{rule, 0, value, model.AlertStateFiring})
+			}
+
+		case model.AlertStateFiring:
+			if now.Sub(state.lastNotified) >= e.silencePeriod {
+				state.lastNotified = now
+				pendingNotifications = append(pendingNotifications, pendingNotification{rule, 0, value, model.AlertStateFiring})
+			}
+
+		case model.AlertStateResolved:
+			state.state = model.AlertStatePending
+			state.firstTriggered = now
+		}
+	} else {
+		switch state.state {
+		case model.AlertStatePending:
+			state.state = model.AlertStateOK
+
+		case model.AlertStateFiring:
+			state.state = model.AlertStateResolved
+			pendingNotifications = append(pendingNotifications, pendingNotification{rule, 0, value, model.AlertStateResolved})
+
+		case model.AlertStateResolved:
+			state.state = model.AlertStateOK
+		}
+	}
+
+	e.mu.Unlock()
+
+	for _, n := range pendingNotifications {
+		e.sendAlertNotification(n.rule, n.agentID, n.value, n.state)
+	}
+}
+
 // checkThreshold 检查阈值
 func (e *AlertEngine) checkThreshold(value float64, operator string, threshold float64) bool {
 	switch operator {
@@ -312,7 +459,18 @@ func (e *AlertEngine) sendAlertNotification(rule model.AlertRule, agentID int64,
 	}
 
 	var title, content string
-	if state == model.AlertStateFiring {
+	// 全局规则（agentID=0）使用不同的消息格式
+	if agentID == 0 {
+		if state == model.AlertStateFiring {
+			title = fmt.Sprintf("[告警] %s", rule.Name)
+			content = fmt.Sprintf("全局指标 %s 当前值 %.2f %s %.2f，已持续 %d 秒",
+				rule.Metric, value, rule.Operator, rule.Threshold, rule.Duration)
+		} else {
+			title = fmt.Sprintf("[恢复] %s", rule.Name)
+			content = fmt.Sprintf("全局指标 %s 已恢复正常（当前值 %.2f）",
+				rule.Metric, value)
+		}
+	} else if state == model.AlertStateFiring {
 		title = fmt.Sprintf("[告警] %s", rule.Name)
 		content = fmt.Sprintf("Agent %d 的 %s 当前值 %.2f %s %.2f，已持续 %d 秒",
 			agentID, rule.Metric, value, rule.Operator, rule.Threshold, rule.Duration)

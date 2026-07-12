@@ -92,6 +92,35 @@ func (h *ShareHandler) HandleCreateSharePage(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"page": page})
 }
 
+// HandlePublicSharePage 公开端点：验证 shareId 是否有效并返回分享页基本信息
+// 路由: GET /api/v1/public/share/:shareId
+func (h *ShareHandler) HandlePublicSharePage(c *gin.Context) {
+	shareID := c.Param("shareId")
+	if shareID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少 shareId"})
+		return
+	}
+
+	page, err := h.repo.GetByShareID(shareID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "分享页不存在"})
+		return
+	}
+
+	if !page.Enabled {
+		c.JSON(http.StatusNotFound, gin.H{"error": "分享页已禁用"})
+		return
+	}
+
+	// 仅返回公开安全字段，不返回管理信息
+	c.JSON(http.StatusOK, gin.H{
+		"share_id":     page.ShareID,
+		"title":        page.Title,
+		"description":  page.Description,
+		"agent_ids":    page.AgentIDs,
+	})
+}
+
 // HandleUpdateSharePage 更新分享页
 // 路由: PUT /api/v1/share-pages/:id
 func (h *ShareHandler) HandleUpdateSharePage(c *gin.Context) {

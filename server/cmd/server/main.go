@@ -117,6 +117,7 @@ func main() {
 	aggregation := service.NewAggregationService(monitor, recordRepo, agentRepo, trafficRepo)
 	notifySvc := service.NewNotifyService(notifyRepo, ssrfProtector)
 	alertEngine := service.NewAlertEngine(alertRepo, monitor, notifySvc)
+	alertEngine.SetMonitorRepos(serviceMonitorRepo, sslMonitorRepo) // 注入全局指标 repo
 	serviceMonitorEngine := service.NewServiceMonitorEngine(serviceMonitorRepo)
 	sslMonitorEngine := service.NewSSLMonitorEngine(sslMonitorRepo)
 

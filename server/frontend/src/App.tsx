@@ -20,6 +20,7 @@ import ServiceMonitorManagement from '@/pages/ServiceMonitorManagement'
 import SSLMonitorManagement from '@/pages/SSLMonitorManagement'
 import TrafficStats from '@/pages/TrafficStats'
 import SharePageManagement from '@/pages/SharePageManagement'
+import SharePageView from '@/pages/SharePageView'
 
 function App() {
   const initTheme = useServerStore((s) => s.initTheme)
@@ -62,6 +63,7 @@ function App() {
       <Route element={<PublicLayout />}>
         <Route path="/" element={<PublicDashboard />} />
         <Route path="/server/:id" element={<PublicServerDetail />} />
+        <Route path="/share/:shareId" element={<SharePageView />} />
       </Route>
 
       {/* 登录页 */}

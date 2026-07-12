@@ -111,6 +111,9 @@ func NewRouter(
 	// Prometheus 指标端点（公开，限速防 DoS）
 	r.GET("/metrics", middleware.PublicRateLimit(), prometheusHandler.HandleMetrics)
 
+	// 公开分享页验证端点（无需认证，限速）
+	r.GET("/api/v1/public/share/:shareId", middleware.PublicRateLimit(), shareHandler.HandlePublicSharePage)
+
 	// API v1
 	api := r.Group("/api/v1")
 	{
