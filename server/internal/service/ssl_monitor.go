@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/server-probe/server/internal/model"
+	"github.com/server-probe/server/internal/pkg"
 	"github.com/server-probe/server/internal/repository"
 )
 
@@ -100,6 +101,13 @@ func (e *SSLMonitorEngine) checkCert(monitor *model.SSLCertMonitor) (remainingDa
 		port = 443
 	}
 
+	// SSRF 防护：检查域名+端口是否指向内网
+	if err := pkg.CheckHostPort(monitor.Domain, port); err != nil {
+		log.Printf("SSL 证书检查被 SSRF 防护拦截 (ID=%d, domain=%s): %v", monitor.ID, monitor.Domain, err)
+		e.markCheckFailed(monitor)
+		return 0, time.Time{}, fmt.Errorf("SSRF 防护拦截")
+	}
+
 	address := fmt.Sprintf("%s:%d", monitor.Domain, port)
 
 	conf := &tls.Config{
@@ -114,25 +122,16 @@ func (e *SSLMonitorEngine) checkCert(monitor *model.SSLCertMonitor) (remainingDa
 	conn, dialErr := tls.DialWithDialer(dialer, "tcp", address, conf)
 	if dialErr != nil {
 		log.Printf("SSL 证书检查连接失败 (ID=%d, domain=%s): %v", monitor.ID, monitor.Domain, dialErr)
-		err = dialErr
-		// 连接失败时仍更新检查时间
-		monitor.LastChecked = time.Now()
-		if updateErr := e.repo.Update(monitor); updateErr != nil {
-			log.Printf("更新 SSL 证书监控状态失败 (ID=%d): %v", monitor.ID, updateErr)
-		}
-		return 0, time.Time{}, err
+		e.markCheckFailed(monitor)
+		return 0, time.Time{}, dialErr
 	}
 	defer conn.Close()
 
 	certs := conn.ConnectionState().PeerCertificates
 	if len(certs) == 0 {
 		log.Printf("SSL 证书链为空 (ID=%d, domain=%s)", monitor.ID, monitor.Domain)
-		err = fmt.Errorf("证书链为空")
-		monitor.LastChecked = time.Now()
-		if updateErr := e.repo.Update(monitor); updateErr != nil {
-			log.Printf("更新 SSL 证书监控状态失败 (ID=%d): %v", monitor.ID, updateErr)
-		}
-		return 0, time.Time{}, err
+		e.markCheckFailed(monitor)
+		return 0, time.Time{}, fmt.Errorf("证书链为空")
 	}
 
 	cert := certs[0]
@@ -149,6 +148,16 @@ func (e *SSLMonitorEngine) checkCert(monitor *model.SSLCertMonitor) (remainingDa
 	}
 
 	return remainingDays, expiryDate, nil
+}
+
+// markCheckFailed 标记检查失败：更新检查时间并重置过期数据，避免前端展示陈旧值
+func (e *SSLMonitorEngine) markCheckFailed(monitor *model.SSLCertMonitor) {
+	monitor.LastChecked = time.Now()
+	monitor.LastRemainingDays = 0
+	monitor.LastExpiryDate = time.Time{}
+	if err := e.repo.Update(monitor); err != nil {
+		log.Printf("更新 SSL 证书监控状态失败 (ID=%d): %v", monitor.ID, err)
+	}
 }
 
 // CheckCert 公开方法，供 handler 调用进行即时检查

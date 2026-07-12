@@ -1,6 +1,7 @@
 package service
 
 import (
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -8,6 +9,7 @@ import (
 	"time"
 
 	"github.com/server-probe/server/internal/model"
+	"github.com/server-probe/server/internal/pkg"
 	"github.com/server-probe/server/internal/repository"
 )
 
@@ -118,6 +120,12 @@ func (e *ServiceMonitorEngine) probeService(monitor *model.ServiceMonitor) (stat
 
 // probeHTTP 探测 HTTP 服务
 func (e *ServiceMonitorEngine) probeHTTP(monitor *model.ServiceMonitor) (status string, latency float64) {
+	// SSRF 防护：检查目标 URL 是否指向内网
+	if err := pkg.CheckURL(monitor.Target); err != nil {
+		log.Printf("HTTP 探测被 SSRF 防护拦截 (ID=%d, target=%s): %v", monitor.ID, monitor.Target, err)
+		return "down", 0
+	}
+
 	timeout := time.Duration(monitor.Timeout) * time.Second
 	if timeout <= 0 {
 		timeout = 10 * time.Second
@@ -138,7 +146,11 @@ func (e *ServiceMonitorEngine) probeHTTP(monitor *model.ServiceMonitor) (status 
 		log.Printf("HTTP 探测失败 (ID=%d, target=%s): %v", monitor.ID, monitor.Target, err)
 		return "down", latency
 	}
-	defer resp.Body.Close()
+	defer func() {
+		// drain body 以允许连接复用
+		io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
+	}()
 
 	if resp.StatusCode == monitor.ExpectedStatus {
 		return "up", latency
@@ -150,6 +162,22 @@ func (e *ServiceMonitorEngine) probeHTTP(monitor *model.ServiceMonitor) (status 
 
 // probeTCP 探测 TCP 服务
 func (e *ServiceMonitorEngine) probeTCP(monitor *model.ServiceMonitor) (status string, latency float64) {
+	// SSRF 防护：检查目标 host:port 是否指向内网
+	host, portStr, err := net.SplitHostPort(monitor.Target)
+	if err != nil {
+		log.Printf("TCP 探测目标格式无效 (ID=%d, target=%s): %v", monitor.ID, monitor.Target, err)
+		return "down", 0
+	}
+	port, err := net.LookupPort("tcp", portStr)
+	if err != nil {
+		log.Printf("TCP 探测端口无效 (ID=%d, target=%s): %v", monitor.ID, monitor.Target, err)
+		return "down", 0
+	}
+	if err := pkg.CheckHostPort(host, port); err != nil {
+		log.Printf("TCP 探测被 SSRF 防护拦截 (ID=%d, target=%s): %v", monitor.ID, monitor.Target, err)
+		return "down", 0
+	}
+
 	timeout := time.Duration(monitor.Timeout) * time.Second
 	if timeout <= 0 {
 		timeout = 10 * time.Second

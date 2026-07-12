@@ -108,8 +108,8 @@ func NewRouter(
 		c.JSON(http.StatusOK, gin.H{"ok": true, "service": "server-probe"})
 	})
 
-	// Prometheus 指标端点（公开，无需认证）
-	r.GET("/metrics", prometheusHandler.HandleMetrics)
+	// Prometheus 指标端点（公开，限速防 DoS）
+	r.GET("/metrics", middleware.PublicRateLimit(), prometheusHandler.HandleMetrics)
 
 	// API v1
 	api := r.Group("/api/v1")
