@@ -116,6 +116,14 @@ func (h *TrafficHandler) handleCustomRangeTraffic(c *gin.Context, agentID int64)
 		return
 	}
 
+	// 限制日期范围最大 366 天，防止查询过大范围导致内存消耗
+	parsedStart, _ := time.Parse("2006-01-02", startDate)
+	parsedEnd, _ := time.Parse("2006-01-02", endDate)
+	if parsedEnd.Sub(parsedStart).Hours()/24 > 366 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "日期范围不能超过 366 天"})
+		return
+	}
+
 	records, err := h.trafficRepo.GetTrafficByDateRange(agentID, startDate, endDate)
 	if err != nil {
 		log.Printf("[API] 获取 Agent %d 日期范围流量失败: %v", agentID, err)

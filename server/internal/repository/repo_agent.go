@@ -142,6 +142,10 @@ func (r *AgentRepository) DeleteWithRecordsTx(agentID int64) error {
 		if err := tx.Where("agent_id = ?", agentID).Delete(&model.MetricRecord{}).Error; err != nil {
 			return err
 		}
+		// 删除关联的流量统计记录 (traffic_records)
+		if err := tx.Where("agent_id = ?", agentID).Delete(&model.TrafficRecord{}).Error; err != nil {
+			return err
+		}
 		// 清理 register_codes 表中 used_by_agent_id 的悬空引用，避免外键悬空
 		if err := tx.Model(&model.RegisterCode{}).
 			Where("used_by_agent_id = ?", agentID).
