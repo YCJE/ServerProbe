@@ -164,6 +164,14 @@ func CheckHostPort(host string, port int) error {
 	return nil
 }
 
+// CheckIP 检查单个 IP 是否安全（非内网）
+func CheckIP(ip net.IP) error {
+	if isPrivateIP(ip) {
+		return fmt.Errorf("目标地址是内网 IP: %s", ip)
+	}
+	return nil
+}
+
 // isPrivateIP 检查是否是内网 IP
 func isPrivateIP(ip net.IP) bool {
 	// 未指定地址 (0.0.0.0, ::) - 某些系统上等同于 localhost

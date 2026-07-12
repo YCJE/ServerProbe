@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"crypto/tls"
 	"fmt"
 	"log"
@@ -101,14 +102,30 @@ func (e *SSLMonitorEngine) checkCert(monitor *model.SSLCertMonitor) (remainingDa
 		port = 443
 	}
 
-	// SSRF 防护：检查域名+端口是否指向内网
-	if err := pkg.CheckHostPort(monitor.Domain, port); err != nil {
-		log.Printf("SSL 证书检查被 SSRF 防护拦截 (ID=%d, domain=%s): %v", monitor.ID, monitor.Domain, err)
+	// SSRF 防护：解析 DNS 并检查所有 IP，然后直接连接已验证的 IP（防止 DNS rebinding）
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	ips, err := net.DefaultResolver.LookupIP(ctx, "ip", monitor.Domain)
+	if err != nil {
+		log.Printf("SSL 证书检查 DNS 解析失败 (ID=%d, domain=%s): %v", monitor.ID, monitor.Domain, err)
 		e.markCheckFailed(monitor)
-		return 0, time.Time{}, fmt.Errorf("SSRF 防护拦截")
+		return 0, time.Time{}, fmt.Errorf("DNS 解析失败: %w", err)
+	}
+	if len(ips) == 0 {
+		log.Printf("SSL 证书检查 DNS 解析未返回 IP (ID=%d, domain=%s)", monitor.ID, monitor.Domain)
+		e.markCheckFailed(monitor)
+		return 0, time.Time{}, fmt.Errorf("DNS 解析未返回 IP")
+	}
+	for _, ip := range ips {
+		if err := pkg.CheckIP(ip); err != nil {
+			log.Printf("SSL 证书检查被 SSRF 防护拦截 (ID=%d, domain=%s): %v", monitor.ID, monitor.Domain, err)
+			e.markCheckFailed(monitor)
+			return 0, time.Time{}, fmt.Errorf("SSRF 防护拦截")
+		}
 	}
 
-	address := fmt.Sprintf("%s:%d", monitor.Domain, port)
+	// 直接连接已验证的安全 IP，设置 ServerName 进行 SNI
+	address := net.JoinHostPort(ips[0].String(), fmt.Sprintf("%d", port))
 
 	conf := &tls.Config{
 		InsecureSkipVerify: false,

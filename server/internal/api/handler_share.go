@@ -57,10 +57,22 @@ func (h *ShareHandler) HandleCreateSharePage(c *gin.Context) {
 		return
 	}
 
-	// 如果未提供 share_id，自动生成
+	// 如果未提供 share_id，自动生成；如果提供了，校验长度和字符集
 	shareID := req.ShareID
 	if shareID == "" {
 		shareID = repository.GenerateShareID()
+	} else {
+		// 校验用户提供的 share_id: 长度 4-32，仅允许字母数字
+		if len(shareID) < 4 || len(shareID) > 32 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "share_id 长度必须在 4-32 个字符之间"})
+			return
+		}
+		for _, ch := range shareID {
+			if !((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9')) {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "share_id 仅允许字母和数字"})
+				return
+			}
+		}
 	}
 
 	page := &model.SharePage{

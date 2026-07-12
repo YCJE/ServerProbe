@@ -1,10 +1,13 @@
 package service
 
 import (
+	"context"
+	"fmt"
 	"io"
 	"log"
 	"net"
 	"net/http"
+	"net/url"
 	"sync"
 	"time"
 
@@ -120,9 +123,10 @@ func (e *ServiceMonitorEngine) probeService(monitor *model.ServiceMonitor) (stat
 
 // probeHTTP 探测 HTTP 服务
 func (e *ServiceMonitorEngine) probeHTTP(monitor *model.ServiceMonitor) (status string, latency float64) {
-	// SSRF 防护：检查目标 URL 是否指向内网
-	if err := pkg.CheckURL(monitor.Target); err != nil {
-		log.Printf("HTTP 探测被 SSRF 防护拦截 (ID=%d, target=%s): %v", monitor.ID, monitor.Target, err)
+	// SSRF 防护：预检查 URL 协议和格式
+	parsed, err := url.Parse(monitor.Target)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+		log.Printf("HTTP 探测目标 URL 无效 (ID=%d, target=%s): %v", monitor.ID, monitor.Target, err)
 		return "down", 0
 	}
 
@@ -131,8 +135,37 @@ func (e *ServiceMonitorEngine) probeHTTP(monitor *model.ServiceMonitor) (status 
 		timeout = 10 * time.Second
 	}
 
+	// 使用自定义 DialContext 在连接时检查 IP，防止 DNS rebinding 绕过 SSRF
+	transport := &http.Transport{
+		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			host, port, err := net.SplitHostPort(addr)
+			if err != nil {
+				return nil, err
+			}
+			// 解析 DNS 并检查所有 IP
+			ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			defer cancel()
+			ips, err := net.DefaultResolver.LookupIP(ctx, "ip", host)
+			if err != nil {
+				return nil, err
+			}
+			if len(ips) == 0 {
+				return nil, fmt.Errorf("DNS 解析未返回 IP: %s", host)
+			}
+			for _, ip := range ips {
+				if err := pkg.CheckIP(ip); err != nil {
+					return nil, err
+				}
+			}
+			// 连接到第一个安全 IP
+			dialer := &net.Dialer{Timeout: timeout}
+			return dialer.DialContext(ctx, network, net.JoinHostPort(ips[0].String(), port))
+		},
+	}
+
 	client := &http.Client{
-		Timeout: timeout,
+		Timeout:   timeout,
+		Transport: transport,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			return http.ErrUseLastResponse
 		},
