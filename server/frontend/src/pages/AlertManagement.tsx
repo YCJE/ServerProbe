@@ -51,6 +51,34 @@ function formatDuration(seconds: number): string {
   return `${Math.floor(seconds / 3600)}小时`
 }
 
+/** 根据指标返回推荐的操作符和阈值 */
+function getMetricDefaults(metric: string): { operator: string; threshold: number } {
+  switch (metric) {
+    case 'cpu_usage':
+    case 'mem_usage':
+    case 'disk_usage':
+      return { operator: '>', threshold: 80 }
+    case 'agent_offline':
+      return { operator: '=', threshold: 1 }
+    case 'service_status':
+      return { operator: '>', threshold: 0 }
+    case 'ssl_cert_expiry':
+      return { operator: '<', threshold: 30 }
+    default:
+      return { operator: '>', threshold: 80 }
+  }
+}
+
+/** 获取指标最大阈值（用于前端校验） */
+function getMetricMaxThreshold(metric: string): number {
+  switch (metric) {
+    case 'ssl_cert_expiry':
+      return 365
+    default:
+      return 100
+  }
+}
+
 /** 表单数据 */
 interface FormData {
   name: string
@@ -155,8 +183,8 @@ export default function AlertManagement() {
       setFormError('请选择通知渠道')
       return
     }
-    if (form.threshold < 0 || form.threshold > 100) {
-      setFormError('阈值必须在 0-100 之间')
+    if (form.threshold < 0 || form.threshold > getMetricMaxThreshold(form.metric)) {
+      setFormError(`阈值必须在 0-${getMetricMaxThreshold(form.metric)} 之间`)
       return
     }
     if (form.duration < 1 || form.duration > 86400) {
@@ -401,7 +429,11 @@ export default function AlertManagement() {
                 </label>
                 <select
                   value={form.metric}
-                  onChange={(e) => setForm({ ...form, metric: e.target.value })}
+                  onChange={(e) => {
+                    const metric = e.target.value
+                    const defaults = getMetricDefaults(metric)
+                    setForm({ ...form, metric, operator: defaults.operator, threshold: defaults.threshold })
+                  }}
                   className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm shadow-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                 >
                   {METRIC_OPTIONS.map((opt) => (

@@ -56,6 +56,10 @@ func (h *ShareHandler) HandleCreateSharePage(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "标题过长"})
 		return
 	}
+	if len(req.Description) > 1000 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "描述过长（最多 1000 字符）"})
+		return
+	}
 
 	// 如果未提供 share_id，自动生成；如果提供了，校验长度和字符集
 	shareID := req.ShareID
@@ -170,6 +174,10 @@ func (h *ShareHandler) HandleUpdateSharePage(c *gin.Context) {
 		page.Title = *req.Title
 	}
 	if req.Description != nil {
+		if len(*req.Description) > 1000 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "描述过长（最多 1000 字符）"})
+			return
+		}
 		page.Description = *req.Description
 	}
 	if req.AgentIDs != nil {
