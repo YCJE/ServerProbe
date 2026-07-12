@@ -69,8 +69,8 @@ export default function TrafficStats() {
 
   /** 月度每日最大值（用于柱状图缩放） */
   const maxDailyBytes = useMemo(() => {
-    if (!monthTraffic?.daily || monthTraffic.daily.length === 0) return 0
-    return monthTraffic.daily.reduce((max, r) => {
+    if (!monthTraffic?.records || monthTraffic.records.length === 0) return 0
+    return monthTraffic.records.reduce((max, r) => {
       const total = r.rx_bytes + r.tx_bytes
       return total > max ? total : max
     }, 0)
@@ -151,7 +151,7 @@ export default function TrafficStats() {
             <div className="card-soft p-4">
               <div className="text-xs font-medium text-muted-foreground">当日接收 (RX)</div>
               <div className="mt-2 text-2xl font-bold text-emerald-500 tabular-nums">
-                {formatBytes(todayTraffic?.rx_bytes || 0)}
+                {formatBytes(todayTraffic?.traffic?.rx_bytes || 0)}
               </div>
               <div className="mt-1 text-xs text-muted-foreground">
                 {todayTraffic?.date || '-'}
@@ -160,7 +160,7 @@ export default function TrafficStats() {
             <div className="card-soft p-4">
               <div className="text-xs font-medium text-muted-foreground">当日发送 (TX)</div>
               <div className="mt-2 text-2xl font-bold text-amber-500 tabular-nums">
-                {formatBytes(todayTraffic?.tx_bytes || 0)}
+                {formatBytes(todayTraffic?.traffic?.tx_bytes || 0)}
               </div>
               <div className="mt-1 text-xs text-muted-foreground">
                 {todayTraffic?.date || '-'}
@@ -169,7 +169,7 @@ export default function TrafficStats() {
             <div className="card-soft p-4">
               <div className="text-xs font-medium text-muted-foreground">当日合计</div>
               <div className="mt-2 text-2xl font-bold text-primary tabular-nums">
-                {formatBytes((todayTraffic?.rx_bytes || 0) + (todayTraffic?.tx_bytes || 0))}
+                {formatBytes((todayTraffic?.traffic?.rx_bytes || 0) + (todayTraffic?.traffic?.tx_bytes || 0))}
               </div>
               <div className="mt-1 text-xs text-muted-foreground">
                 RX + TX
@@ -184,13 +184,13 @@ export default function TrafficStats() {
                 当月每日流量明细
                 {monthTraffic && (
                   <span className="ml-2 text-xs font-normal text-muted-foreground">
-                    共 {monthTraffic.daily?.length || 0} 天
+                    共 {monthTraffic.records?.length || 0} 天
                   </span>
                 )}
               </h2>
             </div>
 
-            {monthTraffic && monthTraffic.daily && monthTraffic.daily.length > 0 ? (
+            {monthTraffic && monthTraffic.records && monthTraffic.records.length > 0 ? (
               <>
                 {/* 柱状图（CSS 实现） */}
                 <div className="border-b border-dashed border-border px-4 py-4">
@@ -205,7 +205,7 @@ export default function TrafficStats() {
                     </span>
                   </div>
                   <div className="flex h-40 items-end gap-1 overflow-x-auto scrollbar-thin">
-                    {monthTraffic.daily.map((record: TrafficRecord) => {
+                    {monthTraffic.records.map((record: TrafficRecord) => {
                       const total = record.rx_bytes + record.tx_bytes
                       const heightPercent = maxDailyBytes > 0 ? (total / maxDailyBytes) * 100 : 0
                       const rxPercent = total > 0 ? (record.rx_bytes / total) * 100 : 0
@@ -250,7 +250,7 @@ export default function TrafficStats() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-dashed divide-border">
-                      {[...monthTraffic.daily].reverse().map((record: TrafficRecord) => (
+                      {[...monthTraffic.records].reverse().map((record: TrafficRecord) => (
                         <tr key={record.id || record.date} className="text-foreground transition-colors hover:bg-muted/50">
                           <td className="px-3 py-2.5 tabular-nums">{record.date}</td>
                           <td className="px-3 py-2.5 text-right tabular-nums text-emerald-500">
@@ -269,13 +269,13 @@ export default function TrafficStats() {
                       <tr className="border-t-2 border-border bg-secondary/80 backdrop-blur font-semibold">
                         <td className="px-3 py-3 text-foreground">月汇总</td>
                         <td className="px-3 py-3 text-right tabular-nums text-emerald-500">
-                          {formatBytes(monthTraffic.total_rx)}
+                          {formatBytes(monthTraffic.total.rx_bytes)}
                         </td>
                         <td className="px-3 py-3 text-right tabular-nums text-amber-500">
-                          {formatBytes(monthTraffic.total_tx)}
+                          {formatBytes(monthTraffic.total.tx_bytes)}
                         </td>
                         <td className="px-3 py-3 text-right tabular-nums text-primary">
-                          {formatBytes(monthTraffic.total_rx + monthTraffic.total_tx)}
+                          {formatBytes(monthTraffic.total.rx_bytes + monthTraffic.total.tx_bytes)}
                         </td>
                       </tr>
                     </tfoot>

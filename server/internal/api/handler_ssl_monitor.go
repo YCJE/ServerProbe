@@ -182,9 +182,9 @@ func (h *SSLMonitorHandler) HandleTestSSLMonitor(c *gin.Context) {
 	if checkErr != nil {
 		log.Printf("SSL 证书检查失败 (ID=%d): %v", id, checkErr)
 		c.JSON(http.StatusOK, gin.H{
-			"status":  "error",
-			"error":   checkErr.Error(),
-			"domain":  monitor.Domain,
+			"status": "error",
+			"error":  "SSL 证书检查失败，请检查域名和端口是否正确",
+			"domain": monitor.Domain,
 		})
 		return
 	}

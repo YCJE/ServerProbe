@@ -366,22 +366,21 @@ export interface TrafficRecord {
 export interface TrafficResponse {
   agent_id: number
   date: string
-  rx_bytes: number
-  tx_bytes: number
+  traffic: TrafficRecord | null
 }
 
 export interface MonthlyTraffic {
   agent_id: number
-  daily: TrafficRecord[]
-  total_rx: number
-  total_tx: number
+  year: number
+  month: number
+  records: TrafficRecord[]
+  total: { rx_bytes: number; tx_bytes: number }
 }
 
 export interface AllTrafficResponse {
   date: string
-  records: TrafficResponse[]
-  total_rx: number
-  total_tx: number
+  traffic: TrafficRecord[]
+  total: { rx_bytes: number; tx_bytes: number }
 }
 
 // ==================== 分享页 (P1-8) ====================

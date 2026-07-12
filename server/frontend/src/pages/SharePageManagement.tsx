@@ -45,7 +45,7 @@ export default function SharePageManagement() {
     setError('')
     try {
       const data = await getSharePages()
-      setPages(data || [])
+      setPages(data.pages || [])
     } catch (err) {
       setError(err instanceof Error ? err.message : '加载数据失败')
     } finally {

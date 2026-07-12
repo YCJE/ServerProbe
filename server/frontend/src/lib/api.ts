@@ -387,7 +387,7 @@ export async function getLogs(params?: {
 // ==================== 服务监控 API (P0-3) ====================
 
 /** 获取服务监控列表 */
-export async function getServiceMonitors(): Promise<ServiceMonitor[]> {
+export async function getServiceMonitors(): Promise<{ monitors: ServiceMonitor[] }> {
   return request('/service-monitors')
 }
 
@@ -412,14 +412,14 @@ export async function testServiceMonitor(id: number): Promise<{ status: string; 
 }
 
 /** 获取服务监控状态列表 */
-export async function getServiceMonitorStatuses(): Promise<ServiceStatusResult[]> {
+export async function getServiceMonitorStatuses(): Promise<{ statuses: ServiceStatusResult[] }> {
   return request('/service-monitors/statuses')
 }
 
 // ==================== SSL 证书监控 API (P0-4) ====================
 
 /** 获取 SSL 证书监控列表 */
-export async function getSSLMonitors(): Promise<SSLCertMonitor[]> {
+export async function getSSLMonitors(): Promise<{ monitors: SSLCertMonitor[] }> {
   return request('/ssl-monitors')
 }
 
@@ -444,7 +444,7 @@ export async function testSSLMonitor(id: number): Promise<{ remaining_days: numb
 }
 
 /** 获取 SSL 证书监控状态列表 */
-export async function getSSLMonitorStatuses(): Promise<SSLCertStatusResult[]> {
+export async function getSSLMonitorStatuses(): Promise<{ statuses: SSLCertStatusResult[] }> {
   return request('/ssl-monitors/statuses')
 }
 
@@ -471,7 +471,7 @@ export async function getAllTraffic(): Promise<AllTrafficResponse> {
 // ==================== 分享页 API (P1-8) ====================
 
 /** 获取分享页列表 */
-export async function getSharePages(): Promise<SharePage[]> {
+export async function getSharePages(): Promise<{ pages: SharePage[] }> {
   return request('/share-pages')
 }
 

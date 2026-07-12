@@ -229,13 +229,17 @@ func (s *AggregationService) aggregate() {
 			prev, hasPrev := s.prevTraffic[agent.ID]
 			var rxDelta, txDelta uint64
 			if hasPrev {
-				// 正常情况：当前值 > 上次值，差值为增量
+				// 正常情况：当前值 >= 上次值，差值为增量
 				if latest.TotalRx >= prev.Rx {
 					rxDelta = latest.TotalRx - prev.Rx
+				} else {
+					// 计数器重置（Agent 重启）：当前值 < 上次值，当前值即为增量
+					rxDelta = latest.TotalRx
 				}
-				// 计数器重置（重启）：当前值 < 上次值，当前值即为增量
 				if latest.TotalTx >= prev.Tx {
 					txDelta = latest.TotalTx - prev.Tx
+				} else {
+					txDelta = latest.TotalTx
 				}
 			}
 			// 更新上次值

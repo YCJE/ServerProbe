@@ -66,7 +66,7 @@ export default function SSLMonitorManagement() {
     setError('')
     try {
       const data = await getSSLMonitors()
-      setMonitors(data || [])
+      setMonitors(data.monitors || [])
     } catch (err) {
       setError(err instanceof Error ? err.message : '加载数据失败')
     } finally {
@@ -78,7 +78,7 @@ export default function SSLMonitorManagement() {
   const loadStatuses = useCallback(async () => {
     try {
       const data = await getSSLMonitorStatuses()
-      setStatuses(data || [])
+      setStatuses(data.statuses || [])
     } catch (err) {
       console.error('加载 SSL 状态失败:', err)
     }

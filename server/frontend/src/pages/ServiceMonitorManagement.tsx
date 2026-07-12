@@ -66,7 +66,7 @@ export default function ServiceMonitorManagement() {
     setError('')
     try {
       const data = await getServiceMonitors()
-      setMonitors(data || [])
+      setMonitors(data.monitors || [])
     } catch (err) {
       setError(err instanceof Error ? err.message : '加载数据失败')
     } finally {
@@ -78,7 +78,7 @@ export default function ServiceMonitorManagement() {
   const loadStatuses = useCallback(async () => {
     try {
       const data = await getServiceMonitorStatuses()
-      setStatuses(data || [])
+      setStatuses(data.statuses || [])
     } catch (err) {
       // 状态获取失败静默处理，不打断主列表
       console.error('加载服务状态失败:', err)
