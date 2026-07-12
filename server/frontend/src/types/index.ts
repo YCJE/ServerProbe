@@ -104,6 +104,8 @@ export interface ServerData {
   processes?: ProcessInfo[]
   /** NTP 时间偏移（毫秒） */
   time_offset?: number
+  /** 标签（逗号分隔的字符串） */
+  tags?: string
 }
 
 /** 仪表盘实时数据项 */
@@ -294,5 +296,103 @@ export interface NotifyChannel {
   name: string
   type: string
   config: Record<string, unknown>
+  created_at: string
+}
+
+// ==================== 服务监控 (P0-3) ====================
+
+export interface ServiceMonitor {
+  id: number
+  name: string
+  type: 'http' | 'tcp'
+  target: string
+  expected_status: number
+  timeout: number
+  interval: number
+  enabled: boolean
+  last_status: string
+  last_latency: number
+  last_checked: string
+  created_at: string
+}
+
+export interface ServiceStatusResult {
+  id: number
+  name: string
+  type: string
+  target: string
+  last_status: string
+  last_latency: number
+  last_checked: string
+  enabled: boolean
+}
+
+// ==================== SSL 证书监控 (P0-4) ====================
+
+export interface SSLCertMonitor {
+  id: number
+  domain: string
+  port: number
+  alert_days: number
+  enabled: boolean
+  last_expiry_date: string
+  last_remaining_days: number
+  last_checked: string
+  created_at: string
+}
+
+export interface SSLCertStatusResult {
+  id: number
+  domain: string
+  port: number
+  alert_days: number
+  last_expiry_date: string
+  last_remaining_days: number
+  last_checked: string
+  enabled: boolean
+}
+
+// ==================== 流量统计 (P0-1) ====================
+
+export interface TrafficRecord {
+  id: number
+  agent_id: number
+  date: string
+  rx_bytes: number
+  tx_bytes: number
+  updated_at: string
+}
+
+export interface TrafficResponse {
+  agent_id: number
+  date: string
+  rx_bytes: number
+  tx_bytes: number
+}
+
+export interface MonthlyTraffic {
+  agent_id: number
+  daily: TrafficRecord[]
+  total_rx: number
+  total_tx: number
+}
+
+export interface AllTrafficResponse {
+  date: string
+  records: TrafficResponse[]
+  total_rx: number
+  total_tx: number
+}
+
+// ==================== 分享页 (P1-8) ====================
+
+export interface SharePage {
+  id: number
+  share_id: string
+  title: string
+  description: string
+  agent_ids: string
+  enabled: boolean
+  sort_order: number
   created_at: string
 }

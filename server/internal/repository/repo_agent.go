@@ -106,6 +106,13 @@ func (r *AgentRepository) UpdateDisplayName(id int64, displayName string) error 
 		Update("display_name", displayName).Error
 }
 
+// UpdateTags 仅更新标签字段（P1-10: 服务器分组）
+func (r *AgentRepository) UpdateTags(id int64, tags string) error {
+	return r.db.Model(&model.Agent{}).
+		Where("id = ?", id).
+		Update("tags", tags).Error
+}
+
 // UpdateStaticInfo 更新 Agent 静态信息（OS、Arch、Kernel、Hostname、AgentVersion、Virtualization、Distro）
 // 仅更新静态字段，不触碰 Online/LastSeen/Token 等动态字段，避免竞态
 func (r *AgentRepository) UpdateStaticInfo(id int64, os, arch, kernel, hostname, agentVersion, virtualization, distro string) error {

@@ -169,6 +169,7 @@ func (h *AgentAPIHandler) HandleUpdateAgent(c *gin.Context) {
 
 	var req struct {
 		DisplayName string `json:"display_name"`
+		Tags        string `json:"tags"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -180,10 +181,19 @@ func (h *AgentAPIHandler) HandleUpdateAgent(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "显示名称过长"})
 		return
 	}
+	if len(req.Tags) > 500 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "标签过长（最多 500 字符）"})
+		return
+	}
 
-	// 仅更新 display_name 字段，避免 Save 覆盖 Online/LastSeen 等并发修改的字段
+	// 更新 display_name 字段
 	if err := h.agentRepo.UpdateDisplayName(agentID, req.DisplayName); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "更新 Agent 失败"})
+		return
+	}
+	// 更新 tags 字段（P1-10: 服务器分组）
+	if err := h.agentRepo.UpdateTags(agentID, req.Tags); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "更新标签失败"})
 		return
 	}
 

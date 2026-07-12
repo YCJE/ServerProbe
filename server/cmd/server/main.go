@@ -80,6 +80,10 @@ func main() {
 	pingTargetRepo := repository.NewPingTargetRepository(db.DB())
 	alertRepo := repository.NewAlertRepository(db.DB())
 	notifyRepo := repository.NewNotifyRepository(db.DB())
+	trafficRepo := repository.NewTrafficRepository(db.DB())
+	serviceMonitorRepo := repository.NewServiceMonitorRepository(db.DB())
+	sslMonitorRepo := repository.NewSSLCertMonitorRepository(db.DB())
+	sharePageRepo := repository.NewSharePageRepository(db.DB())
 
 	// 生成或加载 JWT 密钥
 	jwtSecretFile := filepath.Join(*dataDir, "jwt_secret")
@@ -110,9 +114,11 @@ func main() {
 	registry := service.NewAgentRegistryService(agentRepo, registerCodeRepo, db.DB())
 	configSync := service.NewConfigSyncService(pingTargetRepo, db.DB())
 	validator := service.NewDataValidator()
-	aggregation := service.NewAggregationService(monitor, recordRepo, agentRepo)
+	aggregation := service.NewAggregationService(monitor, recordRepo, agentRepo, trafficRepo)
 	notifySvc := service.NewNotifyService(notifyRepo, ssrfProtector)
 	alertEngine := service.NewAlertEngine(alertRepo, monitor, notifySvc)
+	serviceMonitorEngine := service.NewServiceMonitorEngine(serviceMonitorRepo)
+	sslMonitorEngine := service.NewSSLMonitorEngine(sslMonitorRepo)
 
 	// 启动心跳检查
 	monitor.StartHeartbeatChecker(90 * time.Second)
@@ -127,6 +133,12 @@ func main() {
 
 	// 启动告警引擎
 	alertEngine.Start()
+
+	// 启动服务监控引擎 (P0-3)
+	serviceMonitorEngine.Start()
+
+	// 启动 SSL 证书监控引擎 (P0-4)
+	sslMonitorEngine.Start()
 
 	// 启动数据校验器清理任务
 	validator.StartCleanupTask()
@@ -147,6 +159,12 @@ func main() {
 		alertEngine,
 		notifySvc,
 		logCapture,
+		serviceMonitorRepo,
+		sslMonitorRepo,
+		trafficRepo,
+		sharePageRepo,
+		serviceMonitorEngine,
+		sslMonitorEngine,
 	)
 
 	// 注册前端静态文件处理器
@@ -217,6 +235,8 @@ func main() {
 	aggregation.Stop()
 	monitor.Stop()
 	alertEngine.Stop()
+	serviceMonitorEngine.Stop()
+	sslMonitorEngine.Stop()
 	validator.Stop()
 
 	log.Println("正在关闭数据库连接...")

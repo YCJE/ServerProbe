@@ -17,6 +17,7 @@ type Agent struct {
 	Distro          string    `json:"distro"`           // Linux 发行版名称
 	AgentVersion    string    `json:"agent_version"`
 	HostFingerprint string    `gorm:"uniqueIndex" json:"-"`
+	Tags            string    `json:"tags"` // P1-10: 逗号分隔的标签（如 "web,production"）
 	LastSeen        time.Time `json:"last_seen"`
 	Online          bool      `gorm:"default:false" json:"online"`
 	CreatedAt       time.Time `gorm:"autoCreateTime" json:"created_at"`
@@ -57,10 +58,12 @@ func (AlertRule) TableName() string { return "alert_rules" }
 
 // 告警支持的指标
 const (
-	MetricCPUUsage     = "cpu_usage"
-	MetricMemUsage     = "mem_usage"
-	MetricDiskUsage    = "disk_usage"
-	MetricAgentOffline = "agent_offline"
+	MetricCPUUsage      = "cpu_usage"
+	MetricMemUsage      = "mem_usage"
+	MetricDiskUsage     = "disk_usage"
+	MetricAgentOffline  = "agent_offline"
+	MetricServiceStatus = "service_status"   // P0-3: 服务监控（1=down, 0=up）
+	MetricSSLCertExpiry = "ssl_cert_expiry"  // P0-4: SSL 证书剩余天数
 )
 
 // 告警支持的操作符
@@ -184,11 +187,14 @@ func (Admin) TableName() string { return "admin" }
 
 // SharePage 公开分享页配置（GORM 模型）
 type SharePage struct {
-	ID        int64     `gorm:"primaryKey;autoIncrement" json:"id"`
-	ShareID   string    `gorm:"uniqueIndex;not null" json:"share_id"`
-	Title     string    `json:"title"`
-	AgentIDs  string    `json:"agent_ids"`
-	CreatedAt time.Time `gorm:"autoCreateTime" json:"created_at"`
+	ID          int64     `gorm:"primaryKey;autoIncrement" json:"id"`
+	ShareID     string    `gorm:"uniqueIndex;not null" json:"share_id"`
+	Title       string    `json:"title"`
+	Description string    `json:"description"`
+	AgentIDs   string    `json:"agent_ids"`  // 逗号分隔的 Agent ID（空=全部）
+	Enabled     bool      `gorm:"default:true" json:"enabled"`
+	SortOrder   int       `gorm:"default:0" json:"sort_order"`
+	CreatedAt   time.Time `gorm:"autoCreateTime" json:"created_at"`
 }
 
 // TableName 指定表名
@@ -202,3 +208,51 @@ type SystemSetting struct {
 
 // TableName 指定表名
 func (SystemSetting) TableName() string { return "system_settings" }
+
+// TrafficRecord 每日流量统计（P0-1）
+// 由聚合服务每 5 分钟计算增量并 upsert 到当日记录
+type TrafficRecord struct {
+	ID        int64     `gorm:"primaryKey;autoIncrement" json:"id"`
+	AgentID   int64     `gorm:"uniqueIndex:idx_traffic_agent_date,priority:1;not null" json:"agent_id"`
+	Date      string    `gorm:"uniqueIndex:idx_traffic_agent_date,priority:2;not null" json:"date"` // "2006-01-02"
+	RXBytes   uint64    `json:"rx_bytes"`
+	TXBytes   uint64    `json:"tx_bytes"`
+	UpdatedAt time.Time `gorm:"autoUpdateTime" json:"updated_at"`
+}
+
+func (TrafficRecord) TableName() string { return "traffic_records" }
+
+// ServiceMonitor 服务监控配置（P0-3）
+// 服务端主动探测 HTTP/TCP 端点可用性
+type ServiceMonitor struct {
+	ID             int64     `gorm:"primaryKey;autoIncrement" json:"id"`
+	Name           string    `gorm:"not null" json:"name"`
+	Type           string    `gorm:"not null" json:"type"`            // "http" | "tcp"
+	Target         string    `gorm:"not null" json:"target"`          // HTTP: 完整 URL; TCP: host:port
+	ExpectedStatus int       `gorm:"default:200" json:"expected_status"` // HTTP 期望状态码
+	Timeout        int       `gorm:"default:10" json:"timeout"`       // 超时秒数
+	Interval       int       `gorm:"default:60" json:"interval"`      // 探测间隔秒数
+	Enabled        bool      `gorm:"default:true" json:"enabled"`
+	LastStatus     string    `json:"last_status"`   // "up" | "down"
+	LastLatency    float64   `json:"last_latency"`  // 毫秒
+	LastChecked    time.Time `json:"last_checked"`
+	CreatedAt      time.Time `gorm:"autoCreateTime" json:"created_at"`
+}
+
+func (ServiceMonitor) TableName() string { return "service_monitors" }
+
+// SSLCertMonitor SSL 证书到期监控配置（P0-4）
+// 服务端定时检查目标域名 TLS 证书有效期
+type SSLCertMonitor struct {
+	ID               int64     `gorm:"primaryKey;autoIncrement" json:"id"`
+	Domain           string    `gorm:"not null" json:"domain"`
+	Port             int       `gorm:"default:443" json:"port"`
+	AlertDays        int       `gorm:"default:30" json:"alert_days"` // 剩余天数 < 此值时告警
+	Enabled          bool      `gorm:"default:true" json:"enabled"`
+	LastExpiryDate   time.Time `json:"last_expiry_date"`
+	LastRemainingDays int      `json:"last_remaining_days"`
+	LastChecked      time.Time `json:"last_checked"`
+	CreatedAt        time.Time `gorm:"autoCreateTime" json:"created_at"`
+}
+
+func (SSLCertMonitor) TableName() string { return "ssl_cert_monitors" }

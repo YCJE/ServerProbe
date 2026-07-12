@@ -13,6 +13,14 @@ import type {
   SystemStatus,
   AlertRule,
   NotifyChannel,
+  ServiceMonitor,
+  ServiceStatusResult,
+  SSLCertMonitor,
+  SSLCertStatusResult,
+  TrafficResponse,
+  MonthlyTraffic,
+  AllTrafficResponse,
+  SharePage,
 } from '@/types'
 
 /** API 基础路径 */
@@ -374,4 +382,115 @@ export async function getLogs(params?: {
   if (params?.search) query.set('search', params.search)
   const qs = query.toString()
   return request(`/logs${qs ? `?${qs}` : ''}`)
+}
+
+// ==================== 服务监控 API (P0-3) ====================
+
+/** 获取服务监控列表 */
+export async function getServiceMonitors(): Promise<ServiceMonitor[]> {
+  return request('/service-monitors')
+}
+
+/** 创建服务监控 */
+export async function createServiceMonitor(data: Partial<ServiceMonitor>): Promise<ServiceMonitor> {
+  return request('/service-monitors', { method: 'POST', body: JSON.stringify(data) })
+}
+
+/** 更新服务监控 */
+export async function updateServiceMonitor(id: number, data: Partial<ServiceMonitor>): Promise<ServiceMonitor> {
+  return request(`/service-monitors/${id}`, { method: 'PUT', body: JSON.stringify(data) })
+}
+
+/** 删除服务监控 */
+export async function deleteServiceMonitor(id: number): Promise<void> {
+  await request(`/service-monitors/${id}`, { method: 'DELETE' })
+}
+
+/** 测试服务监控 */
+export async function testServiceMonitor(id: number): Promise<{ status: string; latency: number; error?: string }> {
+  return request(`/service-monitors/${id}/test`, { method: 'POST', body: JSON.stringify({}) })
+}
+
+/** 获取服务监控状态列表 */
+export async function getServiceMonitorStatuses(): Promise<ServiceStatusResult[]> {
+  return request('/service-monitors/statuses')
+}
+
+// ==================== SSL 证书监控 API (P0-4) ====================
+
+/** 获取 SSL 证书监控列表 */
+export async function getSSLMonitors(): Promise<SSLCertMonitor[]> {
+  return request('/ssl-monitors')
+}
+
+/** 创建 SSL 证书监控 */
+export async function createSSLMonitor(data: Partial<SSLCertMonitor>): Promise<SSLCertMonitor> {
+  return request('/ssl-monitors', { method: 'POST', body: JSON.stringify(data) })
+}
+
+/** 更新 SSL 证书监控 */
+export async function updateSSLMonitor(id: number, data: Partial<SSLCertMonitor>): Promise<SSLCertMonitor> {
+  return request(`/ssl-monitors/${id}`, { method: 'PUT', body: JSON.stringify(data) })
+}
+
+/** 删除 SSL 证书监控 */
+export async function deleteSSLMonitor(id: number): Promise<void> {
+  await request(`/ssl-monitors/${id}`, { method: 'DELETE' })
+}
+
+/** 测试 SSL 证书监控 */
+export async function testSSLMonitor(id: number): Promise<{ remaining_days: number; expiry_date: string; error?: string }> {
+  return request(`/ssl-monitors/${id}/test`, { method: 'POST', body: JSON.stringify({}) })
+}
+
+/** 获取 SSL 证书监控状态列表 */
+export async function getSSLMonitorStatuses(): Promise<SSLCertStatusResult[]> {
+  return request('/ssl-monitors/statuses')
+}
+
+// ==================== 流量统计 API (P0-1) ====================
+
+/** 获取单台 Agent 流量数据 */
+export async function getTraffic(
+  agentId: number,
+  range: 'today' | 'month' | 'custom',
+  start?: string,
+  end?: string,
+): Promise<TrafficResponse | MonthlyTraffic> {
+  const params = new URLSearchParams({ range })
+  if (start) params.set('start', start)
+  if (end) params.set('end', end)
+  return request(`/traffic/${agentId}?${params}`)
+}
+
+/** 获取全部 Agent 当日流量汇总 */
+export async function getAllTraffic(): Promise<AllTrafficResponse> {
+  return request('/traffic')
+}
+
+// ==================== 分享页 API (P1-8) ====================
+
+/** 获取分享页列表 */
+export async function getSharePages(): Promise<SharePage[]> {
+  return request('/share-pages')
+}
+
+/** 创建分享页 */
+export async function createSharePage(data: Partial<SharePage>): Promise<SharePage> {
+  return request('/share-pages', { method: 'POST', body: JSON.stringify(data) })
+}
+
+/** 更新分享页 */
+export async function updateSharePage(id: number, data: Partial<SharePage>): Promise<SharePage> {
+  return request(`/share-pages/${id}`, { method: 'PUT', body: JSON.stringify(data) })
+}
+
+/** 删除分享页 */
+export async function deleteSharePage(id: number): Promise<void> {
+  await request(`/share-pages/${id}`, { method: 'DELETE' })
+}
+
+/** 获取单个分享页详情 */
+export async function getSharePage(id: number): Promise<SharePage> {
+  return request(`/share-pages/${id}`)
 }

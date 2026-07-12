@@ -15,6 +15,8 @@ const METRIC_OPTIONS = [
   { value: 'mem_usage', label: '内存使用率' },
   { value: 'disk_usage', label: '磁盘使用率' },
   { value: 'agent_offline', label: 'Agent离线' },
+  { value: 'service_status', label: '服务状态(1=down)' },
+  { value: 'ssl_cert_expiry', label: 'SSL证书剩余天数' },
 ]
 
 /** 操作符选项 */

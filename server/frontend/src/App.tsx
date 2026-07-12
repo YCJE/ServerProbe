@@ -16,6 +16,10 @@ import AlertManagement from '@/pages/AlertManagement'
 import NotifyChannels from '@/pages/NotifyChannels'
 import SystemStatus from '@/pages/SystemStatus'
 import LogViewer from '@/pages/LogViewer'
+import ServiceMonitorManagement from '@/pages/ServiceMonitorManagement'
+import SSLMonitorManagement from '@/pages/SSLMonitorManagement'
+import TrafficStats from '@/pages/TrafficStats'
+import SharePageManagement from '@/pages/SharePageManagement'
 
 function App() {
   const initTheme = useServerStore((s) => s.initTheme)
@@ -76,6 +80,10 @@ function App() {
         <Route path="ping-targets" element={<PingTargets />} />
         <Route path="alerts" element={<AlertManagement />} />
         <Route path="notify" element={<NotifyChannels />} />
+        <Route path="service-monitors" element={<ServiceMonitorManagement />} />
+        <Route path="ssl-monitors" element={<SSLMonitorManagement />} />
+        <Route path="traffic" element={<TrafficStats />} />
+        <Route path="share-pages" element={<SharePageManagement />} />
         <Route path="system" element={<SystemStatus />} />
         <Route path="logs" element={<LogViewer />} />
         <Route path="server/:id" element={<ServerDetail />} />

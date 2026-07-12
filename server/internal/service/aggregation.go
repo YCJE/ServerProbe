@@ -14,13 +14,17 @@ import (
 
 // AggregationService 数据聚合落盘服务
 type AggregationService struct {
-	monitor    *MonitorService
-	recordRepo *repository.RecordRepository
-	agentRepo  *repository.AgentRepository
-	ticker     *time.Ticker
-	stopCh     chan struct{}
-	stopOnce   sync.Once
-	wg         sync.WaitGroup // 跟踪后台 goroutine
+	monitor     *MonitorService
+	recordRepo  *repository.RecordRepository
+	agentRepo   *repository.AgentRepository
+	trafficRepo *repository.TrafficRepository // P0-1: 流量统计
+	ticker      *time.Ticker
+	stopCh      chan struct{}
+	stopOnce    sync.Once
+	wg          sync.WaitGroup // 跟踪后台 goroutine
+	// P0-1: 上次聚合时的累计流量值，用于计算增量
+	prevTraffic map[int64]struct{ Rx, Tx uint64 }
+	trafficMu   sync.Mutex
 }
 
 // NewAggregationService 创建数据聚合服务
@@ -28,12 +32,15 @@ func NewAggregationService(
 	monitor *MonitorService,
 	recordRepo *repository.RecordRepository,
 	agentRepo *repository.AgentRepository,
+	trafficRepo *repository.TrafficRepository,
 ) *AggregationService {
 	return &AggregationService{
-		monitor:    monitor,
-		recordRepo: recordRepo,
-		agentRepo:  agentRepo,
-		stopCh:     make(chan struct{}),
+		monitor:     monitor,
+		recordRepo:  recordRepo,
+		agentRepo:   agentRepo,
+		trafficRepo: trafficRepo,
+		stopCh:      make(chan struct{}),
+		prevTraffic: make(map[int64]struct{ Rx, Tx uint64 }),
 	}
 }
 
@@ -198,6 +205,46 @@ func (s *AggregationService) aggregate() {
 		for i := range records {
 			if err := s.recordRepo.CreateRecord(&records[i]); err != nil {
 				log.Printf("写入聚合数据失败 (agent_id=%d): %v", records[i].AgentID, err)
+			}
+		}
+	}
+
+	// P0-1: 流量统计 — 计算增量并写入当日流量记录
+	if s.trafficRepo != nil {
+		s.trafficMu.Lock()
+		defer s.trafficMu.Unlock()
+		today := time.Now().Format("2006-01-02")
+		for _, agent := range agents {
+			rb := s.monitor.GetRingBuffer(agent.ID)
+			if rb == nil {
+				continue
+			}
+			now := time.Now().Unix()
+			points := rb.GetByTimeRange(now-300, now)
+			if len(points) == 0 {
+				continue
+			}
+			// 取最新数据点的累计流量
+			latest := points[len(points)-1]
+			prev, hasPrev := s.prevTraffic[agent.ID]
+			var rxDelta, txDelta uint64
+			if hasPrev {
+				// 正常情况：当前值 > 上次值，差值为增量
+				if latest.TotalRx >= prev.Rx {
+					rxDelta = latest.TotalRx - prev.Rx
+				}
+				// 计数器重置（重启）：当前值 < 上次值，当前值即为增量
+				if latest.TotalTx >= prev.Tx {
+					txDelta = latest.TotalTx - prev.Tx
+				}
+			}
+			// 更新上次值
+			s.prevTraffic[agent.ID] = struct{ Rx, Tx uint64 }{latest.TotalRx, latest.TotalTx}
+			// 有增量才写入
+			if rxDelta > 0 || txDelta > 0 {
+				if err := s.trafficRepo.UpsertDailyTraffic(agent.ID, today, rxDelta, txDelta); err != nil {
+					log.Printf("写入流量统计失败 (agent_id=%d): %v", agent.ID, err)
+				}
 			}
 		}
 	}

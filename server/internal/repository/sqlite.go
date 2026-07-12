@@ -65,6 +65,9 @@ func NewSQLiteDB(dataDir string) (*SQLiteDB, error) {
 		&model.Admin{},
 		&model.SharePage{},
 		&model.SystemSetting{},
+		&model.TrafficRecord{},
+		&model.ServiceMonitor{},
+		&model.SSLCertMonitor{},
 	); err != nil {
 		return nil, fmt.Errorf("数据库迁移失败: %w", err)
 	}

@@ -15,17 +15,22 @@ import (
 
 // Router API 路由
 type Router struct {
-	router             *gin.Engine
-	middleware         *Middleware
-	authHandler        *AuthHandler
-	serverHandler      *ServerHandler
-	agentHandler       *AgentHandler
-	agentAPIHandler    *AgentAPIHandler
-	dashboardWSHandler *DashboardWSHandler
-	pingTargetHandler  *PingTargetHandler
-	alertHandler       *AlertHandler
-	notifyHandler      *NotifyHandler
-	logHandler         *LogHandler
+	router                *gin.Engine
+	middleware            *Middleware
+	authHandler           *AuthHandler
+	serverHandler         *ServerHandler
+	agentHandler          *AgentHandler
+	agentAPIHandler       *AgentAPIHandler
+	dashboardWSHandler    *DashboardWSHandler
+	pingTargetHandler     *PingTargetHandler
+	alertHandler          *AlertHandler
+	notifyHandler         *NotifyHandler
+	logHandler            *LogHandler
+	serviceMonitorHandler *ServiceMonitorHandler
+	sslMonitorHandler     *SSLMonitorHandler
+	trafficHandler        *TrafficHandler
+	prometheusHandler     *PrometheusHandler
+	shareHandler          *ShareHandler
 }
 
 // NewRouter 创建路由
@@ -44,6 +49,12 @@ func NewRouter(
 	alertEngine *service.AlertEngine,
 	notifySvc *service.NotifyService,
 	logCapture *service.LogCapture,
+	serviceMonitorRepo *repository.ServiceMonitorRepository,
+	sslMonitorRepo *repository.SSLCertMonitorRepository,
+	trafficRepo *repository.TrafficRepository,
+	sharePageRepo *repository.SharePageRepository,
+	serviceMonitorEngine *service.ServiceMonitorEngine,
+	sslMonitorEngine *service.SSLMonitorEngine,
 ) *Router {
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
@@ -86,11 +97,19 @@ func NewRouter(
 	alertHandler := NewAlertHandler(alertRepo, notifyRepo, alertEngine)
 	notifyHandler := NewNotifyHandler(notifyRepo, notifySvc, alertRepo)
 	logHandler := NewLogHandler(logCapture)
+	serviceMonitorHandler := NewServiceMonitorHandler(serviceMonitorRepo, serviceMonitorEngine)
+	sslMonitorHandler := NewSSLMonitorHandler(sslMonitorRepo, sslMonitorEngine)
+	trafficHandler := NewTrafficHandler(trafficRepo)
+	prometheusHandler := NewPrometheusHandler(monitor)
+	shareHandler := NewShareHandler(sharePageRepo)
 
 	// 健康检查
 	r.GET("/api/v1/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"ok": true, "service": "server-probe"})
 	})
+
+	// Prometheus 指标端点（公开，无需认证）
+	r.GET("/metrics", prometheusHandler.HandleMetrics)
 
 	// API v1
 	api := r.Group("/api/v1")
@@ -180,21 +199,53 @@ func NewRouter(
 			protected.PUT("/notify/channels/:id", notifyHandler.HandleUpdateChannel)
 			protected.DELETE("/notify/channels/:id", notifyHandler.HandleDeleteChannel)
 			protected.POST("/notify/channels/:id/test", notifyHandler.HandleTestChannel)
+
+			// 服务监控管理 (P0-3)
+			protected.GET("/service-monitors", serviceMonitorHandler.HandleListServiceMonitors)
+			protected.POST("/service-monitors", serviceMonitorHandler.HandleCreateServiceMonitor)
+			protected.PUT("/service-monitors/:id", serviceMonitorHandler.HandleUpdateServiceMonitor)
+			protected.DELETE("/service-monitors/:id", serviceMonitorHandler.HandleDeleteServiceMonitor)
+			protected.POST("/service-monitors/:id/test", serviceMonitorHandler.HandleTestServiceMonitor)
+			protected.GET("/service-monitors/statuses", serviceMonitorHandler.HandleServiceMonitorStatuses)
+
+			// SSL 证书监控管理 (P0-4)
+			protected.GET("/ssl-monitors", sslMonitorHandler.HandleListSSLMonitors)
+			protected.POST("/ssl-monitors", sslMonitorHandler.HandleCreateSSLMonitor)
+			protected.PUT("/ssl-monitors/:id", sslMonitorHandler.HandleUpdateSSLMonitor)
+			protected.DELETE("/ssl-monitors/:id", sslMonitorHandler.HandleDeleteSSLMonitor)
+			protected.POST("/ssl-monitors/:id/test", sslMonitorHandler.HandleTestSSLMonitor)
+			protected.GET("/ssl-monitors/statuses", sslMonitorHandler.HandleSSLMonitorStatuses)
+
+			// 流量统计 (P0-1)
+			protected.GET("/traffic", trafficHandler.HandleGetAllTraffic)
+			protected.GET("/traffic/:agentId", trafficHandler.HandleGetTraffic)
+
+			// 分享页管理 (P1-8)
+			protected.GET("/share-pages", shareHandler.HandleListSharePages)
+			protected.POST("/share-pages", shareHandler.HandleCreateSharePage)
+			protected.GET("/share-pages/:id", shareHandler.HandleGetSharePage)
+			protected.PUT("/share-pages/:id", shareHandler.HandleUpdateSharePage)
+			protected.DELETE("/share-pages/:id", shareHandler.HandleDeleteSharePage)
 		}
 	}
 
 	return &Router{
-		router:             r,
-		middleware:         middleware,
-		authHandler:        authHandler,
-		serverHandler:      serverHandler,
-		agentHandler:       agentHandler,
-		agentAPIHandler:    agentAPIHandler,
-		dashboardWSHandler: dashboardWSHandler,
-		pingTargetHandler:  pingTargetHandler,
-		alertHandler:       alertHandler,
-		notifyHandler:      notifyHandler,
-		logHandler:         logHandler,
+		router:                r,
+		middleware:            middleware,
+		authHandler:           authHandler,
+		serverHandler:         serverHandler,
+		agentHandler:          agentHandler,
+		agentAPIHandler:       agentAPIHandler,
+		dashboardWSHandler:    dashboardWSHandler,
+		pingTargetHandler:     pingTargetHandler,
+		alertHandler:          alertHandler,
+		notifyHandler:         notifyHandler,
+		logHandler:            logHandler,
+		serviceMonitorHandler: serviceMonitorHandler,
+		sslMonitorHandler:     sslMonitorHandler,
+		trafficHandler:        trafficHandler,
+		prometheusHandler:     prometheusHandler,
+		shareHandler:          shareHandler,
 	}
 }
 
