@@ -26,6 +26,19 @@ function getDaysDotColor(days: number): string {
   return 'bg-emerald-500'
 }
 
+/** 检查 expiryDate 是否为有效日期（排除 Go time.Time 零值 "0001-01-01T..."） */
+function isValidExpiryDate(date: string | undefined): boolean {
+  if (!date) return false
+  return !date.startsWith('0001-')
+}
+
+/** 格式化 ISO 日期为 YYYY-MM-DD */
+function formatExpiryDate(date: string | undefined): string {
+  if (!isValidExpiryDate(date)) return '-'
+  // ISO 格式 "2026-08-13T00:00:00Z" -> "2026-08-13"
+  return date!.substring(0, 10)
+}
+
 /** 表单数据 */
 interface FormData {
   domain: string
@@ -180,7 +193,7 @@ export default function SSLMonitorManagement() {
       } else {
         setTestResult({
           id: monitor.id,
-          text: `到期日期: ${result.expiry_date} | 剩余: ${result.remaining_days} 天`,
+          text: `到期日期: ${formatExpiryDate(result.expiry_date)} | 剩余: ${result.remaining_days} 天`,
         })
       }
     } catch (err) {
@@ -279,8 +292,8 @@ export default function SSLMonitorManagement() {
                 {monitors.map((monitor) => {
                   const status = getStatus(monitor.id)
                   const remainingDays = status?.last_remaining_days ?? monitor.last_remaining_days ?? 0
-                  const expiryDate = status?.last_expiry_date ?? monitor.last_expiry_date ?? '-'
-                  const hasData = remainingDays > 0 || expiryDate !== '-'
+                  const expiryDate = status?.last_expiry_date ?? monitor.last_expiry_date
+                  const hasData = isValidExpiryDate(expiryDate)
                   return (
                     <tr key={monitor.id} className="text-foreground transition-colors hover:bg-muted/50">
                       <td className="px-3 py-3 tabular-nums text-muted-foreground">{monitor.id}</td>
@@ -300,7 +313,7 @@ export default function SSLMonitorManagement() {
                         )}
                       </td>
                       <td className="px-3 py-3 tabular-nums text-muted-foreground">
-                        {hasData ? expiryDate : '-'}
+                        {hasData ? formatExpiryDate(expiryDate) : '-'}
                       </td>
                       <td className="px-3 py-3 tabular-nums text-muted-foreground">
                         {monitor.alert_days} 天

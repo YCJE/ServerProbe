@@ -147,8 +147,8 @@ func (e *ServiceMonitorEngine) probeHTTP(monitor *model.ServiceMonitor) (status 
 		return "down", latency
 	}
 	defer func() {
-		// drain body 以允许连接复用
-		io.Copy(io.Discard, resp.Body)
+		// drain body 以允许连接复用，限制读取 1MB 防止恶意大响应消耗资源
+		io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<20))
 		resp.Body.Close()
 	}()
 
