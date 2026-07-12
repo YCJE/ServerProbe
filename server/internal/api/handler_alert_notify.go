@@ -64,10 +64,12 @@ func (h *AlertHandler) HandleCreateAlert(c *gin.Context) {
 	}
 
 	validMetrics := map[string]bool{
-		model.MetricCPUUsage:     true,
-		model.MetricMemUsage:     true,
-		model.MetricDiskUsage:    true,
-		model.MetricAgentOffline: true,
+		model.MetricCPUUsage:       true,
+		model.MetricMemUsage:       true,
+		model.MetricDiskUsage:      true,
+		model.MetricAgentOffline:   true,
+		model.MetricServiceStatus:  true,
+		model.MetricSSLCertExpiry:  true,
 	}
 	if !validMetrics[req.Metric] {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的监控指标"})
@@ -168,10 +170,12 @@ func (h *AlertHandler) HandleUpdateAlert(c *gin.Context) {
 	}
 	if req.Metric != nil {
 		validMetrics := map[string]bool{
-			model.MetricCPUUsage:     true,
-			model.MetricMemUsage:     true,
-			model.MetricDiskUsage:    true,
-			model.MetricAgentOffline: true,
+			model.MetricCPUUsage:       true,
+			model.MetricMemUsage:       true,
+			model.MetricDiskUsage:      true,
+			model.MetricAgentOffline:   true,
+			model.MetricServiceStatus:  true,
+			model.MetricSSLCertExpiry:  true,
 		}
 		if !validMetrics[*req.Metric] {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "无效的监控指标"})
@@ -264,6 +268,14 @@ func validateThreshold(metric string, threshold float64) error {
 	case model.MetricAgentOffline:
 		if threshold != 0 && threshold != 1 {
 			return fmt.Errorf("离线指标的阈值必须为 0 或 1")
+		}
+	case model.MetricServiceStatus:
+		if threshold != 0 && threshold != 1 {
+			return fmt.Errorf("服务状态指标的阈值必须为 0 或 1 (1=down)")
+		}
+	case model.MetricSSLCertExpiry:
+		if threshold < 0 || threshold > 365 {
+			return fmt.Errorf("SSL证书剩余天数指标的阈值必须在 0-365 之间")
 		}
 	}
 	return nil
