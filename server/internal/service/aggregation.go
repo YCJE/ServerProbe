@@ -89,6 +89,9 @@ func (s *AggregationService) aggregate() {
 
 	now := time.Now().Unix()
 	records := make([]model.MetricRecord, 0, len(agents))
+	// 收集每个 Agent 的最新累计流量，避免流量循环中重复查询 RingBuffer
+	type trafficInfo struct{ rx, tx uint64 }
+	agentTraffic := make(map[int64]trafficInfo, len(agents))
 
 	for _, agent := range agents {
 		rb := s.monitor.GetRingBuffer(agent.ID)
@@ -198,6 +201,10 @@ func (s *AggregationService) aggregate() {
 			ProcessCount: processCountAvg,
 			PingData:     pingStr,
 		})
+
+		// 收集最新累计流量供流量统计使用（避免重复查询 RingBuffer）
+		lastPoint := points[len(points)-1]
+		agentTraffic[agent.ID] = trafficInfo{rx: lastPoint.TotalRx, tx: lastPoint.TotalTx}
 	}
 
 	// 批量写入聚合记录（通过 BatchWriter 异步缓冲，每条记录推入 channel）
@@ -214,40 +221,41 @@ func (s *AggregationService) aggregate() {
 		s.trafficMu.Lock()
 		defer s.trafficMu.Unlock()
 		today := time.Now().Format("2006-01-02")
+
+		// 清理已删除 Agent 的 prevTraffic 条目，防止内存泄漏
+		activeAgentIDs := make(map[int64]bool, len(agents))
 		for _, agent := range agents {
-			rb := s.monitor.GetRingBuffer(agent.ID)
-			if rb == nil {
-				continue
+			activeAgentIDs[agent.ID] = true
+		}
+		for agentID := range s.prevTraffic {
+			if !activeAgentIDs[agentID] {
+				delete(s.prevTraffic, agentID)
 			}
-			now := time.Now().Unix()
-			points := rb.GetByTimeRange(now-300, now)
-			if len(points) == 0 {
-				continue
-			}
-			// 取最新数据点的累计流量
-			latest := points[len(points)-1]
-			prev, hasPrev := s.prevTraffic[agent.ID]
+		}
+
+		for agentID, traffic := range agentTraffic {
+			prev, hasPrev := s.prevTraffic[agentID]
 			var rxDelta, txDelta uint64
 			if hasPrev {
 				// 正常情况：当前值 >= 上次值，差值为增量
-				if latest.TotalRx >= prev.Rx {
-					rxDelta = latest.TotalRx - prev.Rx
+				if traffic.rx >= prev.Rx {
+					rxDelta = traffic.rx - prev.Rx
 				} else {
 					// 计数器重置（Agent 重启）：当前值 < 上次值，当前值即为增量
-					rxDelta = latest.TotalRx
+					rxDelta = traffic.rx
 				}
-				if latest.TotalTx >= prev.Tx {
-					txDelta = latest.TotalTx - prev.Tx
+				if traffic.tx >= prev.Tx {
+					txDelta = traffic.tx - prev.Tx
 				} else {
-					txDelta = latest.TotalTx
+					txDelta = traffic.tx
 				}
 			}
 			// 更新上次值
-			s.prevTraffic[agent.ID] = struct{ Rx, Tx uint64 }{latest.TotalRx, latest.TotalTx}
+			s.prevTraffic[agentID] = struct{ Rx, Tx uint64 }{traffic.rx, traffic.tx}
 			// 有增量才写入
 			if rxDelta > 0 || txDelta > 0 {
-				if err := s.trafficRepo.UpsertDailyTraffic(agent.ID, today, rxDelta, txDelta); err != nil {
-					log.Printf("写入流量统计失败 (agent_id=%d): %v", agent.ID, err)
+				if err := s.trafficRepo.UpsertDailyTraffic(agentID, today, rxDelta, txDelta); err != nil {
+					log.Printf("写入流量统计失败 (agent_id=%d): %v", agentID, err)
 				}
 			}
 		}

@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
@@ -161,13 +162,25 @@ func (s *NotifyService) sendEmail(channel *model.NotifyChannel, title, content s
 
 // sendEmailStandard 使用标准 SMTP（带 STARTTLS）发送邮件，所有阶段都有超时保护
 func (s *NotifyService) sendEmailStandard(addr string, auth smtp.Auth, config model.EmailConfig, body string, recipients []string) error {
-	// SSRF 二次校验：防止配置校验后 DNS rebinding 绕过内网 IP 限制
-	if err := pkg.CheckHostPort(config.SMTPHost, config.SMTPPort); err != nil {
-		return fmt.Errorf("SMTP 服务器安全检查失败: %w", err)
+	// SSRF 防护：手动解析 DNS 并检查所有 IP，然后直接连接已验证的 IP（防止 DNS rebinding）
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	ips, err := net.DefaultResolver.LookupIP(ctx, "ip", config.SMTPHost)
+	if err != nil {
+		return fmt.Errorf("SMTP 服务器 DNS 解析失败: %w", err)
+	}
+	if len(ips) == 0 {
+		return fmt.Errorf("SMTP 服务器 DNS 解析未返回 IP")
+	}
+	for _, ip := range ips {
+		if err := pkg.CheckIP(ip); err != nil {
+			return fmt.Errorf("SMTP 服务器安全检查失败: %w", err)
+		}
 	}
 
-	// 使用带超时的 TCP 连接
-	conn, err := net.DialTimeout("tcp", addr, 10*time.Second)
+	// 使用带超时的 TCP 连接（连接到已验证的安全 IP）
+	safeAddr := net.JoinHostPort(ips[0].String(), fmt.Sprintf("%d", config.SMTPPort))
+	conn, err := net.DialTimeout("tcp", safeAddr, 10*time.Second)
 	if err != nil {
 		return fmt.Errorf("连接 SMTP 服务器失败: %w", err)
 	}
@@ -230,16 +243,28 @@ func (s *NotifyService) sendEmailStandard(addr string, auth smtp.Auth, config mo
 
 // sendEmailWithTLS 使用隐式 TLS (SMTPS) 发送邮件
 func (s *NotifyService) sendEmailWithTLS(addr string, auth smtp.Auth, config model.EmailConfig, body string) error {
-	// SSRF 二次校验：防止配置校验后 DNS rebinding 绕过内网 IP 限制
-	if err := pkg.CheckHostPort(config.SMTPHost, config.SMTPPort); err != nil {
-		return fmt.Errorf("SMTP 服务器安全检查失败: %w", err)
+	// SSRF 防护：手动解析 DNS 并检查所有 IP，然后直接连接已验证的 IP（防止 DNS rebinding）
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	ips, err := net.DefaultResolver.LookupIP(ctx, "ip", config.SMTPHost)
+	if err != nil {
+		return fmt.Errorf("SMTP 服务器 DNS 解析失败: %w", err)
+	}
+	if len(ips) == 0 {
+		return fmt.Errorf("SMTP 服务器 DNS 解析未返回 IP")
+	}
+	for _, ip := range ips {
+		if err := pkg.CheckIP(ip); err != nil {
+			return fmt.Errorf("SMTP 服务器安全检查失败: %w", err)
+		}
 	}
 
-	// 建立 TLS 连接
+	// 建立 TLS 连接（连接到已验证的安全 IP，ServerName 设置原始域名保证 SNI）
+	safeAddr := net.JoinHostPort(ips[0].String(), fmt.Sprintf("%d", config.SMTPPort))
 	conn, err := tls.DialWithDialer(
 		&net.Dialer{Timeout: 10 * time.Second},
 		"tcp",
-		addr,
+		safeAddr,
 		&tls.Config{ServerName: config.SMTPHost},
 	)
 	if err != nil {
