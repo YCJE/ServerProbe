@@ -61,6 +61,15 @@ func (r *AgentRepository) GetByFingerprint(fingerprint string) (*model.Agent, er
 	return &agent, nil
 }
 
+// GetByFingerprintTx 在事务内根据主机指纹获取 Agent（用于注册流程避免 TOCTOU 竞态）
+func (r *AgentRepository) GetByFingerprintTx(tx *gorm.DB, fingerprint string) (*model.Agent, error) {
+	var agent model.Agent
+	if err := tx.Where("host_fingerprint = ?", fingerprint).First(&agent).Error; err != nil {
+		return nil, err
+	}
+	return &agent, nil
+}
+
 // List 获取所有 Agent
 func (r *AgentRepository) List() ([]model.Agent, error) {
 	var agents []model.Agent
@@ -111,6 +120,16 @@ func (r *AgentRepository) UpdateTags(id int64, tags string) error {
 	return r.db.Model(&model.Agent{}).
 		Where("id = ?", id).
 		Update("tags", tags).Error
+}
+
+// UpdateProfile 原子更新显示名称与标签（单条 SQL，避免部分更新）
+func (r *AgentRepository) UpdateProfile(id int64, displayName, tags string) error {
+	return r.db.Model(&model.Agent{}).
+		Where("id = ?", id).
+		Updates(map[string]interface{}{
+			"display_name": displayName,
+			"tags":         tags,
+		}).Error
 }
 
 // UpdateStaticInfo 更新 Agent 静态信息（OS、Arch、Kernel、Hostname、AgentVersion、Virtualization、Distro）

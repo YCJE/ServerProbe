@@ -339,6 +339,13 @@ func (h *AgentHandler) handleReport(ws *agentWSConn, msg *sharedmodel.WSMessage,
 		return
 	}
 
+	// 先做频率检查（廉价操作），再执行昂贵的序列化与数据校验，
+	// 防止攻击者用大体积消息反复触发 json.Marshal 造成 CPU DoS
+	if err := h.validator.CheckReportFrequency(id); err != nil {
+		log.Printf("Agent %d 上报频率异常: %v", id, err)
+		return
+	}
+
 	// 校验数据大小 (≤10KB)
 	if rawData, err := json.Marshal(msg.Data); err == nil {
 		if err := h.validator.CheckDataSize(rawData); err != nil {
@@ -352,11 +359,6 @@ func (h *AgentHandler) handleReport(ws *agentWSConn, msg *sharedmodel.WSMessage,
 
 	if err := h.validator.ValidateMetricData(id, msg.Data); err != nil {
 		log.Printf("Agent %d 数据校验失败: %v", id, err)
-		return
-	}
-
-	if err := h.validator.CheckReportFrequency(id); err != nil {
-		log.Printf("Agent %d 上报频率异常: %v", id, err)
 		return
 	}
 
@@ -503,7 +505,7 @@ func (h *AgentHandler) HandleGetAgentConfig(c *gin.Context) {
 		return
 	}
 
-	agent, err := h.registry.ValidateToken(token)
+	_, err := h.registry.ValidateToken(token)
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Token 无效"})
 		return
@@ -515,7 +517,6 @@ func (h *AgentHandler) HandleGetAgentConfig(c *gin.Context) {
 		return
 	}
 
-	_ = agent
 	c.JSON(http.StatusOK, config)
 }
 

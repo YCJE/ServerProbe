@@ -195,6 +195,8 @@ func main() {
 		Addr:              *listen,
 		Handler:           router.GetRouter(),
 		ReadHeaderTimeout: 10 * time.Second, // 防止 Slowloris 慢速头部 DoS 攻击
+		ReadTimeout:       30 * time.Second, // 防止慢速请求体 DoS（WebSocket 升级后不受影响）
+		WriteTimeout:      30 * time.Second, // 防止慢速响应 DoS（WebSocket 升级后不受影响）
 		IdleTimeout:       120 * time.Second, // 空闲连接超时，释放闲置资源
 		TLSConfig: &tls.Config{
 			MinVersion: tls.VersionTLS12,
@@ -271,6 +273,16 @@ func loadOrCreateSecret(path string) (string, error) {
 		secret := strings.TrimSpace(string(data))
 		if len(secret) < 32 {
 			return "", fmt.Errorf("JWT 密钥长度不足 (%d < 32)，请删除密钥文件以重新生成", len(secret))
+		}
+		// 校验并修复文件权限：JWT 密钥必须为 0600，防止其他系统用户读取
+		if info, statErr := os.Stat(path); statErr == nil {
+			if info.Mode().Perm() != 0600 {
+				if chmodErr := os.Chmod(path, 0600); chmodErr == nil {
+					log.Printf("警告: JWT 密钥文件权限已修正为 0600")
+				} else {
+					log.Printf("警告: 无法修正 JWT 密钥文件权限: %v", chmodErr)
+				}
+			}
 		}
 		return secret, nil
 	}

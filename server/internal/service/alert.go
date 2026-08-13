@@ -496,8 +496,8 @@ func (e *AlertEngine) SendTestNotification(rule *model.AlertRule) error {
 	}
 
 	title := fmt.Sprintf("[测试] %s", rule.Name)
-	content := fmt.Sprintf("这是一条测试通知。规则: %s, 指标: %s, 阈值: %.2f %s %.2f",
-		rule.Name, rule.Metric, rule.Threshold, rule.Operator, rule.Threshold)
+	content := fmt.Sprintf("这是一条测试通知。规则: %s, 指标: %s, 阈值: %.2f, 操作符: %s",
+		rule.Name, rule.Metric, rule.Threshold, rule.Operator)
 
 	return e.notifySvc.SendNotification(rule.NotifyChannelID, title, content)
 }

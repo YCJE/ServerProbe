@@ -916,11 +916,10 @@ func (m *MonitorService) GetPublicDashboardJSON() []byte {
 		TotalRx      uint64                   `json:"total_rx"`
 		TotalTx      uint64                   `json:"total_tx"`
 		DiskUsage    float64                  `json:"disk_usage"`
-		TCPConns     int                      `json:"tcp_connections"`
-		UDPConns     int                      `json:"udp_connections"`
-		ProcessCount int                      `json:"process_count"`
-		PingData     []sharedmodel.PingResult `json:"ping_data"`
-		Timestamp    int64                    `json:"timestamp"`
+		// 注意: 不包含 TCPConns/UDPConns/ProcessCount/Disks 详情，
+		// 与 HTTP 公开端点 (HandlePublicServers/HandlePublicDashboard/publicHistoryPoint) 保持一致，防止泄露连接数与进程信息
+		PingData  []sharedmodel.PingResult `json:"ping_data"`
+		Timestamp int64                    `json:"timestamp"`
 	}
 
 	publicItems := make([]PublicSummary, 0, len(items))
@@ -966,9 +965,6 @@ func (m *MonitorService) GetPublicDashboardJSON() []byte {
 			TotalRx:      item.TotalRx,
 			TotalTx:      item.TotalTx,
 			DiskUsage:    item.DiskUsage,
-			TCPConns:     item.TCPConns,
-			UDPConns:     item.UDPConns,
-			ProcessCount: item.ProcessCount,
 			PingData:     publicPing,
 			Timestamp:    item.Timestamp,
 		})

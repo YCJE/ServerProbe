@@ -85,6 +85,42 @@ func (v *DataValidator) ValidateMetricData(agentID int64, data *sharedmodel.Metr
 		return fmt.Errorf("CPU 核心数异常: %d", data.CPU.Cores)
 	}
 
+	// 校验系统负载（不能为负，且不能为 NaN/Inf）
+	for _, load := range []float64{data.CPU.Load1, data.CPU.Load5, data.CPU.Load15} {
+		if load < 0 || load != load || load > 1e6 { // load != load 检测 NaN
+			return fmt.Errorf("系统负载超出范围: %f", load)
+		}
+	}
+
+	// 校验进程数与进程列表
+	if data.ProcessCount < 0 || data.ProcessCount > 100000 {
+		return fmt.Errorf("进程数异常: %d", data.ProcessCount)
+	}
+	if len(data.Processes) > 50 {
+		return fmt.Errorf("进程列表条目过多: %d", len(data.Processes))
+	}
+	for _, proc := range data.Processes {
+		if len(proc.Name) > 256 {
+			return fmt.Errorf("进程名过长: %d", len(proc.Name))
+		}
+		if proc.CPU < 0 || proc.CPU > 1000 {
+			return fmt.Errorf("进程 CPU 使用率超出范围: %f", proc.CPU)
+		}
+	}
+
+	// 校验 TCP/UDP 连接数
+	if data.Network.TCPConnections < 0 || data.Network.TCPConnections > 10000000 {
+		return fmt.Errorf("TCP 连接数异常: %d", data.Network.TCPConnections)
+	}
+	if data.Network.UDPConnections < 0 || data.Network.UDPConnections > 10000000 {
+		return fmt.Errorf("UDP 连接数异常: %d", data.Network.UDPConnections)
+	}
+
+	// 校验 NTP 时间偏移（±10 分钟）
+	if data.TimeOffset < -600000 || data.TimeOffset > 600000 {
+		return fmt.Errorf("时间偏移超出范围: %d ms", data.TimeOffset)
+	}
+
 	// 校验内存使用率
 	if data.Memory.Total > 0 {
 		memUsage := float64(data.Memory.Used) / float64(data.Memory.Total) * 100
@@ -121,6 +157,15 @@ func (v *DataValidator) ValidateMetricData(agentID int64, data *sharedmodel.Metr
 
 // ValidatePingResult 校验 Ping 探测结果
 func (v *DataValidator) ValidatePingResult(result *sharedmodel.PingResult) error {
+	if len(result.Name) > 128 {
+		return fmt.Errorf("Ping 目标名称过长: %d", len(result.Name))
+	}
+	if len(result.Method) > 32 {
+		return fmt.Errorf("Ping 探测方式过长: %d", len(result.Method))
+	}
+	if len(result.Target) > 512 {
+		return fmt.Errorf("Ping 目标地址过长: %d", len(result.Target))
+	}
 	if result.AvgLatency < 0 || result.AvgLatency > 60000 {
 		return fmt.Errorf("延迟超出范围: %f", result.AvgLatency)
 	}
@@ -129,6 +174,9 @@ func (v *DataValidator) ValidatePingResult(result *sharedmodel.PingResult) error
 	}
 	if result.MaxLatency < 0 || result.MaxLatency > 60000 {
 		return fmt.Errorf("最大延迟超出范围: %f", result.MaxLatency)
+	}
+	if result.Jitter < 0 || result.Jitter > 60000 {
+		return fmt.Errorf("抖动超出范围: %f", result.Jitter)
 	}
 	if result.Loss < 0 || result.Loss > 100 {
 		return fmt.Errorf("丢包率超出范围: %f", result.Loss)

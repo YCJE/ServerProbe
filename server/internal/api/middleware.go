@@ -132,16 +132,28 @@ func (m *Middleware) LoginRateLimit() gin.HandlerFunc {
 		rateLimiter.attempts[ip] = valid
 		rateLimiter.mu.Unlock()
 
+		// 记录本次尝试时间戳，供登录成功后精确移除对应计数
+		// 避免并发请求下"移除最后一个元素"误删其他请求的计数
+		c.Set("login_attempt_time", now)
+
 		c.Next()
 
 		// 仅当 handler 显式标记登录成功时才移除计数
 		// （NeedTOTP 返回 200 但并非真正登录成功，不应移除计数，防止 TOTP 暴力破解）
 		if c.GetBool("login_success") {
-			rateLimiter.mu.Lock()
-			if cur, ok := rateLimiter.attempts[ip]; ok && len(cur) > 0 {
-				rateLimiter.attempts[ip] = cur[:len(cur)-1]
+			if attemptTime, ok := c.Get("login_attempt_time"); ok {
+				ts := attemptTime.(time.Time)
+				rateLimiter.mu.Lock()
+				if cur, ok := rateLimiter.attempts[ip]; ok {
+					for i, t := range cur {
+						if t.Equal(ts) {
+							rateLimiter.attempts[ip] = append(cur[:i], cur[i+1:]...)
+							break
+						}
+					}
+				}
+				rateLimiter.mu.Unlock()
 			}
-			rateLimiter.mu.Unlock()
 		}
 	}
 }

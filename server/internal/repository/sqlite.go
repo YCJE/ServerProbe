@@ -20,9 +20,13 @@ type SQLiteDB struct {
 
 // NewSQLiteDB 创建 SQLite 连接并自动迁移表结构
 func NewSQLiteDB(dataDir string) (*SQLiteDB, error) {
-	// 确保数据目录存在
-	if err := os.MkdirAll(dataDir, 0755); err != nil {
+	// 确保数据目录存在（权限 0700，防止其他系统用户读取数据库与密钥）
+	if err := os.MkdirAll(dataDir, 0700); err != nil {
 		return nil, fmt.Errorf("创建数据目录失败: %w", err)
+	}
+	// 修正已存在目录的权限（若此前以 0755 创建）
+	if info, err := os.Stat(dataDir); err == nil && info.Mode().Perm() != 0700 {
+		_ = os.Chmod(dataDir, 0700)
 	}
 
 	dbPath := filepath.Join(dataDir, "probe.db")
@@ -34,6 +38,11 @@ func NewSQLiteDB(dataDir string) (*SQLiteDB, error) {
 	})
 	if err != nil {
 		return nil, fmt.Errorf("打开 SQLite 失败: %w", err)
+	}
+
+	// 数据库文件权限设为 0600，防止其他系统用户读取敏感数据
+	if info, statErr := os.Stat(dbPath); statErr == nil && info.Mode().Perm() != 0600 {
+		_ = os.Chmod(dbPath, 0600)
 	}
 
 	// 获取 SQL DB 用于连接池配置

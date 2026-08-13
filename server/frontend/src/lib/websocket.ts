@@ -33,16 +33,20 @@ export class DashboardWebSocket {
     this.requireToken = requireToken
   }
 
-  /** 建立 WebSocket 连接 */
+  /** 建立 WebSocket 连接（手动调用入口，重置退避索引） */
   connect(): void {
     if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) {
       return
     }
 
     this.shouldReconnect = true
-    // 新连接重置退避索引，避免上次断连累积的长延迟影响首次重连
+    // 手动连接重置退避索引，避免上次断连累积的长延迟影响首次重连
     this.reconnectIndex = 0
+    this.openSocket()
+  }
 
+  /** 实际创建 WebSocket 连接（自动重连复用，保留退避索引） */
+  private openSocket(): void {
     // Cookie 由浏览器自动发送，无需在 URL 中传递 Token
     try {
       this.ws = new WebSocket(this.url)
@@ -184,7 +188,8 @@ export class DashboardWebSocket {
     console.log(`[WS] 将在 ${delay}ms 后重连 (第 ${this.reconnectIndex} 次):`, this.url)
 
     this.reconnectTimer = setTimeout(() => {
-      this.connect()
+      // 调用 openSocket 而非 connect，避免重置退避索引导致指数退避失效
+      this.openSocket()
     }, delay)
   }
 

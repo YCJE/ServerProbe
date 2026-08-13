@@ -58,7 +58,12 @@ func (s *AgentRegistryService) GenerateRegisterCode(displayName, remark string) 
 		return nil, fmt.Errorf("保存注册码失败: %w", err)
 	}
 
-	log.Printf("生成注册码: %s, 名称: %s, 有效期 15 分钟", code, displayName)
+	// 日志中仅显示注册码前 4 位，避免完整注册码泄露到日志
+	masked := code
+	if len(code) > 4 {
+		masked = code[:4] + "****"
+	}
+	log.Printf("生成注册码: %s, 名称: %s, 有效期 15 分钟", masked, displayName)
 	return rc, nil
 }
 
@@ -82,8 +87,25 @@ func (s *AgentRegistryService) RegisterAgent(req RegisterAgentRequest) (*Registe
 		return nil, fmt.Errorf("主机指纹不能为空")
 	}
 
-	// 检查主机指纹是否已注册（同一台机器重新注册）
-	existingAgent, fpErr := s.agentRepo.GetByFingerprint(req.HostFingerprint)
+	// 校验注册字段长度，防止超长字符串写入数据库
+	if len(req.Hostname) > 256 {
+		return nil, fmt.Errorf("主机名过长")
+	}
+	if len(req.OS) > 64 {
+		return nil, fmt.Errorf("操作系统字段过长")
+	}
+	if len(req.Arch) > 32 {
+		return nil, fmt.Errorf("架构字段过长")
+	}
+	if len(req.AgentVersion) > 32 {
+		return nil, fmt.Errorf("Agent 版本字段过长")
+	}
+	if len(req.HostFingerprint) > 128 {
+		return nil, fmt.Errorf("主机指纹过长")
+	}
+	if len(req.Code) > 64 {
+		return nil, fmt.Errorf("注册码格式无效")
+	}
 
 	// 生成持久 Token
 	token, err := generateRandomToken(32)
@@ -100,6 +122,9 @@ func (s *AgentRegistryService) RegisterAgent(req RegisterAgentRequest) (*Registe
 			return fmt.Errorf("注册码已被使用")
 		}
 
+		// 在事务内检查主机指纹是否已注册（同一台机器重新注册）
+		// 放在事务内可避免并发注册同一指纹时的 TOCTOU 竞态
+		existingAgent, fpErr := s.agentRepo.GetByFingerprintTx(tx, req.HostFingerprint)
 		if fpErr == nil && existingAgent != nil {
 			// 同一台机器重新注册，更新 Token
 			existingAgent.Token = token

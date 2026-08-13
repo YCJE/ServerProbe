@@ -507,7 +507,7 @@ func (h *NotifyHandler) HandleUpdateChannel(c *gin.Context) {
 			return
 		}
 
-		// 合并旧配置中的敏感字段 (密码/密钥留空时保留旧值)
+		// 合并旧配置中的敏感字段 (密码/密钥留空或为掩码占位符时保留旧值)
 		var oldCfg map[string]interface{}
 		if err := json.Unmarshal([]byte(channel.Config), &oldCfg); err == nil {
 			sensitiveKeys := map[string]bool{
@@ -515,7 +515,7 @@ func (h *NotifyHandler) HandleUpdateChannel(c *gin.Context) {
 			}
 			for k, oldVal := range oldCfg {
 				if sensitiveKeys[k] {
-					if newVal, exists := newCfg[k]; !exists || newVal == nil || newVal == "" {
+					if newVal, exists := newCfg[k]; !exists || newVal == nil || newVal == "" || newVal == "******" {
 						newCfg[k] = oldVal
 					}
 				}

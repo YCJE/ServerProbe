@@ -462,7 +462,7 @@ export const useServerStore = create<ServerStoreState>((set, get) => ({
           arch: item.arch || '',
           agent_version: item.agent_version || '',
           online: item.online,
-          last_seen: item.timestamp,
+          last_seen: item.timestamp || now,
           cpu: item.cpu,
           cpu_model: item.cpu_model || '',
           cpu_cores: item.cpu_cores || 0,

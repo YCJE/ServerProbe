@@ -50,6 +50,16 @@ func (h *AgentAPIHandler) HandleGenerateRegisterCode(c *gin.Context) {
 	// 忽略绑定错误，允许空 body
 	_ = c.ShouldBindJSON(&req)
 
+	// 校验输入长度，防止超长字符串写入数据库
+	if len(req.DisplayName) > 100 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "显示名称过长（最多 100 字符）"})
+		return
+	}
+	if len(req.Remark) > 500 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "备注过长（最多 500 字符）"})
+		return
+	}
+
 	rc, err := h.registry.GenerateRegisterCode(req.DisplayName, req.Remark)
 	if err != nil {
 		log.Printf("生成注册码失败: %v", err)
@@ -186,14 +196,9 @@ func (h *AgentAPIHandler) HandleUpdateAgent(c *gin.Context) {
 		return
 	}
 
-	// 更新 display_name 字段
-	if err := h.agentRepo.UpdateDisplayName(agentID, req.DisplayName); err != nil {
+	// 原子更新 display_name 与 tags 字段（单条 SQL，避免部分更新）
+	if err := h.agentRepo.UpdateProfile(agentID, req.DisplayName, req.Tags); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "更新 Agent 失败"})
-		return
-	}
-	// 更新 tags 字段（P1-10: 服务器分组）
-	if err := h.agentRepo.UpdateTags(agentID, req.Tags); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "更新标签失败"})
 		return
 	}
 

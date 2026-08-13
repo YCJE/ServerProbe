@@ -132,8 +132,14 @@ func (c *NTPCollector) queryNTPServer() (int64, error) {
 
 	// 读取响应
 	response := make([]byte, ntpPacketSize)
-	if _, err := conn.Read(response); err != nil {
+	n, err := conn.Read(response)
+	if err != nil {
 		return 0, fmt.Errorf("读取 NTP 响应失败: %w", err)
+	}
+	// 校验响应长度：UDP 下若服务器返回短于 48 字节的畸形响应，
+	// 未填充的字节为全零，会导致时间戳被解析为 1900-01-01，产生约 70 年的错误偏移量
+	if n < ntpPacketSize {
+		return 0, fmt.Errorf("NTP 响应长度不足: %d < %d", n, ntpPacketSize)
 	}
 
 	// 记录接收时间 T4（客户端时钟）
