@@ -18,9 +18,20 @@ type Agent struct {
 	AgentVersion    string    `json:"agent_version"`
 	HostFingerprint string    `gorm:"uniqueIndex" json:"-"`
 	Tags            string    `json:"tags"` // P1-10: 逗号分隔的标签（如 "web,production"）
-	LastSeen        time.Time `json:"last_seen"`
-	Online          bool      `gorm:"default:false" json:"online"`
-	CreatedAt       time.Time `gorm:"autoCreateTime" json:"created_at"`
+	// NodeGet 风格元数据（全部由管理员设置，Agent 上报不覆盖）
+	Region            string     `json:"region"`               // 位置："上海"/"Tokyo"/"US-LAX"
+	CountryCode       string     `json:"country_code"`         // 国家代码："CN"/"JP"/"US"（旗帜+地图）
+	ISP               string     `json:"isp"`                  // 供应商备注："Bandwagon"/"Oracle"
+	ExpiresAt         *time.Time `json:"expires_at"`           // 到期时间（nil=永不过期）
+	PriceAmount       float64    `json:"price_amount"`         // 周期费用数值
+	PriceCurrency     string     `json:"price_currency"`       // 币种: CNY/USD/EUR/JPY
+	PriceCycle        string     `json:"price_cycle"`          // 周期: monthly/yearly
+	TrafficQuotaBytes int64      `json:"traffic_quota_bytes"`  // 月流量配额字节数（0=不限）
+	IPv4              string     `json:"ipv4"`                 // 出口 IPv4（从 WS 连接 RemoteAddr 获取）
+	IPv6              string     `json:"ipv6"`                 // 出口 IPv6
+	LastSeen          time.Time  `json:"last_seen"`
+	Online            bool       `gorm:"default:false" json:"online"`
+	CreatedAt         time.Time  `gorm:"autoCreateTime" json:"created_at"`
 }
 
 // TableName 指定表名
@@ -64,6 +75,8 @@ const (
 	MetricAgentOffline  = "agent_offline"
 	MetricServiceStatus = "service_status"   // P0-3: 服务监控（1=down, 0=up）
 	MetricSSLCertExpiry = "ssl_cert_expiry"  // P0-4: SSL 证书剩余天数
+	MetricTrafficQuota  = "traffic_quota"    // v1.1: 月流量使用率（百分比）
+	MetricExpireDays    = "expire_days"      // v1.1: VPS 剩余到期天数
 )
 
 // 告警支持的操作符

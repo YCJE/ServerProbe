@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math"
+	"net"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -28,6 +30,7 @@ type AgentConn struct {
 type MonitorService struct {
 	agentRepo    *repository.AgentRepository
 	recordRepo   *repository.RecordRepository // 历史数据 repository（用于 BatchWriter）
+	trafficRepo  *repository.TrafficRepository
 	ringBuffers  map[int64]*repository.RingBuffer
 	connections  map[int64]*AgentConn
 	mu           sync.RWMutex
@@ -44,6 +47,13 @@ type MonitorService struct {
 	agentListCache     []model.Agent
 	agentListCacheAt   time.Time
 	agentListCacheLock sync.Mutex // 防止惊群效应：确保同一时刻只有一个 goroutine 刷新缓存
+
+	// v1.1: 月度流量合计缓存（仪表盘进度条 + 流量配额告警共用）
+	// 每 60 秒最多查询一次，聚合服务每 5 分钟才更新流量表，无需更高频刷新
+	trafficCacheMu   sync.Mutex
+	trafficCache     map[int64]repository.MonthlyTrafficAgg
+	trafficCacheAt   time.Time
+	trafficCacheDate string // "2006-01" 缓存所属月份，跨月时强制刷新
 
 	// 批量写入缓冲器
 	batchWriter *repository.BatchWriter
@@ -87,6 +97,37 @@ func NewMonitorService(agentRepo *repository.AgentRepository, recordRepo *reposi
 	}
 
 	return m
+}
+
+// SetTrafficRepo 注入流量统计 repository（用于仪表盘月流量进度条与流量配额告警）
+func (m *MonitorService) SetTrafficRepo(trafficRepo *repository.TrafficRepository) {
+	m.trafficRepo = trafficRepo
+}
+
+// GetMonthlyTraffic 获取所有 Agent 当月流量合计（带 60 秒缓存，跨月强制刷新）
+// 供仪表盘下发的 monthly_rx/monthly_tx 字段与告警引擎 traffic_quota 指标共用
+func (m *MonitorService) GetMonthlyTraffic() map[int64]repository.MonthlyTrafficAgg {
+	now := time.Now()
+	monthKey := now.Format("2006-01")
+
+	m.trafficCacheMu.Lock()
+	defer m.trafficCacheMu.Unlock()
+
+	if m.trafficRepo != nil &&
+		(m.trafficCache == nil || m.trafficCacheDate != monthKey || time.Since(m.trafficCacheAt) >= 60*time.Second) {
+		if agg, err := m.trafficRepo.GetAllMonthlyTrafficAgg(now.Year(), int(now.Month())); err == nil {
+			m.trafficCache = agg
+			m.trafficCacheAt = now
+			m.trafficCacheDate = monthKey
+		} else {
+			log.Printf("[Monitor] 查询月度流量合计失败: %v", err)
+		}
+	}
+
+	if m.trafficCache == nil {
+		return nil
+	}
+	return m.trafficCache
 }
 
 // GetOnlineAgentCount 获取在线 Agent 数量
@@ -183,9 +224,44 @@ func (m *MonitorService) RegisterConnection(agentID int64, conn *websocket.Conn)
 	_ = m.agentRepo.UpdateOnlineStatus(agentID, true)
 	// 更新 last_seen 时间戳（标记上线）
 	_ = m.agentRepo.UpdateLastSeen(agentID, true)
+	// 记录出口 IPv4/IPv6（连接 Server 的真实出口 IP，值变化时才写库）
+	m.updateExitIP(agentID, conn)
 
 	log.Printf("Agent %d 已连接", agentID)
 	return agentConn
+}
+
+// updateExitIP 从 WS 连接的 RemoteAddr 提取出口 IP 并更新 Agent 表
+// 一次连接只反映单栈出口（v4 或 v6 之一），另一栈保留历史值
+func (m *MonitorService) updateExitIP(agentID int64, conn *websocket.Conn) {
+	if conn == nil {
+		return
+	}
+	host, _, err := net.SplitHostPort(conn.RemoteAddr().String())
+	if err != nil {
+		host = conn.RemoteAddr().String()
+	}
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return
+	}
+
+	agent, err := m.agentRepo.GetByID(agentID)
+	if err != nil {
+		return
+	}
+
+	if ip.To4() != nil {
+		if agent.IPv4 == host {
+			return // 值未变化，跳过写库
+		}
+		_ = m.agentRepo.UpdateExitIP(agentID, host, agent.IPv6)
+	} else {
+		if agent.IPv6 == host {
+			return
+		}
+		_ = m.agentRepo.UpdateExitIP(agentID, agent.IPv4, host)
+	}
 }
 
 // UnregisterConnection 注销 Agent 连接
@@ -540,6 +616,34 @@ func (m *MonitorService) GetAllAgentIDs() []int64 {
 	return ids
 }
 
+// GetAllAgents 获取所有 Agent 完整元数据（复用 5 秒 TTL 的列表缓存）
+// 供告警引擎的 traffic_quota / expire_days 指标读取 NodeGet 风格元数据
+func (m *MonitorService) GetAllAgents() []model.Agent {
+	m.mu.RLock()
+	cacheAge := time.Since(m.agentListCacheAt)
+	agents := m.agentListCache
+	m.mu.RUnlock()
+
+	if cacheAge > 5*time.Second || agents == nil {
+		m.agentListCacheLock.Lock()
+		m.mu.RLock()
+		cacheAge = time.Since(m.agentListCacheAt)
+		agents = m.agentListCache
+		m.mu.RUnlock()
+		if cacheAge > 5*time.Second || agents == nil {
+			if fresh, err := m.agentRepo.List(); err == nil {
+				m.mu.Lock()
+				m.agentListCache = fresh
+				m.agentListCacheAt = time.Now()
+				m.mu.Unlock()
+				agents = fresh
+			}
+		}
+		m.agentListCacheLock.Unlock()
+	}
+	return agents
+}
+
 // CheckHeartbeatTimeout 检查心跳超时
 func (m *MonitorService) CheckHeartbeatTimeout(timeout time.Duration) {
 	m.mu.Lock()
@@ -645,6 +749,10 @@ func (m *MonitorService) GetDashboardData() []DashboardItem {
 		agentMap[agents[i].ID] = &agents[i]
 	}
 
+	// v1.1: 月度流量合计（60 秒缓存），用于卡片月流量进度条
+	monthlyTraffic := m.GetMonthlyTraffic()
+	now := time.Now()
+
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
@@ -687,13 +795,31 @@ func (m *MonitorService) GetDashboardData() []DashboardItem {
 		Timestamp:    p.Timestamp,
 	}
 
-		// 补充 hostname, display_name, os, arch, agent_version
+		// 补充 hostname, display_name, os, arch, agent_version 及 NodeGet 风格元数据
 		if agent := agentMap[agentID]; agent != nil {
 			item.Hostname = agent.Hostname
 			item.DisplayName = agent.DisplayName
 			item.OS = agent.OS
 			item.Arch = agent.Arch
 			item.AgentVersion = agent.AgentVersion
+			item.Tags = agent.Tags
+			item.Region = agent.Region
+			item.CountryCode = agent.CountryCode
+			item.ISP = agent.ISP
+			item.ExpiresAt = agent.ExpiresAt
+			item.ExpiresInDays = calcExpiresInDays(agent.ExpiresAt, now)
+			item.PriceAmount = agent.PriceAmount
+			item.PriceCurrency = agent.PriceCurrency
+			item.PriceCycle = agent.PriceCycle
+			item.TrafficQuotaBytes = agent.TrafficQuotaBytes
+			item.IPv4 = agent.IPv4
+			item.IPv6 = agent.IPv6
+			if monthlyTraffic != nil {
+				if agg, ok := monthlyTraffic[agentID]; ok {
+					item.MonthlyRx = agg.Rx
+					item.MonthlyTx = agg.Tx
+				}
+			}
 		}
 
 		items = append(items, item)
@@ -724,6 +850,18 @@ func calcDiskUsage(disks []sharedmodel.DiskInfo) float64 {
 		return float64(totalUsed) / float64(totalTotal) * 100
 	}
 	return 0
+}
+
+// calcExpiresInDays 计算距到期的剩余天数（向上取整），nil 返回 nil
+func calcExpiresInDays(expiresAt *time.Time, now time.Time) *int {
+	if expiresAt == nil {
+		return nil
+	}
+	days := int(math.Ceil(expiresAt.Sub(now).Hours() / 24))
+	if days < 0 {
+		days = 0
+	}
+	return &days
 }
 
 // DashboardItem 仪表盘数据项（完整，含 Processes/Disks/TimeOffset，用于详情页 REST API）
@@ -760,6 +898,21 @@ type DashboardItem struct {
 	TimeOffset   int64                    `json:"time_offset"`
 	Processes    []sharedmodel.ProcessInfo `json:"processes"`
 	Timestamp    int64                    `json:"timestamp"`
+	// NodeGet 风格元数据（管理员设置，Agent 上报不覆盖）
+	Tags              string     `json:"tags"`                 // 逗号分隔标签
+	Region            string     `json:"region"`               // 位置："上海"/"Tokyo"
+	CountryCode       string     `json:"country_code"`         // 国家代码："CN"/"JP"（旗帜+地图）
+	ISP               string     `json:"isp"`                  // 供应商备注
+	ExpiresAt         *time.Time `json:"expires_at"`           // 到期时间（null=永不过期）
+	ExpiresInDays     *int       `json:"expires_in_days"`      // 剩余天数（null=永不过期）
+	PriceAmount       float64    `json:"price_amount"`         // 周期费用
+	PriceCurrency     string     `json:"price_currency"`       // 币种: CNY/USD/EUR/JPY
+	PriceCycle        string     `json:"price_cycle"`          // 周期: monthly/yearly
+	TrafficQuotaBytes int64      `json:"traffic_quota_bytes"`  // 月流量配额（0=不限）
+	MonthlyRx         uint64     `json:"monthly_rx"`           // 当月累计下行
+	MonthlyTx         uint64     `json:"monthly_tx"`           // 当月累计上行
+	IPv4              string     `json:"ipv4"`                 // 出口 IPv4
+	IPv6              string     `json:"ipv6"`                 // 出口 IPv6
 }
 
 // DashboardSummary 仪表盘摘要数据项（P1-1: 轻量级，用于 WS 推送）
@@ -794,6 +947,21 @@ type DashboardSummary struct {
 	ProcessCount int                      `json:"process_count"`
 	PingData     []sharedmodel.PingResult `json:"ping_data"`
 	Timestamp    int64                    `json:"timestamp"`
+	// NodeGet 风格元数据（管理员设置，Agent 上报不覆盖）
+	Tags              string     `json:"tags"`
+	Region            string     `json:"region"`
+	CountryCode       string     `json:"country_code"`
+	ISP               string     `json:"isp"`
+	ExpiresAt         *time.Time `json:"expires_at"`
+	ExpiresInDays     *int       `json:"expires_in_days"`
+	PriceAmount       float64    `json:"price_amount"`
+	PriceCurrency     string     `json:"price_currency"`
+	PriceCycle        string     `json:"price_cycle"`
+	TrafficQuotaBytes int64      `json:"traffic_quota_bytes"`
+	MonthlyRx         uint64     `json:"monthly_rx"`
+	MonthlyTx         uint64     `json:"monthly_tx"`
+	IPv4              string     `json:"ipv4"`
+	IPv6              string     `json:"ipv6"`
 }
 
 // toSummary 将 DashboardItem 转换为 DashboardSummary（剥离重型字段）
@@ -828,6 +996,20 @@ func (item DashboardItem) toSummary() DashboardSummary {
 		ProcessCount: item.ProcessCount,
 		PingData:     item.PingData,
 		Timestamp:    item.Timestamp,
+		Tags:              item.Tags,
+		Region:            item.Region,
+		CountryCode:       item.CountryCode,
+		ISP:               item.ISP,
+		ExpiresAt:         item.ExpiresAt,
+		ExpiresInDays:     item.ExpiresInDays,
+		PriceAmount:       item.PriceAmount,
+		PriceCurrency:     item.PriceCurrency,
+		PriceCycle:        item.PriceCycle,
+		TrafficQuotaBytes: item.TrafficQuotaBytes,
+		MonthlyRx:         item.MonthlyRx,
+		MonthlyTx:         item.MonthlyTx,
+		IPv4:              item.IPv4,
+		IPv6:              item.IPv6,
 	}
 }
 
@@ -920,6 +1102,19 @@ func (m *MonitorService) GetPublicDashboardJSON() []byte {
 		// 与 HTTP 公开端点 (HandlePublicServers/HandlePublicDashboard/publicHistoryPoint) 保持一致，防止泄露连接数与进程信息
 		PingData  []sharedmodel.PingResult `json:"ping_data"`
 		Timestamp int64                    `json:"timestamp"`
+		// NodeGet 风格元数据（公开非敏感子集：不含出口 IPv4/IPv6）
+		Tags              string     `json:"tags"`
+		Region            string     `json:"region"`
+		CountryCode       string     `json:"country_code"`
+		ISP               string     `json:"isp"`
+		ExpiresAt         *time.Time `json:"expires_at"`
+		ExpiresInDays     *int       `json:"expires_in_days"`
+		PriceAmount       float64    `json:"price_amount"`
+		PriceCurrency     string     `json:"price_currency"`
+		PriceCycle        string     `json:"price_cycle"`
+		TrafficQuotaBytes int64      `json:"traffic_quota_bytes"`
+		MonthlyRx         uint64     `json:"monthly_rx"`
+		MonthlyTx         uint64     `json:"monthly_tx"`
 	}
 
 	publicItems := make([]PublicSummary, 0, len(items))
@@ -967,6 +1162,18 @@ func (m *MonitorService) GetPublicDashboardJSON() []byte {
 			DiskUsage:    item.DiskUsage,
 			PingData:     publicPing,
 			Timestamp:    item.Timestamp,
+			Tags:              item.Tags,
+			Region:            item.Region,
+			CountryCode:       item.CountryCode,
+			ISP:               item.ISP,
+			ExpiresAt:         item.ExpiresAt,
+			ExpiresInDays:     item.ExpiresInDays,
+			PriceAmount:       item.PriceAmount,
+			PriceCurrency:     item.PriceCurrency,
+			PriceCycle:        item.PriceCycle,
+			TrafficQuotaBytes: item.TrafficQuotaBytes,
+			MonthlyRx:         item.MonthlyRx,
+			MonthlyTx:         item.MonthlyTx,
 		})
 	}
 

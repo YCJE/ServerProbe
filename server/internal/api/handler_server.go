@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"math"
 	"net/http"
 	"runtime"
 	"strconv"
@@ -95,7 +96,25 @@ func (h *ServerHandler) HandleListServers(c *gin.Context) {
 		UDPConns     int                      `json:"udp_connections"`
 		ProcessCount int                      `json:"process_count"`
 		PingData     []sharedmodel.PingResult `json:"ping_data"`
+		// NodeGet 风格元数据
+		Tags              string     `json:"tags"`
+		Region            string     `json:"region"`
+		CountryCode       string     `json:"country_code"`
+		ISP               string     `json:"isp"`
+		ExpiresAt         *time.Time `json:"expires_at"`
+		ExpiresInDays     *int       `json:"expires_in_days"`
+		PriceAmount       float64    `json:"price_amount"`
+		PriceCurrency     string     `json:"price_currency"`
+		PriceCycle        string     `json:"price_cycle"`
+		TrafficQuotaBytes int64      `json:"traffic_quota_bytes"`
+		MonthlyRx         uint64     `json:"monthly_rx"`
+		MonthlyTx         uint64     `json:"monthly_tx"`
+		IPv4              string     `json:"ipv4"`
+		IPv6              string     `json:"ipv6"`
 	}
+
+	monthlyTraffic := h.monitor.GetMonthlyTraffic()
+	now := time.Now()
 
 	items := make([]ServerListItem, 0, len(agents))
 	for _, agent := range agents {
@@ -108,6 +127,24 @@ func (h *ServerHandler) HandleListServers(c *gin.Context) {
 			AgentVersion: agent.AgentVersion,
 			Online:       h.monitor.IsOnline(agent.ID),
 			LastSeen:     agent.LastSeen.Format(time.RFC3339),
+			Tags:              agent.Tags,
+			Region:            agent.Region,
+			CountryCode:       agent.CountryCode,
+			ISP:               agent.ISP,
+			ExpiresAt:         agent.ExpiresAt,
+			ExpiresInDays:     calcExpiresInDays(agent.ExpiresAt, now),
+			PriceAmount:       agent.PriceAmount,
+			PriceCurrency:     agent.PriceCurrency,
+			PriceCycle:        agent.PriceCycle,
+			TrafficQuotaBytes: agent.TrafficQuotaBytes,
+			IPv4:              agent.IPv4,
+			IPv6:              agent.IPv6,
+		}
+		if monthlyTraffic != nil {
+			if agg, ok := monthlyTraffic[agent.ID]; ok {
+				item.MonthlyRx = agg.Rx
+				item.MonthlyTx = agg.Tx
+			}
 		}
 
 		// 获取实时数据
@@ -167,6 +204,19 @@ func calcDiskUsage(disks []sharedmodel.DiskInfo) float64 {
 	return 0
 }
 
+// calcExpiresInDays 计算距到期的剩余天数（向上取整），nil 返回 nil
+// 与 service 层同名函数逻辑一致，避免为单一用途跨包导出
+func calcExpiresInDays(expiresAt *time.Time, now time.Time) *int {
+	if expiresAt == nil {
+		return nil
+	}
+	days := int(math.Ceil(expiresAt.Sub(now).Hours() / 24))
+	if days < 0 {
+		days = 0
+	}
+	return &days
+}
+
 // HandleGetServer 获取单台服务器详情
 // 路由: GET /api/v1/servers/:id
 func (h *ServerHandler) HandleGetServer(c *gin.Context) {
@@ -192,6 +242,28 @@ func (h *ServerHandler) HandleGetServer(c *gin.Context) {
 		"agent_version": agent.AgentVersion,
 		"online":        h.monitor.IsOnline(id),
 		"last_seen":     agent.LastSeen.Unix(),
+		// NodeGet 风格元数据
+		"tags":               agent.Tags,
+		"region":             agent.Region,
+		"country_code":       agent.CountryCode,
+		"isp":                agent.ISP,
+		"expires_at":         agent.ExpiresAt,
+		"expires_in_days":    calcExpiresInDays(agent.ExpiresAt, time.Now()),
+		"price_amount":       agent.PriceAmount,
+		"price_currency":     agent.PriceCurrency,
+		"price_cycle":        agent.PriceCycle,
+		"traffic_quota_bytes": agent.TrafficQuotaBytes,
+		"ipv4":               agent.IPv4,
+		"ipv6":               agent.IPv6,
+	}
+
+	// 月度流量合计
+	if agg, ok := h.monitor.GetMonthlyTraffic()[id]; ok {
+		resp["monthly_rx"] = agg.Rx
+		resp["monthly_tx"] = agg.Tx
+	} else {
+		resp["monthly_rx"] = 0
+		resp["monthly_tx"] = 0
 	}
 
 	// 获取实时数据，补充监控字段
@@ -498,7 +570,23 @@ func (h *ServerHandler) HandlePublicServers(c *gin.Context) {
 		Disks        []PublicDiskInfo         `json:"disks"`
 		PingData     []sharedmodel.PingResult `json:"ping_data"`
 		Timestamp    int64                    `json:"timestamp"`
+		// NodeGet 风格元数据（公开非敏感子集：不含出口 IPv4/IPv6）
+		Tags              string     `json:"tags"`
+		Region            string     `json:"region"`
+		CountryCode       string     `json:"country_code"`
+		ISP               string     `json:"isp"`
+		ExpiresAt         *time.Time `json:"expires_at"`
+		ExpiresInDays     *int       `json:"expires_in_days"`
+		PriceAmount       float64    `json:"price_amount"`
+		PriceCurrency     string     `json:"price_currency"`
+		PriceCycle        string     `json:"price_cycle"`
+		TrafficQuotaBytes int64      `json:"traffic_quota_bytes"`
+		MonthlyRx         uint64     `json:"monthly_rx"`
+		MonthlyTx         uint64     `json:"monthly_tx"`
 	}
+
+	monthlyTraffic := h.monitor.GetMonthlyTraffic()
+	now := time.Now()
 
 	items := make([]PublicServerItem, 0, len(agents))
 	for _, agent := range agents {
@@ -510,6 +598,22 @@ func (h *ServerHandler) HandlePublicServers(c *gin.Context) {
 			Arch:         agent.Arch,
 			AgentVersion: agent.AgentVersion,
 			Online:       h.monitor.IsOnline(agent.ID),
+			Tags:              agent.Tags,
+			Region:            agent.Region,
+			CountryCode:       agent.CountryCode,
+			ISP:               agent.ISP,
+			ExpiresAt:         agent.ExpiresAt,
+			ExpiresInDays:     calcExpiresInDays(agent.ExpiresAt, now),
+			PriceAmount:       agent.PriceAmount,
+			PriceCurrency:     agent.PriceCurrency,
+			PriceCycle:        agent.PriceCycle,
+			TrafficQuotaBytes: agent.TrafficQuotaBytes,
+		}
+		if monthlyTraffic != nil {
+			if agg, ok := monthlyTraffic[agent.ID]; ok {
+				item.MonthlyRx = agg.Rx
+				item.MonthlyTx = agg.Tx
+			}
 		}
 
 		if rb := h.monitor.GetRingBuffer(agent.ID); rb != nil {
@@ -610,6 +714,19 @@ func (h *ServerHandler) HandlePublicDashboard(c *gin.Context) {
 		Disks        []PublicDiskInfo         `json:"disks"`
 		PingData     []sharedmodel.PingResult `json:"ping_data"`
 		Timestamp    int64                    `json:"timestamp"`
+		// NodeGet 风格元数据（公开非敏感子集：不含出口 IPv4/IPv6）
+		Tags              string     `json:"tags"`
+		Region            string     `json:"region"`
+		CountryCode       string     `json:"country_code"`
+		ISP               string     `json:"isp"`
+		ExpiresAt         *time.Time `json:"expires_at"`
+		ExpiresInDays     *int       `json:"expires_in_days"`
+		PriceAmount       float64    `json:"price_amount"`
+		PriceCurrency     string     `json:"price_currency"`
+		PriceCycle        string     `json:"price_cycle"`
+		TrafficQuotaBytes int64      `json:"traffic_quota_bytes"`
+		MonthlyRx         uint64     `json:"monthly_rx"`
+		MonthlyTx         uint64     `json:"monthly_tx"`
 	}
 
 	publicItems := make([]PublicDashboardItem, 0, len(items))
@@ -668,6 +785,18 @@ func (h *ServerHandler) HandlePublicDashboard(c *gin.Context) {
 			Disks:        safeDisks,
 			PingData:     safePingData,
 			Timestamp:    item.Timestamp,
+			Tags:              item.Tags,
+			Region:            item.Region,
+			CountryCode:       item.CountryCode,
+			ISP:               item.ISP,
+			ExpiresAt:         item.ExpiresAt,
+			ExpiresInDays:     item.ExpiresInDays,
+			PriceAmount:       item.PriceAmount,
+			PriceCurrency:     item.PriceCurrency,
+			PriceCycle:        item.PriceCycle,
+			TrafficQuotaBytes: item.TrafficQuotaBytes,
+			MonthlyRx:         item.MonthlyRx,
+			MonthlyTx:         item.MonthlyTx,
 		})
 	}
 

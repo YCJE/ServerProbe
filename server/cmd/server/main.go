@@ -111,6 +111,7 @@ func main() {
 
 	// 创建 services
 	monitor := service.NewMonitorService(agentRepo, recordRepo, *dataDir)
+	monitor.SetTrafficRepo(trafficRepo) // 注入流量统计 repo（仪表盘月流量进度条 + 流量配额告警）
 	registry := service.NewAgentRegistryService(agentRepo, registerCodeRepo, db.DB())
 	configSync := service.NewConfigSyncService(pingTargetRepo, db.DB())
 	validator := service.NewDataValidator()

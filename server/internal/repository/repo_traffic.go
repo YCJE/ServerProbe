@@ -81,6 +81,38 @@ func (r *TrafficRepository) GetAllTrafficForDate(date string) ([]model.TrafficRe
 	return records, nil
 }
 
+// MonthlyTrafficAgg 单个 Agent 的月度流量合计
+type MonthlyTrafficAgg struct {
+	Rx uint64
+	Tx uint64
+}
+
+// GetAllMonthlyTrafficAgg 一次查询所有 Agent 某月的流量合计（按 agent_id 分组求和）
+// 用于仪表盘卡片月流量进度条与流量配额告警，避免逐 Agent 查询
+func (r *TrafficRepository) GetAllMonthlyTrafficAgg(year, month int) (map[int64]MonthlyTrafficAgg, error) {
+	startDate := time.Date(year, time.Month(month), 1, 0, 0, 0, 0, time.UTC).Format("2006-01-02")
+	endDate := time.Date(year, time.Month(month), 1, 0, 0, 0, 0, time.UTC).AddDate(0, 1, 0).Format("2006-01-02")
+
+	var rows []struct {
+		AgentID int64
+		RxBytes uint64
+		TxBytes uint64
+	}
+	if err := r.db.Model(&model.TrafficRecord{}).
+		Select("agent_id, SUM(rx_bytes) AS rx_bytes, SUM(tx_bytes) AS tx_bytes").
+		Where("date >= ? AND date < ?", startDate, endDate).
+		Group("agent_id").
+		Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+
+	result := make(map[int64]MonthlyTrafficAgg, len(rows))
+	for _, row := range rows {
+		result[row.AgentID] = MonthlyTrafficAgg{Rx: row.RxBytes, Tx: row.TxBytes}
+	}
+	return result, nil
+}
+
 // CleanupExpired 清理指定天数之前的流量记录，返回删除的行数
 func (r *TrafficRepository) CleanupExpired(days int) (int64, error) {
 	cutoffDate := time.Now().AddDate(0, 0, -days).Format("2006-01-02")

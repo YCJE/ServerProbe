@@ -1,9 +1,11 @@
 package api
 
 import (
+	"fmt"
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -210,4 +212,113 @@ func (h *AgentAPIHandler) HandleUpdateAgent(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"success": true, "agent": agent})
+}
+
+// HandleUpdateAgentMeta 更新 Agent NodeGet 风格元数据（位置/国旗/供应商/到期/费用/流量配额）
+// 路由: PUT /api/v1/agents/:id/meta
+func (h *AgentAPIHandler) HandleUpdateAgentMeta(c *gin.Context) {
+	id := c.Param("id")
+	agentID, err := strconv.ParseInt(id, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 Agent ID"})
+		return
+	}
+
+	var req struct {
+		Region            string  `json:"region"`
+		CountryCode       string  `json:"country_code"`
+		ISP               string  `json:"isp"`
+		ExpiresAt         string  `json:"expires_at"` // RFC3339 或 "YYYY-MM-DD"，空字符串表示永不过期
+		PriceAmount       float64 `json:"price_amount"`
+		PriceCurrency     string  `json:"price_currency"`
+		PriceCycle        string  `json:"price_cycle"`
+		TrafficQuotaBytes int64   `json:"traffic_quota_bytes"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的请求体"})
+		return
+	}
+
+	// 输入校验：防止超长字符串与非法枚举值写入数据库
+	if len(req.Region) > 100 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "位置过长（最多 100 字符）"})
+		return
+	}
+	req.CountryCode = strings.ToUpper(strings.TrimSpace(req.CountryCode))
+	if len(req.CountryCode) > 2 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "国家代码须为 2 位字母（如 CN/US/JP）"})
+		return
+	}
+	if len(req.ISP) > 100 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "供应商过长（最多 100 字符）"})
+		return
+	}
+	switch req.PriceCurrency {
+	case "", "CNY", "USD", "EUR", "JPY", "GBP", "HKD", "KRW", "SGD":
+	default:
+		c.JSON(http.StatusBadRequest, gin.H{"error": "不支持的币种"})
+		return
+	}
+	switch req.PriceCycle {
+	case "", "monthly", "yearly", "quarterly", "weekly":
+	default:
+		c.JSON(http.StatusBadRequest, gin.H{"error": "周期须为 monthly/quarterly/yearly/weekly"})
+		return
+	}
+	if req.PriceAmount < 0 || req.PriceAmount > 1e9 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "费用数值无效"})
+		return
+	}
+	if req.TrafficQuotaBytes < 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "流量配额无效"})
+		return
+	}
+
+	// 解析到期时间：空 = 永不过期（ExpiresAt 为 NULL）
+	var expiresAt *time.Time
+	if s := strings.TrimSpace(req.ExpiresAt); s != "" {
+		t, err := parseFlexibleDate(s)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "到期时间格式无效（支持 RFC3339 或 YYYY-MM-DD）"})
+			return
+		}
+		expiresAt = &t
+	}
+
+	meta := repository.AgentMeta{
+		Region:            strings.TrimSpace(req.Region),
+		CountryCode:       req.CountryCode,
+		ISP:               strings.TrimSpace(req.ISP),
+		ExpiresAt:         expiresAt,
+		PriceAmount:       req.PriceAmount,
+		PriceCurrency:     req.PriceCurrency,
+		PriceCycle:        req.PriceCycle,
+		TrafficQuotaBytes: req.TrafficQuotaBytes,
+	}
+
+	if err := h.agentRepo.UpdateMeta(agentID, meta); err != nil {
+		log.Printf("更新 Agent %d 元数据失败: %v", agentID, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "更新元数据失败"})
+		return
+	}
+
+	agent, err := h.agentRepo.GetByID(agentID)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": true})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"success": true, "agent": agent})
+}
+
+// parseFlexibleDate 解析 RFC3339 或 YYYY-MM-DD 格式的时间字符串
+func parseFlexibleDate(s string) (time.Time, error) {
+	if t, err := time.Parse(time.RFC3339, s); err == nil {
+		return t, nil
+	}
+	if t, err := time.Parse("2006-01-02", s); err == nil {
+		return t, nil
+	}
+	return time.Time{}, fmt.Errorf("无法解析时间: %s", s)
 }

@@ -2,8 +2,9 @@ package service
 
 import (
 	"fmt"
-	"strings"
 	"log"
+	"math"
+	"strings"
 	"sync"
 	"time"
 
@@ -134,12 +135,15 @@ func (e *AlertEngine) checkAlerts() {
 	// 清理不在 Agent 列表中的过期告警状态（Agent 已被删除但状态残留）
 	e.cleanupStaleStates(allAgents)
 
-	// 分离 per-agent 规则和全局规则
-	var perAgentRules, globalRules []model.AlertRule
+	// 分离 per-agent 规则、元数据规则和全局规则
+	var perAgentRules, metaRules, globalRules []model.AlertRule
 	for _, rule := range rules {
-		if rule.Metric == model.MetricServiceStatus || rule.Metric == model.MetricSSLCertExpiry {
+		switch rule.Metric {
+		case model.MetricServiceStatus, model.MetricSSLCertExpiry:
 			globalRules = append(globalRules, rule)
-		} else {
+		case model.MetricTrafficQuota, model.MetricExpireDays:
+			metaRules = append(metaRules, rule)
+		default:
 			perAgentRules = append(perAgentRules, rule)
 		}
 	}
@@ -160,6 +164,20 @@ func (e *AlertEngine) checkAlerts() {
 				e.checkRuleForAgent(rule, agentID, nil)
 			} else if isOnline && len(points) > 0 {
 				e.checkRuleForAgent(rule, agentID, points)
+			}
+		}
+	}
+
+	// 检查元数据规则（traffic_quota / expire_days）：值来自 Agent 元数据与月度流量聚合
+	if len(metaRules) > 0 {
+		agents := e.monitor.GetAllAgents()
+		monthly := e.monitor.GetMonthlyTraffic()
+		now := time.Now()
+		for i := range agents {
+			agent := &agents[i]
+			for _, rule := range metaRules {
+				value := getMetaMetricValue(rule.Metric, agent, monthly[agent.ID], now)
+				e.evaluateRule(rule, agent.ID, value)
 			}
 		}
 	}
@@ -202,13 +220,45 @@ func (e *AlertEngine) cleanupStaleStates(activeAgentIDs []int64) {
 
 // checkRuleForAgent 检查单个 Agent 的单条规则（接受预读取的数据点，避免重复读取 RingBuffer）
 func (e *AlertEngine) checkRuleForAgent(rule model.AlertRule, agentID int64, points []repository.MetricPoint) {
-	key := fmt.Sprintf("%d:%d", agentID, rule.ID)
-
 	// 获取当前指标值
 	value := e.getMetricValue(agentID, rule.Metric, points)
 	if value < 0 {
 		return
 	}
+	e.evaluateRule(rule, agentID, value)
+}
+
+// getMetaMetricValue 获取元数据类指标值（traffic_quota / expire_days）
+// 值来自管理员设置的 NodeGet 风格元数据与月度流量聚合，与 RingBuffer 无关
+// 未设置配额/到期时间的 Agent 返回"永不触发"的哨兵值，保证已 FIRING 的告警能自动恢复
+func getMetaMetricValue(metric string, agent *model.Agent, monthly repository.MonthlyTrafficAgg, now time.Time) float64 {
+	switch metric {
+	case model.MetricTrafficQuota:
+		if agent.TrafficQuotaBytes <= 0 {
+			return 0 // 未设置配额 = 不限流量，使用率恒为 0%
+		}
+		used := monthly.Rx + monthly.Tx
+		return float64(used) / float64(agent.TrafficQuotaBytes) * 100
+
+	case model.MetricExpireDays:
+		if agent.ExpiresAt == nil {
+			return math.MaxFloat64 / 1e6 // 永不过期，剩余天数视为极大（配合 < 阈值永不触发）
+		}
+		days := agent.ExpiresAt.Sub(now).Hours() / 24
+		if days < 0 {
+			return 0 // 已过期
+		}
+		return days
+
+	default:
+		return -1
+	}
+}
+
+// evaluateRule 评估一条规则对单个 Agent 的当前值并推进告警状态机
+// per-agent 规则、元数据规则、全局规则共用同一套状态转移逻辑
+func (e *AlertEngine) evaluateRule(rule model.AlertRule, agentID int64, value float64) {
+	key := fmt.Sprintf("%d:%d", agentID, rule.ID)
 
 	// 检查是否超阈值
 	thresholdExceeded := e.checkThreshold(value, rule.Operator, rule.Threshold)
@@ -368,69 +418,7 @@ func (e *AlertEngine) getGlobalMetricValue(metric string) float64 {
 
 // checkRuleGlobal 检查全局规则（使用 agentID=0 作为状态键）
 func (e *AlertEngine) checkRuleGlobal(rule model.AlertRule, value float64) {
-	key := fmt.Sprintf("0:%d", rule.ID)
-
-	thresholdExceeded := e.checkThreshold(value, rule.Operator, rule.Threshold)
-	now := time.Now()
-
-	type pendingNotification struct {
-		rule    model.AlertRule
-		agentID int64
-		value   float64
-		state   model.AlertState
-	}
-	var pendingNotifications []pendingNotification
-
-	e.mu.Lock()
-
-	state, ok := e.states[key]
-	if !ok {
-		state = &alertState{state: model.AlertStateOK}
-		e.states[key] = state
-	}
-
-	if thresholdExceeded {
-		switch state.state {
-		case model.AlertStateOK:
-			state.state = model.AlertStatePending
-			state.firstTriggered = now
-
-		case model.AlertStatePending:
-			if now.Sub(state.firstTriggered) >= time.Duration(rule.Duration)*time.Second {
-				state.state = model.AlertStateFiring
-				state.lastNotified = now
-				pendingNotifications = append(pendingNotifications, pendingNotification{rule, 0, value, model.AlertStateFiring})
-			}
-
-		case model.AlertStateFiring:
-			if now.Sub(state.lastNotified) >= e.silencePeriod {
-				state.lastNotified = now
-				pendingNotifications = append(pendingNotifications, pendingNotification{rule, 0, value, model.AlertStateFiring})
-			}
-
-		case model.AlertStateResolved:
-			state.state = model.AlertStatePending
-			state.firstTriggered = now
-		}
-	} else {
-		switch state.state {
-		case model.AlertStatePending:
-			state.state = model.AlertStateOK
-
-		case model.AlertStateFiring:
-			state.state = model.AlertStateResolved
-			pendingNotifications = append(pendingNotifications, pendingNotification{rule, 0, value, model.AlertStateResolved})
-
-		case model.AlertStateResolved:
-			state.state = model.AlertStateOK
-		}
-	}
-
-	e.mu.Unlock()
-
-	for _, n := range pendingNotifications {
-		e.sendAlertNotification(n.rule, n.agentID, n.value, n.state)
-	}
+	e.evaluateRule(rule, 0, value)
 }
 
 // checkThreshold 检查阈值
@@ -446,6 +434,24 @@ func (e *AlertEngine) checkThreshold(value float64, operator string, threshold f
 	default:
 		return false
 	}
+}
+
+// getServerDisplayName 获取 Agent 显示名（display_name > hostname > "Agent #id"）
+// 通知频率低（状态切换/静默期），5 秒 TTL 缓存的列表查找开销可忽略
+func (e *AlertEngine) getServerDisplayName(agentID int64) string {
+	agents := e.monitor.GetAllAgents()
+	for i := range agents {
+		if agents[i].ID == agentID {
+			if agents[i].DisplayName != "" {
+				return agents[i].DisplayName
+			}
+			if agents[i].Hostname != "" {
+				return agents[i].Hostname
+			}
+			break
+		}
+	}
+	return fmt.Sprintf("Agent #%d", agentID)
 }
 
 // sendAlertNotification 发送告警通知
@@ -470,14 +476,17 @@ func (e *AlertEngine) sendAlertNotification(rule model.AlertRule, agentID int64,
 			content = fmt.Sprintf("全局指标 %s 已恢复正常（当前值 %.2f）",
 				rule.Metric, value)
 		}
-	} else if state == model.AlertStateFiring {
-		title = fmt.Sprintf("[告警] %s", rule.Name)
-		content = fmt.Sprintf("Agent %d 的 %s 当前值 %.2f %s %.2f，已持续 %d 秒",
-			agentID, rule.Metric, value, rule.Operator, rule.Threshold, rule.Duration)
 	} else {
-		title = fmt.Sprintf("[恢复] %s", rule.Name)
-		content = fmt.Sprintf("Agent %d 的 %s 已恢复正常（当前值 %.2f）",
-			agentID, rule.Metric, value)
+		serverName := e.getServerDisplayName(agentID)
+		if state == model.AlertStateFiring {
+			title = fmt.Sprintf("[告警] %s", rule.Name)
+			content = fmt.Sprintf("服务器 %s 的 %s 当前值 %.2f %s %.2f，已持续 %d 秒",
+				serverName, rule.Metric, value, rule.Operator, rule.Threshold, rule.Duration)
+		} else {
+			title = fmt.Sprintf("[恢复] %s", rule.Name)
+			content = fmt.Sprintf("服务器 %s 的 %s 已恢复正常（当前值 %.2f）",
+				serverName, rule.Metric, value)
+		}
 	}
 
 	err := e.notifySvc.SendNotification(rule.NotifyChannelID, title, content)

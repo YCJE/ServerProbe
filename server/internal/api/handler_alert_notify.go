@@ -63,15 +63,7 @@ func (h *AlertHandler) HandleCreateAlert(c *gin.Context) {
 		return
 	}
 
-	validMetrics := map[string]bool{
-		model.MetricCPUUsage:       true,
-		model.MetricMemUsage:       true,
-		model.MetricDiskUsage:      true,
-		model.MetricAgentOffline:   true,
-		model.MetricServiceStatus:  true,
-		model.MetricSSLCertExpiry:  true,
-	}
-	if !validMetrics[req.Metric] {
+	if !isValidAlertMetric(req.Metric) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的监控指标"})
 		return
 	}
@@ -169,15 +161,7 @@ func (h *AlertHandler) HandleUpdateAlert(c *gin.Context) {
 		rule.Name = *req.Name
 	}
 	if req.Metric != nil {
-		validMetrics := map[string]bool{
-			model.MetricCPUUsage:       true,
-			model.MetricMemUsage:       true,
-			model.MetricDiskUsage:      true,
-			model.MetricAgentOffline:   true,
-			model.MetricServiceStatus:  true,
-			model.MetricSSLCertExpiry:  true,
-		}
-		if !validMetrics[*req.Metric] {
+		if !isValidAlertMetric(*req.Metric) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "无效的监控指标"})
 			return
 		}
@@ -258,6 +242,22 @@ func (h *AlertHandler) HandleDeleteAlert(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"success": true})
 }
 
+// isValidAlertMetric 校验告警规则指标是否受支持
+func isValidAlertMetric(metric string) bool {
+	switch metric {
+	case model.MetricCPUUsage,
+		model.MetricMemUsage,
+		model.MetricDiskUsage,
+		model.MetricAgentOffline,
+		model.MetricServiceStatus,
+		model.MetricSSLCertExpiry,
+		model.MetricTrafficQuota,
+		model.MetricExpireDays:
+		return true
+	}
+	return false
+}
+
 // validateThreshold 校验阈值范围
 func validateThreshold(metric string, threshold float64) error {
 	switch metric {
@@ -276,6 +276,14 @@ func validateThreshold(metric string, threshold float64) error {
 	case model.MetricSSLCertExpiry:
 		if threshold < 0 || threshold > 365 {
 			return fmt.Errorf("SSL证书剩余天数指标的阈值必须在 0-365 之间")
+		}
+	case model.MetricTrafficQuota:
+		if threshold <= 0 || threshold > 1000 {
+			return fmt.Errorf("流量配额使用率指标的阈值必须在 0-1000 之间（百分比，可超100）")
+		}
+	case model.MetricExpireDays:
+		if threshold < 0 || threshold > 3650 {
+			return fmt.Errorf("剩余到期天数指标的阈值必须在 0-3650 之间")
 		}
 	}
 	return nil
