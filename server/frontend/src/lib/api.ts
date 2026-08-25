@@ -193,6 +193,25 @@ export async function getAgents(): Promise<{ agents: AgentInfo[] }> {
   return request<{ agents: AgentInfo[] }>('/agents')
 }
 
+/** 直接创建 Agent（Komari 风格：先创建记录生成 Token，再在被控机执行一键安装命令） */
+export async function createAgent(
+  displayName: string,
+): Promise<{ agent_id: number; display_name: string; token: string }> {
+  return request<{ agent_id: number; display_name: string; token: string }>('/agents', {
+    method: 'POST',
+    body: JSON.stringify({ display_name: displayName }),
+  })
+}
+
+/** 获取 Agent Token（用于为已存在的 Agent 生成重装命令） */
+export async function getAgentToken(
+  id: number,
+): Promise<{ agent_id: number; display_name: string; token: string }> {
+  return request<{ agent_id: number; display_name: string; token: string }>(
+    `/agents/${id}/token`,
+  )
+}
+
 /** 删除 Agent */
 export async function deleteAgent(id: number): Promise<void> {
   await request(`/agents/${id}`, { method: 'DELETE' })

@@ -318,7 +318,9 @@ export default function ServerDetail() {
     return count > 0 ? totalLoss / count : 0
   }, [networkChartData])
 
-  // 延迟质量条形图数据：实时模式用 realtimeHistory，历史模式用 historyData + 补充最新实时点
+  // 延迟质量条形图数据：实时模式用 realtimeHistory，历史模式用 historyData
+  // 历史数据为 5 分钟粒度聚合点，不与 3 秒粒度的实时点混合（避免 WS 每次推送
+  // 触发全量重建数组 → LatencyQualityBar 全量重渲染导致的页面卡顿）
   const latencyQualityPoints = useMemo<LatencyPoint[]>(() => {
     // 实时模式：使用 realtimeHistory
     if (isRealtimeRange(timeRange)) {
@@ -327,33 +329,33 @@ export default function ServerDetail() {
         ping_data: p.ping_data,
       }))
     }
-    // 历史模式：优先使用 historyData，再补充比历史数据更新的实时点
+    // 历史模式：仅使用 historyData（随 5 分钟定时刷新更新）
     if (historyData && historyData.points && historyData.points.length > 0) {
-      const historyPoints = historyData.points.map((p) => ({
+      return historyData.points.map((p) => ({
         timestamp: p.timestamp,
         ping_data: p.ping_data,
       }))
-      // 补充比历史数据最后一个点更新的实时数据
-      const lastHistoryTs = historyPoints[historyPoints.length - 1].timestamp
-      const newerRealtime = realtimeHistory
-        .filter((p) => p.timestamp > lastHistoryTs)
-        .map((p) => ({
-          timestamp: p.timestamp,
-          ping_data: p.ping_data,
-        }))
-      return [...historyPoints, ...newerRealtime]
     }
-    // 回退到实时数据
+    // 回退到实时数据（历史数据尚未加载时）
     return realtimeHistory.map((p) => ({
       timestamp: p.timestamp,
       ping_data: p.ping_data,
     }))
-  }, [timeRange, realtimeHistory, historyData])
+  }, [timeRange, isRealtimeRange(timeRange) ? realtimeHistory : historyData])
 
-  // 在线状态时间线数据：从历史数据点提取在线状态
+  // 在线状态时间线数据：实时模式用 realtimeHistory，历史模式用 historyData
+  // （后端聚合记录带 online 字段，离线时段有占位记录，历史时间线完整可查）
   const onlineTimelinePoints = useMemo<OnlineTimelinePoint[]>(() => {
     const result: OnlineTimelinePoint[] = []
-    // 从历史数据中提取（如果有 online 字段）
+    if (isRealtimeRange(timeRange)) {
+      for (const p of realtimeHistory) {
+        result.push({
+          timestamp: p.timestamp,
+          online: p.online,
+        })
+      }
+      return result
+    }
     if (historyData && historyData.points && historyData.points.length > 0) {
       for (const p of historyData.points) {
         if (p.online !== undefined) {
@@ -364,17 +366,8 @@ export default function ServerDetail() {
         }
       }
     }
-    // 补充实时历史数据（使用每个数据点自身的在线状态）
-    if (realtimeHistory.length > 0) {
-      for (const p of realtimeHistory) {
-        result.push({
-          timestamp: p.timestamp,
-          online: p.online,
-        })
-      }
-    }
     return result
-  }, [historyData, realtimeHistory])
+  }, [timeRange, isRealtimeRange(timeRange) ? realtimeHistory : historyData])
 
   // ==================== 加载 / 错误状态 ====================
 

@@ -4,6 +4,8 @@ import {
   getRegisterCodes,
   deleteRegisterCode,
   getAgents,
+  createAgent,
+  getAgentToken,
   updateAgent,
   updateAgentMeta,
 } from '@/lib/api'
@@ -54,6 +56,19 @@ export default function AgentManagement() {
   const [metaPriceCurrency, setMetaPriceCurrency] = useState('CNY')
   const [metaPriceCycle, setMetaPriceCycle] = useState('monthly')
   const [metaTrafficQuotaGB, setMetaTrafficQuotaGB] = useState('')
+
+  // 添加服务器（Komari 风格两步式）状态
+  const [creating, setCreating] = useState(false)
+  // 创建成功后展示的安装命令信息（null = 未进入第二步）
+  const [createdAgent, setCreatedAgent] = useState<{
+    agent_id: number
+    display_name: string
+    token: string
+  } | null>(null)
+
+  // Agent 列表"安装命令"弹窗状态（复用安装命令展示弹窗）
+  const [cmdAgent, setCmdAgent] = useState<{ agent_id: number; display_name: string; token: string } | null>(null)
+  const [cmdLoading, setCmdLoading] = useState(false)
 
   // 从 store 获取 fetchServers 和 deleteAgent，用于删除后刷新仪表盘
   const fetchServers = useServerStore((s) => s.fetchServers)
@@ -127,6 +142,48 @@ export default function AgentManagement() {
       alert(err instanceof Error ? err.message : '生成注册码失败')
     } finally {
       setGenerating(false)
+    }
+  }
+
+  // 添加服务器（Komari 风格第一步：填写基本信息 → 直接创建记录并生成 Token）
+  const handleCreateAgent = async () => {
+    setFormError('')
+    if (!displayName.trim()) {
+      setFormError('请输入服务器名称')
+      return
+    }
+
+    setCreating(true)
+    try {
+      const result = await createAgent(displayName.trim())
+      setDisplayName('')
+      setRemark('')
+      setCreatedAgent(result)
+      await loadData()
+      await fetchServers()
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : '添加服务器失败')
+    } finally {
+      setCreating(false)
+    }
+  }
+
+  // 关闭安装命令弹窗（创建第二步 或 Agent 列表安装命令）
+  const handleCloseInstallCmd = () => {
+    setCreatedAgent(null)
+    setCmdAgent(null)
+  }
+
+  // Agent 列表：获取 Token 并展示该 Agent 的安装命令（重装/换机场景）
+  const handleShowInstallCmd = async (agent: AgentInfo) => {
+    setCmdLoading(true)
+    try {
+      const result = await getAgentToken(agent.id)
+      setCmdAgent(result)
+    } catch (err) {
+      alert(err instanceof Error ? err.message : '获取安装命令失败')
+    } finally {
+      setCmdLoading(false)
     }
   }
 
@@ -294,6 +351,10 @@ export default function AgentManagement() {
   const getInstallCommand = (code: string) => {
     return `curl -fsSL https://raw.githubusercontent.com/YCJE/ServerProbe/master/scripts/install-agent.sh | bash -s -- --server ${shellQuote(serverUrl)} --code ${shellQuote(code)}`
   }
+  // Token 版一键安装命令（Komari 风格：后台直接创建的 Agent 用 Token 直连）
+  const getTokenInstallCommand = (token: string) => {
+    return `curl -fsSL https://raw.githubusercontent.com/YCJE/ServerProbe/master/scripts/install-agent.sh | bash -s -- --server ${shellQuote(serverUrl)} --token ${shellQuote(token)}`
+  }
 
   // 格式化时间
   const formatTime = (timeStr: string) => {
@@ -333,16 +394,16 @@ export default function AgentManagement() {
       <div>
         <h1 className="text-xl font-bold text-primary">Agent 管理</h1>
         <p className="mt-0.5 text-sm text-muted-foreground">
-          生成注册码，在被监控服务器上一键安装 Agent
+          先添加服务器信息，再复制一键安装命令到被监控服务器执行即可接入监控
         </p>
       </div>
 
-      {/* 添加服务器表单 */}
+      {/* 添加服务器表单（Komari 风格：先添加基本信息，再复制一键命令到被控服务器执行） */}
       <div className="card-soft">
         <div className="border-b border-dashed border-border px-4 py-3">
           <h2 className="text-sm font-semibold text-foreground">添加服务器</h2>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            填写服务器信息后生成注册码，用于在被监控服务器上安装 Agent
+            第 1 步：填写服务器基本信息；第 2 步：复制一键安装命令到被监控服务器执行，Agent 将自动连接并上报数据
           </p>
         </div>
         <div className="p-4">
@@ -355,6 +416,9 @@ export default function AgentManagement() {
                 type="text"
                 value={displayName}
                 onChange={(e) => setDisplayName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !creating) handleCreateAgent()
+                }}
                 placeholder="例如：Web 服务器 01"
                 className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm shadow-sm text-foreground placeholder:text-muted-foreground/60 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
               />
@@ -372,23 +436,31 @@ export default function AgentManagement() {
               />
             </div>
             <button
-              onClick={handleGenerateCode}
-              disabled={generating}
+              onClick={handleCreateAgent}
+              disabled={creating}
               className="flex h-10 shrink-0 items-center gap-1.5 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
             >
-              {generating ? (
+              {creating ? (
                 <>
                   <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary-foreground border-t-transparent" />
-                  生成中...
+                  添加中...
                 </>
               ) : (
                 <>
                   <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                   </svg>
-                  生成注册码
+                  添加服务器
                 </>
               )}
+            </button>
+            <button
+              onClick={handleGenerateCode}
+              disabled={generating}
+              title="兼容旧流程：生成 15 分钟有效的一次性注册码"
+              className="flex h-10 shrink-0 items-center gap-1.5 rounded-xl border border-border px-4 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50"
+            >
+              {generating ? '生成中...' : '生成注册码'}
             </button>
           </div>
           {formError && (
@@ -566,6 +638,13 @@ export default function AgentManagement() {
                     <td className="px-3 py-3">
                       <div className="flex items-center gap-2">
                         <button
+                          onClick={() => handleShowInstallCmd(agent)}
+                          disabled={cmdLoading}
+                          className="text-xs font-medium text-primary transition-colors hover:underline disabled:opacity-50"
+                        >
+                          安装命令
+                        </button>
+                        <button
                           onClick={() => handleOpenEdit(agent)}
                           className="text-xs font-medium text-primary transition-colors hover:underline"
                         >
@@ -586,6 +665,99 @@ export default function AgentManagement() {
           </div>
         )}
       </div>
+
+      {/* 一键安装命令弹窗（添加服务器第 2 步 / Agent 列表重装命令） */}
+      {(createdAgent || cmdAgent) && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={handleCloseInstallCmd}>
+          <div
+            className="w-full max-w-xl card-soft p-4 sm:p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-4 flex items-center justify-between">
+              <div>
+                <h3 className="text-base font-semibold text-foreground">
+                  {createdAgent ? '第 2 步：执行一键安装命令' : '一键安装命令'}
+                </h3>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  {createdAgent
+                    ? `服务器 "${createdAgent.display_name}" 已创建，复制以下命令到被监控服务器上以 root 执行`
+                    : `服务器 "${cmdAgent?.display_name || '-'}" 的安装命令（可用于重装或迁移）`}
+                </p>
+              </div>
+              <button
+                onClick={handleCloseInstallCmd}
+                className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent"
+              >
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {/* 步骤提示 */}
+            {createdAgent && (
+              <div className="mb-4 flex items-center gap-2">
+                <span className="badge-pill badge-success">1. 填写基本信息 ✓</span>
+                <svg className="h-3 w-3 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+                <span className="badge-pill badge-primary">2. 执行安装命令</span>
+              </div>
+            )}
+
+            {/* 安装命令 */}
+            <div>
+              <label className="mb-1 block text-xs text-muted-foreground">
+                一键安装命令 (粘贴到被监控服务器执行)
+              </label>
+              <div className="flex items-start gap-2">
+                <div className="flex-1 overflow-x-auto rounded-md bg-secondary/50 p-3 scrollbar-thin">
+                  <code className="text-xs font-mono text-foreground break-all whitespace-pre-wrap">
+                    {getTokenInstallCommand((createdAgent || cmdAgent)!.token)}
+                  </code>
+                </div>
+                <button
+                  onClick={() => handleCopy(getTokenInstallCommand((createdAgent || cmdAgent)!.token), 'token-cmd')}
+                  className="flex h-9 shrink-0 items-center gap-1 rounded-xl bg-primary px-3 text-xs font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
+                >
+                  {copied === 'token-cmd' ? (
+                    <>
+                      <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      </svg>
+                      已复制
+                    </>
+                  ) : (
+                    <>
+                      <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                      </svg>
+                      复制命令
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+
+            {/* 提示信息 */}
+            <div className="mt-4 rounded-md border border-dashed border-border bg-secondary/30 p-3 text-xs text-muted-foreground">
+              <p>· 命令执行后 Agent 会自动连接主控并开始上报数据（首次连接自动记录主机信息）</p>
+              <p>· 安装完成后可在下方"已安装 Agent"列表查看，离线状态会在连接成功后变为在线</p>
+              <p>· Token 即该服务器的身份凭证，请勿泄露给他人</p>
+            </div>
+
+            {/* 完成按钮 */}
+            <div className="mt-4 flex justify-end">
+              <button
+                onClick={handleCloseInstallCmd}
+                className="flex h-9 items-center rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
+              >
+                完成
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 编辑 Agent 弹窗 */}
       {editingAgent && (
