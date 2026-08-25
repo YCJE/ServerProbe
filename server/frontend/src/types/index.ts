@@ -106,6 +106,33 @@ export interface ServerData {
   time_offset?: number
   /** 标签（逗号分隔的字符串） */
   tags?: string
+  // ---- NodeGet 风格元数据（管理员设置，Agent 上报不覆盖） ----
+  /** 位置（如 "上海"/"Tokyo"） */
+  region?: string
+  /** 国家代码（如 "CN"/"JP"，用于国旗与地图） */
+  country_code?: string
+  /** 供应商备注（如 "Bandwagon"/"Oracle"） */
+  isp?: string
+  /** 到期时间（null=永不过期，RFC3339 字符串） */
+  expires_at?: string | null
+  /** 剩余到期天数（null=永不过期） */
+  expires_in_days?: number | null
+  /** 周期费用数值 */
+  price_amount?: number
+  /** 币种：CNY/USD/EUR/JPY 等 */
+  price_currency?: string
+  /** 周期：monthly/yearly */
+  price_cycle?: string
+  /** 月流量配额字节数（0=不限） */
+  traffic_quota_bytes?: number
+  /** 当月累计下行字节 */
+  monthly_rx?: number
+  /** 当月累计上行字节 */
+  monthly_tx?: number
+  /** 出口 IPv4 */
+  ipv4?: string
+  /** 出口 IPv6 */
+  ipv6?: string
 }
 
 /** 仪表盘实时数据项 */
@@ -148,6 +175,35 @@ export interface DashboardItem {
   /** NTP 时间偏移（毫秒） */
   time_offset?: number
   timestamp: number
+  // ---- NodeGet 风格元数据（管理员设置，Agent 上报不覆盖） ----
+  /** 标签（逗号分隔的字符串） */
+  tags?: string
+  /** 位置（如 "上海"/"Tokyo"） */
+  region?: string
+  /** 国家代码（如 "CN"/"JP"，用于国旗与地图） */
+  country_code?: string
+  /** 供应商备注（如 "Bandwagon"/"Oracle"） */
+  isp?: string
+  /** 到期时间（null=永不过期） */
+  expires_at?: string | null
+  /** 剩余到期天数（null=永不过期） */
+  expires_in_days?: number | null
+  /** 周期费用数值 */
+  price_amount?: number
+  /** 币种：CNY/USD/EUR/JPY 等 */
+  price_currency?: string
+  /** 周期：monthly/yearly */
+  price_cycle?: string
+  /** 月流量配额字节数（0=不限） */
+  traffic_quota_bytes?: number
+  /** 当月累计下行字节 */
+  monthly_rx?: number
+  /** 当月累计上行字节 */
+  monthly_tx?: number
+  /** 出口 IPv4 */
+  ipv4?: string
+  /** 出口 IPv6 */
+  ipv6?: string
 }
 
 /** 仪表盘 WebSocket 消息 */
@@ -254,6 +310,19 @@ export interface AgentInfo {
   online: boolean
   last_seen: string
   created_at: string
+  /** 标签（逗号分隔） */
+  tags?: string
+  // ---- NodeGet 风格元数据 ----
+  region?: string
+  country_code?: string
+  isp?: string
+  expires_at?: string | null
+  price_amount?: number
+  price_currency?: string
+  price_cycle?: string
+  traffic_quota_bytes?: number
+  ipv4?: string
+  ipv6?: string
 }
 
 // ==================== 系统状态相关类型 ====================

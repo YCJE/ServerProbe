@@ -489,6 +489,20 @@ export const useServerStore = create<ServerStoreState>((set, get) => ({
           distro: item.distro,
           processes: item.processes,
           time_offset: item.time_offset,
+          tags: item.tags,
+          region: item.region,
+          country_code: item.country_code,
+          isp: item.isp,
+          expires_at: item.expires_at,
+          expires_in_days: item.expires_in_days,
+          price_amount: item.price_amount,
+          price_currency: item.price_currency,
+          price_cycle: item.price_cycle,
+          traffic_quota_bytes: item.traffic_quota_bytes,
+          monthly_rx: item.monthly_rx,
+          monthly_tx: item.monthly_tx,
+          ipv4: item.ipv4,
+          ipv6: item.ipv6,
         })
       }
     }
@@ -530,6 +544,20 @@ export const useServerStore = create<ServerStoreState>((set, get) => ({
           server.virtualization === (live.virtualization ?? server.virtualization) &&
           server.distro === (live.distro ?? server.distro) &&
           server.time_offset === (live.time_offset ?? server.time_offset) &&
+          server.tags === (live.tags ?? server.tags) &&
+          server.region === (live.region ?? server.region) &&
+          server.country_code === (live.country_code ?? server.country_code) &&
+          server.isp === (live.isp ?? server.isp) &&
+          server.expires_at === (live.expires_at ?? server.expires_at) &&
+          server.expires_in_days === (live.expires_in_days ?? server.expires_in_days) &&
+          server.price_amount === (live.price_amount ?? server.price_amount) &&
+          server.price_currency === (live.price_currency ?? server.price_currency) &&
+          server.price_cycle === (live.price_cycle ?? server.price_cycle) &&
+          server.traffic_quota_bytes === (live.traffic_quota_bytes ?? server.traffic_quota_bytes) &&
+          server.monthly_rx === (live.monthly_rx ?? server.monthly_rx) &&
+          server.monthly_tx === (live.monthly_tx ?? server.monthly_tx) &&
+          server.ipv4 === (live.ipv4 ?? server.ipv4) &&
+          server.ipv6 === (live.ipv6 ?? server.ipv6) &&
           pingDataEqual(server.ping_data, live.ping_data || [])
         ) {
           return server
@@ -573,6 +601,20 @@ export const useServerStore = create<ServerStoreState>((set, get) => ({
           distro: live.distro ?? server.distro,
           processes: live.processes ?? server.processes,
           time_offset: live.time_offset ?? server.time_offset,
+          tags: live.tags ?? server.tags,
+          region: live.region ?? server.region,
+          country_code: live.country_code ?? server.country_code,
+          isp: live.isp ?? server.isp,
+          expires_at: live.expires_at ?? server.expires_at,
+          expires_in_days: live.expires_in_days ?? server.expires_in_days,
+          price_amount: live.price_amount ?? server.price_amount,
+          price_currency: live.price_currency ?? server.price_currency,
+          price_cycle: live.price_cycle ?? server.price_cycle,
+          traffic_quota_bytes: live.traffic_quota_bytes ?? server.traffic_quota_bytes,
+          monthly_rx: live.monthly_rx ?? server.monthly_rx,
+          monthly_tx: live.monthly_tx ?? server.monthly_tx,
+          ipv4: live.ipv4 ?? server.ipv4,
+          ipv6: live.ipv6 ?? server.ipv6,
         }
       }
       return server

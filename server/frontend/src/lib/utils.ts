@@ -138,7 +138,9 @@ const REGION_KEYWORDS: Array<{ codes: string[]; region: string }> = [
 ]
 
 /** 从服务器信息提取地区代码（如 "CN", "US"） */
-export function getRegionFromServer(server: ServerData): string {
+export function getRegionFromServer(
+  server: Pick<ServerData, 'display_name' | 'hostname'>,
+): string {
   const text = `${server.display_name || ''} ${server.hostname || ''}`.toLowerCase()
   for (const { codes, region } of REGION_KEYWORDS) {
     for (const code of codes) {
@@ -163,4 +165,112 @@ export function getFlagEmoji(region: string): string {
   if (!/^[A-Z]{2}$/.test(upper)) return ''
   const codePoints = upper.split('').map((c) => 0x1f1e6 + c.charCodeAt(0) - 65)
   return String.fromCodePoint(...codePoints)
+}
+
+/** 获取服务器国家代码：管理员设置的 country_code 优先，否则从名称推断 */
+export function getCountryCode(
+  server: Pick<ServerData, 'country_code' | 'display_name' | 'hostname'>,
+): string {
+  const cc = (server.country_code || '').trim().toUpperCase()
+  if (/^[A-Z]{2}$/.test(cc)) return cc
+  return getRegionFromServer(server)
+}
+
+/** 常用币种符号映射 */
+const CURRENCY_SYMBOLS: Record<string, string> = {
+  CNY: '¥',
+  USD: '$',
+  EUR: '€',
+  JPY: 'JP¥',
+  GBP: '£',
+  HKD: 'HK$',
+  TWD: 'NT$',
+  KRW: '₩',
+  SGD: 'S$',
+}
+
+/** 周期显示文案 */
+const CYCLE_LABELS: Record<string, string> = {
+  monthly: '/月',
+  yearly: '/年',
+  weekly: '/周',
+  quarterly: '/季',
+}
+
+/** 格式化费用（如 "$49.99/年"、"¥0/月"），amount<=0 且有周期时返回 "免费" */
+export function formatPrice(amount: number, currency: string, cycle: string): string {
+  if (!amount || amount <= 0) return '免费'
+  const symbol = CURRENCY_SYMBOLS[(currency || '').toUpperCase()] || (currency || '') + ' '
+  const cycleLabel = CYCLE_LABELS[(cycle || '').toLowerCase()] || ''
+  const num = amount >= 100 ? amount.toFixed(0) : amount.toFixed(2)
+  return `${symbol}${num}${cycleLabel}`
+}
+
+/** 月流量使用率（0-100+ 百分比）；未设置配额（quota<=0）返回 null 表示不限量 */
+export function getMonthlyTrafficPercent(usedBytes: number, quotaBytes: number): number | null {
+  if (!quotaBytes || quotaBytes <= 0) return null
+  return (usedBytes / quotaBytes) * 100
+}
+
+/** 月流量使用率对应颜色（NodeGet 色阶：<80 绿、80-100 橙、>=100 红） */
+export function getTrafficColor(percent: number): string {
+  if (percent >= 100) return '#f56565'
+  if (percent >= 80) return '#f6ad55'
+  return '#42b983'
+}
+
+/** 到期剩余天数对应的显示颜色：<7 天红、<30 天黄、其他灰 */
+export function getExpireColor(days: number): string {
+  if (days < 0) return '#f56565'
+  if (days < 7) return '#f56565'
+  if (days < 30) return '#f6ad55'
+  return ''
+}
+
+/** 标签徽章色板（NodeGet 柔和渐变色调，按标签名 hash 取色保证稳定） */
+const TAG_PALETTE = [
+  'rgba(59, 130, 246, 0.15)|#60a5fa',   // 蓝
+  'rgba(34, 197, 94, 0.15)|#4ade80',    // 绿
+  'rgba(168, 85, 247, 0.15)|#c084fc',   // 紫
+  'rgba(236, 72, 153, 0.15)|#f472b6',   // 粉
+  'rgba(249, 115, 22, 0.15)|#fb923c',   // 橙
+  'rgba(20, 184, 166, 0.15)|#2dd4bf',   // 青
+  'rgba(234, 179, 8, 0.15)|#facc15',    // 黄
+  'rgba(148, 163, 184, 0.15)|#94a3b8',  // 石板
+] as const
+
+/** 解析标签字符串为标签数组（逗号/顿号分隔，去空白） */
+export function parseTags(tags?: string | null): string[] {
+  if (!tags) return []
+  return tags
+    .split(/[,，、]/)
+    .map((t) => t.trim())
+    .filter(Boolean)
+}
+
+/** 标签名 hash（FNV-1a，简单稳定） */
+function hashString(s: string): number {
+  let h = 2166136261
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i)
+    h = Math.imul(h, 16777619)
+  }
+  return h >>> 0
+}
+
+/** 获取标签徽章样式（背景色 + 文字色，同名标签颜色稳定） */
+export function getTagStyle(tag: string): { background: string; color: string } {
+  const [bg, fg] = TAG_PALETTE[hashString(tag) % TAG_PALETTE.length].split('|')
+  return { background: bg, color: fg }
+}
+
+/** 格式化到期日期（RFC3339 -> "2027-01-15"） */
+export function formatExpireDate(expiresAt?: string | null): string {
+  if (!expiresAt) return ''
+  const d = new Date(expiresAt)
+  if (isNaN(d.getTime())) return ''
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
 }

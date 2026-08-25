@@ -5,9 +5,22 @@ import {
   deleteRegisterCode,
   getAgents,
   updateAgent,
+  updateAgentMeta,
 } from '@/lib/api'
 import { useServerStore } from '@/store/useServerStore'
 import type { RegisterCode, AgentInfo } from '@/types'
+import { getFlagEmoji } from '@/lib/utils'
+
+/** 币种选项 */
+const CURRENCY_OPTIONS = ['CNY', 'USD', 'EUR', 'JPY', 'GBP', 'HKD', 'TWD', 'KRW', 'SGD']
+
+/** 周期选项 */
+const CYCLE_OPTIONS = [
+  { value: 'monthly', label: '每月' },
+  { value: 'yearly', label: '每年' },
+  { value: 'quarterly', label: '每季' },
+  { value: 'weekly', label: '每周' },
+]
 
 /** Agent 管理页 */
 export default function AgentManagement() {
@@ -26,10 +39,21 @@ export default function AgentManagement() {
   // 编辑 Agent 状态
   const [editingAgent, setEditingAgent] = useState<AgentInfo | null>(null)
   const [editDisplayName, setEditDisplayName] = useState('')
+  const [editTags, setEditTags] = useState('')
   const [editError, setEditError] = useState('')
   const [editSaving, setEditSaving] = useState(false)
   const [regenerating, setRegenerating] = useState(false)
   const [regeneratedCode, setRegeneratedCode] = useState<string | null>(null)
+
+  // NodeGet 元数据编辑状态
+  const [metaRegion, setMetaRegion] = useState('')
+  const [metaCountryCode, setMetaCountryCode] = useState('')
+  const [metaISP, setMetaISP] = useState('')
+  const [metaExpiresAt, setMetaExpiresAt] = useState('')
+  const [metaPriceAmount, setMetaPriceAmount] = useState('')
+  const [metaPriceCurrency, setMetaPriceCurrency] = useState('CNY')
+  const [metaPriceCycle, setMetaPriceCycle] = useState('monthly')
+  const [metaTrafficQuotaGB, setMetaTrafficQuotaGB] = useState('')
 
   // 从 store 获取 fetchServers 和 deleteAgent，用于删除后刷新仪表盘
   const fetchServers = useServerStore((s) => s.fetchServers)
@@ -129,10 +153,23 @@ export default function AgentManagement() {
     }
   }
 
-  // 打开编辑弹窗
+  // 打开编辑弹窗（初始化显示名称 + NodeGet 元数据表单）
   const handleOpenEdit = (agent: AgentInfo) => {
     setEditingAgent(agent)
     setEditDisplayName(agent.display_name || '')
+    setEditTags(agent.tags || '')
+    setMetaRegion(agent.region || '')
+    setMetaCountryCode((agent.country_code || '').toUpperCase())
+    setMetaISP(agent.isp || '')
+    // RFC3339 -> YYYY-MM-DD（date input 格式），空 = 永不过期
+    setMetaExpiresAt(agent.expires_at ? agent.expires_at.slice(0, 10) : '')
+    setMetaPriceAmount(agent.price_amount ? String(agent.price_amount) : '')
+    setMetaPriceCurrency(agent.price_currency || 'CNY')
+    setMetaPriceCycle(agent.price_cycle || 'monthly')
+    // 字节 -> GB（向下取整展示，0/空 = 不限）
+    setMetaTrafficQuotaGB(
+      agent.traffic_quota_bytes ? String(Math.round(agent.traffic_quota_bytes / 1024 ** 3)) : '',
+    )
     setEditError('')
   }
 
@@ -140,6 +177,13 @@ export default function AgentManagement() {
   const handleCloseEdit = () => {
     setEditingAgent(null)
     setEditDisplayName('')
+    setEditTags('')
+    setMetaRegion('')
+    setMetaCountryCode('')
+    setMetaISP('')
+    setMetaExpiresAt('')
+    setMetaPriceAmount('')
+    setMetaTrafficQuotaGB('')
     setEditError('')
     setRegeneratedCode(null)
   }
@@ -163,7 +207,7 @@ export default function AgentManagement() {
     }
   }
 
-  // 保存编辑
+  // 保存编辑（显示名称 + 标签 + NodeGet 元数据）
   const handleSaveEdit = async () => {
     if (!editingAgent) return
     setEditError('')
@@ -171,12 +215,45 @@ export default function AgentManagement() {
       setEditError('请输入显示名称')
       return
     }
+    // 国家代码格式校验（填写时必须为 2 位字母）
+    const cc = metaCountryCode.trim().toUpperCase()
+    if (cc && !/^[A-Z]{2}$/.test(cc)) {
+      setEditError('国家代码必须为 2 位字母（如 CN、US、JP），留空则从名称自动推断')
+      return
+    }
+    // 费用与配额数值校验
+    const priceAmount = metaPriceAmount.trim() ? parseFloat(metaPriceAmount) : 0
+    if (isNaN(priceAmount) || priceAmount < 0) {
+      setEditError('费用必须为非负数字')
+      return
+    }
+    const quotaGB = metaTrafficQuotaGB.trim() ? parseFloat(metaTrafficQuotaGB) : 0
+    if (isNaN(quotaGB) || quotaGB < 0) {
+      setEditError('月流量配额必须为非负数字（GB）')
+      return
+    }
+
     setEditSaving(true)
     try {
-      await updateAgent(editingAgent.id, { display_name: editDisplayName.trim() })
+      // 1. 保存显示名称 + 标签
+      await updateAgent(editingAgent.id, {
+        display_name: editDisplayName.trim(),
+        tags: editTags.trim(),
+      })
+      // 2. 保存 NodeGet 元数据
+      await updateAgentMeta(editingAgent.id, {
+        region: metaRegion.trim(),
+        country_code: cc,
+        isp: metaISP.trim(),
+        expires_at: metaExpiresAt.trim(),
+        price_amount: priceAmount,
+        price_currency: metaPriceCurrency,
+        price_cycle: metaPriceCycle,
+        traffic_quota_bytes: Math.round(quotaGB * 1024 ** 3),
+      })
       handleCloseEdit()
       await loadData()
-      // 同步刷新仪表盘数据，确保显示名称更新
+      // 同步刷新仪表盘数据，确保卡片显示最新元数据
       await fetchServers()
     } catch (err) {
       setEditError(err instanceof Error ? err.message : '保存失败')
@@ -514,7 +591,7 @@ export default function AgentManagement() {
       {editingAgent && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={handleCloseEdit}>
           <div
-            className="max-h-[90vh] w-full max-w-md overflow-y-auto card-soft p-4 sm:p-6 scrollbar-thin"
+            className="max-h-[90vh] w-full max-w-lg overflow-y-auto card-soft p-4 sm:p-6 scrollbar-thin"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="mb-4 flex items-center justify-between">
@@ -545,6 +622,20 @@ export default function AgentManagement() {
                 />
               </div>
 
+              {/* 标签（逗号分隔） */}
+              <div>
+                <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                  标签 <span className="text-muted-foreground/60">(逗号分隔，如 "生产,中转")</span>
+                </label>
+                <input
+                  type="text"
+                  value={editTags}
+                  onChange={(e) => setEditTags(e.target.value)}
+                  placeholder="例如：生产,中转"
+                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm shadow-sm text-foreground placeholder:text-muted-foreground/60 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                />
+              </div>
+
               {/* 只读信息 */}
               <div className="rounded-md border border-dashed border-border bg-secondary/30 p-3 text-xs text-muted-foreground">
                 <div className="flex justify-between py-0.5">
@@ -558,6 +649,123 @@ export default function AgentManagement() {
                 <div className="flex justify-between py-0.5">
                   <span>系统</span>
                   <span className="font-bold text-foreground">{editingAgent.os || '-'}</span>
+                </div>
+                {(editingAgent.ipv4 || editingAgent.ipv6) && (
+                  <div className="flex justify-between py-0.5">
+                    <span>出口 IP</span>
+                    <span className="truncate font-mono text-foreground">
+                      {[editingAgent.ipv4, editingAgent.ipv6].filter(Boolean).join(' / ')}
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              {/* NodeGet 元数据 */}
+              <div className="rounded-md border border-dashed border-border p-3">
+                <h4 className="mb-3 text-xs font-semibold text-foreground">节点信息（位置 / 到期 / 费用 / 流量）</h4>
+                <div className="grid grid-cols-2 gap-3">
+                  {/* 位置 */}
+                  <div>
+                    <label className="mb-1 block text-xs text-muted-foreground">位置</label>
+                    <input
+                      type="text"
+                      value={metaRegion}
+                      onChange={(e) => setMetaRegion(e.target.value)}
+                      placeholder="如：上海 / Tokyo"
+                      className="h-9 w-full rounded-md border border-input bg-background px-2.5 text-sm text-foreground placeholder:text-muted-foreground/60 focus:border-primary focus:outline-none"
+                    />
+                  </div>
+                  {/* 国家代码 */}
+                  <div>
+                    <label className="mb-1 block text-xs text-muted-foreground">
+                      国家代码 {metaCountryCode && /^[A-Za-z]{2}$/.test(metaCountryCode) && getFlagEmoji(metaCountryCode.toUpperCase())}
+                    </label>
+                    <input
+                      type="text"
+                      value={metaCountryCode}
+                      onChange={(e) => setMetaCountryCode(e.target.value.toUpperCase())}
+                      placeholder="如：CN / US / JP"
+                      maxLength={2}
+                      className="h-9 w-full rounded-md border border-input bg-background px-2.5 font-mono text-sm uppercase text-foreground placeholder:text-muted-foreground/60 focus:border-primary focus:outline-none"
+                    />
+                  </div>
+                  {/* 供应商 */}
+                  <div>
+                    <label className="mb-1 block text-xs text-muted-foreground">供应商</label>
+                    <input
+                      type="text"
+                      value={metaISP}
+                      onChange={(e) => setMetaISP(e.target.value)}
+                      placeholder="如：Bandwagon / Oracle"
+                      className="h-9 w-full rounded-md border border-input bg-background px-2.5 text-sm text-foreground placeholder:text-muted-foreground/60 focus:border-primary focus:outline-none"
+                    />
+                  </div>
+                  {/* 到期时间 */}
+                  <div>
+                    <label className="mb-1 block text-xs text-muted-foreground">到期时间</label>
+                    <input
+                      type="date"
+                      value={metaExpiresAt}
+                      onChange={(e) => setMetaExpiresAt(e.target.value)}
+                      className="h-9 w-full rounded-md border border-input bg-background px-2.5 text-sm text-foreground focus:border-primary focus:outline-none"
+                    />
+                    <p className="mt-0.5 text-[10px] text-muted-foreground/70">留空 = 永不过期</p>
+                  </div>
+                  {/* 费用金额 */}
+                  <div>
+                    <label className="mb-1 block text-xs text-muted-foreground">费用金额</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={metaPriceAmount}
+                      onChange={(e) => setMetaPriceAmount(e.target.value)}
+                      placeholder="0"
+                      className="h-9 w-full rounded-md border border-input bg-background px-2.5 text-sm tabular-nums text-foreground placeholder:text-muted-foreground/60 focus:border-primary focus:outline-none"
+                    />
+                  </div>
+                  {/* 币种 + 周期 */}
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="mb-1 block text-xs text-muted-foreground">币种</label>
+                      <select
+                        value={metaPriceCurrency}
+                        onChange={(e) => setMetaPriceCurrency(e.target.value)}
+                        className="h-9 w-full cursor-pointer rounded-md border border-input bg-background px-1.5 text-sm text-foreground focus:border-primary focus:outline-none"
+                      >
+                        {CURRENCY_OPTIONS.map((c) => (
+                          <option key={c} value={c}>{c}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs text-muted-foreground">周期</label>
+                      <select
+                        value={metaPriceCycle}
+                        onChange={(e) => setMetaPriceCycle(e.target.value)}
+                        className="h-9 w-full cursor-pointer rounded-md border border-input bg-background px-1.5 text-sm text-foreground focus:border-primary focus:outline-none"
+                      >
+                        {CYCLE_OPTIONS.map((c) => (
+                          <option key={c.value} value={c.value}>{c.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                  {/* 月流量配额 */}
+                  <div className="col-span-2">
+                    <label className="mb-1 block text-xs text-muted-foreground">
+                      月流量配额 (GB) <span className="text-muted-foreground/60">(0 或留空 = 不限)</span>
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      value={metaTrafficQuotaGB}
+                      onChange={(e) => setMetaTrafficQuotaGB(e.target.value)}
+                      placeholder="如：1000"
+                      className="h-9 w-full rounded-md border border-input bg-background px-2.5 text-sm tabular-nums text-foreground placeholder:text-muted-foreground/60 focus:border-primary focus:outline-none"
+                    />
+                  </div>
                 </div>
               </div>
 

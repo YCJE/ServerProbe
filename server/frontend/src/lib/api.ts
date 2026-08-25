@@ -198,9 +198,34 @@ export async function deleteAgent(id: number): Promise<void> {
   await request(`/agents/${id}`, { method: 'DELETE' })
 }
 
-/** 更新 Agent 信息 */
-export async function updateAgent(id: number, data: { display_name: string }): Promise<{ success: boolean }> {
+/** 更新 Agent 信息（显示名称 + 标签） */
+export async function updateAgent(
+  id: number,
+  data: { display_name: string; tags?: string },
+): Promise<{ success: boolean }> {
   return request(`/agents/${id}`, { method: 'PUT', body: JSON.stringify(data) })
+}
+
+/** Agent 元数据（NodeGet 风格，管理员设置） */
+export interface AgentMetaInput {
+  region: string
+  country_code: string
+  isp: string
+  /** 到期时间（YYYY-MM-DD，空字符串=永不过期） */
+  expires_at: string
+  price_amount: number
+  price_currency: string
+  price_cycle: string
+  /** 月流量配额字节数（0=不限） */
+  traffic_quota_bytes: number
+}
+
+/** 更新 Agent NodeGet 风格元数据 */
+export async function updateAgentMeta(
+  id: number,
+  data: AgentMetaInput,
+): Promise<{ success: boolean }> {
+  return request(`/agents/${id}/meta`, { method: 'PUT', body: JSON.stringify(data) })
 }
 
 // ==================== 公开 API (无需登录) ====================
