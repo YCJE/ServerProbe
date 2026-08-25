@@ -243,6 +243,24 @@ func (h *AgentHandler) handleRegister(ws *agentWSConn, msg *sharedmodel.WSMessag
 				_ = ws.writeJSON(response)
 				return
 			}
+		} else {
+			// 后台直接创建的 Agent（Komari 风格：无主机指纹）首次 Token 连接：
+			// 绑定主机指纹并回填系统信息，此后重连按指纹严格校验
+			if msg.HostFingerprint != "" {
+				if err := h.registry.AdoptAgentInfo(agent, msg.Hostname, msg.OS, msg.Arch, msg.AgentVersion, msg.HostFingerprint); err != nil {
+					log.Printf("Agent %d 回填主机信息失败: %v", agent.ID, err)
+				} else {
+					log.Printf("Agent %d 已绑定主机指纹并回填系统信息", agent.ID)
+				}
+			} else {
+				log.Printf("Agent %d Token 首连缺少主机指纹，拒绝注册", agent.ID)
+				response := sharedmodel.WSMessage{
+					Type:   sharedmodel.MsgTypeRegisterFail,
+					Reason: "主机指纹不能为空",
+				}
+				_ = ws.writeJSON(response)
+				return
+			}
 		}
 
 		agentID.Store(agent.ID)
@@ -453,6 +471,11 @@ func (h *AgentHandler) lazyRegister(ws *agentWSConn, msg *sharedmodel.WSMessage,
 		if msg.HostFingerprint == "" || agent.HostFingerprint != msg.HostFingerprint {
 			log.Printf("Agent %d 懒注册指纹不匹配", agent.ID)
 			return false
+		}
+	} else if msg.HostFingerprint != "" {
+		// 后台直接创建的 Agent 首连：绑定指纹并回填系统信息
+		if err := h.registry.AdoptAgentInfo(agent, msg.Hostname, msg.OS, msg.Arch, msg.AgentVersion, msg.HostFingerprint); err != nil {
+			log.Printf("Agent %d 回填主机信息失败: %v", agent.ID, err)
 		}
 	}
 

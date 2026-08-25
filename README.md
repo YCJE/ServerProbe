@@ -407,11 +407,24 @@ systemctl restart probe-server
 ### 前提条件
 
 - Server 已安装并运行
-- 在 Server 面板中已生成注册码 (首次登录后在"Agent 管理"页面生成)
 
-### 一键安装
+### 方式一: Token 直连 (推荐)
 
-在被监控的服务器上执行:
+1. 登录 Server 面板,进入 **Agent 管理** 页面
+2. 点击 **添加服务器**,填写服务器名称 (备注可选)
+3. 创建成功后,页面会显示一键安装命令,复制到被监控服务器上以 root 执行:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/YCJE/ServerProbe/master/scripts/install-agent.sh | bash -s -- --server https://your-server.com:8443 --token YOUR_TOKEN
+```
+
+Agent 首次连接时自动绑定主机指纹并回填系统信息 (主机名/系统/架构),此后按指纹严格校验,防止 Token 泄露后被其他主机冒用。
+
+已添加的服务器可在列表中点击 **安装命令** 随时重新获取命令 (用于重装或迁移)。
+
+### 方式二: 注册码 (兼容旧流程)
+
+在 **Agent 管理** 页面点击 **生成注册码**,然后:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/YCJE/ServerProbe/master/scripts/install-agent.sh | bash -s -- --server https://your-server.com:8443 --code YOUR_CODE
@@ -419,7 +432,8 @@ curl -fsSL https://raw.githubusercontent.com/YCJE/ServerProbe/master/scripts/ins
 
 参数说明:
 - `--server`: Server 地址,**必须以 `https://` 开头**
-- `--code`: 在 Server 面板中生成的注册码
+- `--token`: 后台添加服务器后生成的 Token (推荐,与 `--code` 二选一)
+- `--code`: 在 Server 面板中生成的注册码 (与 `--token` 二选一,15 分钟有效)
 
 脚本会自动:
 1. 安装 Go (如未安装)
@@ -443,7 +457,8 @@ useradd -r -s /usr/sbin/nologin probe
 mkdir -p /etc/probe-agent
 cat > /etc/probe-agent/config.yml << 'EOF'
 server: "https://your-server.com:8443"
-register_code: "YOUR_CODE"
+token: "YOUR_TOKEN"        # Token 直连 (推荐)
+# register_code: "YOUR_CODE"  # 或使用注册码 (二选一)
 report_interval: 3
 config_sync_interval: 3600
 ping_method: "auto"
@@ -544,8 +559,12 @@ systemctl restart probe-server
 # Server 地址 (必须 https:// 开头)
 server: "https://your-server.com:8443"
 
-# 注册码 (首次注册用,注册成功后自动清除并替换为 Token)
-register_code: "ABC123XY"
+# Token (后台添加服务器后生成,推荐直连方式)
+token: "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+
+# 注册码 (兼容旧流程,首次注册用,注册成功后自动清除并替换为 Token)
+# 与 token 二选一
+# register_code: "ABC123XY"
 
 # 数据上报间隔,秒
 report_interval: 3

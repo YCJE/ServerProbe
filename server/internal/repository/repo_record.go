@@ -61,7 +61,7 @@ func (r *RecordRepository) FlushBatch(records []model.MetricRecord) error {
 
 	const (
 		sqliteParamLimit = 999 // SQLite 单条 SQL 默认参数上限
-		paramCountPerRow = 19  // 每行占位符数量，须与下方 VALUES 子句保持一致
+		paramCountPerRow = 20  // 每行占位符数量，须与下方 VALUES 子句保持一致
 	)
 
 	// 动态计算单批最大行数，确保 rows × paramCountPerRow <= 999
@@ -82,20 +82,20 @@ func (r *RecordRepository) FlushBatch(records []model.MetricRecord) error {
 
 		// 构建多值 INSERT SQL
 		var sqlBuilder strings.Builder
-		sqlBuilder.WriteString("INSERT INTO metric_records (agent_id, timestamp, cpu_usage, mem_usage, mem_total, mem_used, swap_total, swap_used, disk_usage, net_rx, net_tx, tcp_connections, udp_connections, load_1, load_5, load_15, uptime, process_count, ping_data) VALUES ")
+		sqlBuilder.WriteString("INSERT INTO metric_records (agent_id, timestamp, cpu_usage, mem_usage, mem_total, mem_used, swap_total, swap_used, disk_usage, net_rx, net_tx, tcp_connections, udp_connections, load_1, load_5, load_15, uptime, process_count, ping_data, offline) VALUES ")
 
 		args := make([]interface{}, 0, len(batch)*paramCountPerRow)
 		for i, rec := range batch {
 			if i > 0 {
 				sqlBuilder.WriteString(", ")
 			}
-			sqlBuilder.WriteString("(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+			sqlBuilder.WriteString("(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
 			args = append(args,
 				rec.AgentID, rec.Timestamp, rec.CPUUsage, rec.MemUsage,
 				rec.MemTotal, rec.MemUsed, rec.SwapTotal, rec.SwapUsed,
 				rec.DiskUsage, rec.NetRx, rec.NetTx, rec.TCPConns, rec.UDPConns,
 				rec.Load1, rec.Load5, rec.Load15, rec.Uptime,
-				rec.ProcessCount, rec.PingData,
+				rec.ProcessCount, rec.PingData, rec.Offline,
 			)
 		}
 

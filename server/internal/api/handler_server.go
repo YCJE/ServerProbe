@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/server-probe/server/internal/model"
 	"github.com/server-probe/server/internal/repository"
 	"github.com/server-probe/server/internal/service"
 	sharedmodel "github.com/server-probe/shared/model"
@@ -38,6 +39,8 @@ type historyPoint struct {
 	Uptime       uint64                   `json:"uptime"`
 	ProcessCount int                      `json:"process_count"`
 	PingData     []sharedmodel.PingResult `json:"ping_data"`
+	// Online 在线状态（1=在线, 0=离线占位记录），用于在线率时间线
+	Online int `json:"online"`
 }
 
 // ServerHandler 服务器信息处理器
@@ -339,6 +342,26 @@ func (h *ServerHandler) HandleGetServerHistory(c *gin.Context) {
 		return
 	}
 
+	// 降采样保护：点数超过上限时均匀抽稀，防止大范围查询返回过多数据导致前端渲染卡顿
+	// （保留首尾点，确保时间边界准确；离线占位记录同样参与抽稀）
+	const maxHistoryPoints = 800
+	if len(records) > maxHistoryPoints {
+		sampled := make([]model.MetricRecord, 0, maxHistoryPoints+2)
+		step := float64(len(records)-1) / float64(maxHistoryPoints-1)
+		lastIdx := -1
+		for i := 0; i < maxHistoryPoints; i++ {
+			idx := int(math.Round(float64(i) * step))
+			if idx > lastIdx {
+				sampled = append(sampled, records[idx])
+				lastIdx = idx
+			}
+		}
+		if lastIdx < len(records)-1 {
+			sampled = append(sampled, records[len(records)-1])
+		}
+		records = sampled
+	}
+
 	// 将 MetricRecord 转换为统一格式 (ping_data 从 string 解析为数组)
 	// P3: CPUUsage / Load 字段以 ×10 整数存储，查询时除以 10.0 还原为浮点数
 	historyPoints := make([]historyPoint, 0, len(records))
@@ -361,6 +384,7 @@ func (h *ServerHandler) HandleGetServerHistory(c *gin.Context) {
 			Load15:       float64(r.Load15) / 10.0,
 			Uptime:       r.Uptime,
 			ProcessCount: r.ProcessCount,
+			Online:       1 - r.Offline,
 		}
 		// 解析 ping_data JSON 字符串为数组
 		if r.PingData != "" {
@@ -395,6 +419,7 @@ type publicHistoryPoint struct {
 	Load15    float64                  `json:"load_15"`
 	Uptime    uint64                   `json:"uptime"`
 	PingData  []sharedmodel.PingResult `json:"ping_data"`
+	Online    int                      `json:"online"`
 }
 
 // toPublicHistoryPoint 将 historyPoint 转换为公开版本，过滤敏感字段
@@ -415,6 +440,7 @@ func toPublicHistoryPoint(hp historyPoint) publicHistoryPoint {
 		Load5:     hp.Load5,
 		Load15:    hp.Load15,
 		Uptime:    hp.Uptime,
+		Online:    hp.Online,
 	}
 
 	// 从原始磁盘 JSON 计算聚合使用率百分比（不暴露磁盘设备信息）

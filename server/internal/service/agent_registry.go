@@ -191,6 +191,54 @@ func (s *AgentRegistryService) ValidateToken(token string) (*model.Agent, error)
 	return s.agentRepo.GetByToken(token)
 }
 
+// CreateAgent 直接创建 Agent（Komari 风格：后台先添加基本信息，生成 Token 供一键安装命令使用）
+// 创建的 Agent 处于离线状态，等待被监控服务器上执行安装命令后通过 Token 首次连接
+func (s *AgentRegistryService) CreateAgent(displayName string) (*model.Agent, error) {
+	token, err := generateRandomToken(32)
+	if err != nil {
+		return nil, fmt.Errorf("生成 Token 失败: %w", err)
+	}
+
+	agent := &model.Agent{
+		Token:       token,
+		DisplayName: displayName,
+		Online:      false,
+	}
+	if err := s.agentRepo.Create(agent); err != nil {
+		return nil, fmt.Errorf("创建 Agent 失败: %w", err)
+	}
+
+	log.Printf("Agent 创建成功: ID=%d, 名称: %s（等待连接）", agent.ID, displayName)
+	return agent, nil
+}
+
+// AdoptAgentInfo Token 首次连接时回填主机信息
+// 适用于后台直接创建（无主机指纹）的 Agent：首次用 Token 连接时
+// 绑定主机指纹并记录系统信息，此后重连将按指纹严格校验
+func (s *AgentRegistryService) AdoptAgentInfo(agent *model.Agent, hostname, osName, arch, agentVersion, fingerprint string) error {
+	if fingerprint == "" {
+		return fmt.Errorf("主机指纹不能为空")
+	}
+
+	agent.HostFingerprint = fingerprint
+	if hostname != "" {
+		agent.Hostname = hostname
+	}
+	if osName != "" {
+		agent.OS = osName
+	}
+	if arch != "" {
+		agent.Arch = arch
+	}
+	if agentVersion != "" {
+		agent.AgentVersion = agentVersion
+	}
+	if err := s.agentRepo.Update(agent); err != nil {
+		return fmt.Errorf("回填主机信息失败: %w", err)
+	}
+	return nil
+}
+
 // ListRegisterCodes 列出所有注册码
 func (s *AgentRegistryService) ListRegisterCodes() ([]model.RegisterCode, error) {
 	return s.registerRepo.ListUnused()

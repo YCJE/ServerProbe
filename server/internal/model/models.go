@@ -180,6 +180,10 @@ type MetricRecord struct {
 	Uptime        uint64  `json:"uptime"`
 	ProcessCount  int     `json:"process_count"`
 	PingData      string  `json:"ping_data"`
+	// Offline 离线标记（0=在线, 1=离线占位记录）
+	// 采用反转语义使旧行（AutoMigrate 加列默认 0）自然表示"在线"，
+	// 离线时段由聚合服务写入占位记录（Offline=1），用于在线率时间线
+	Offline int `gorm:"default:0" json:"offline"`
 }
 
 // TableName 指定表名

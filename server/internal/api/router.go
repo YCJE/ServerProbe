@@ -168,8 +168,10 @@ func NewRouter(
 
 			// Agent 管理
 			protected.GET("/agents", agentAPIHandler.HandleListAgents)
+			protected.POST("/agents", agentAPIHandler.HandleCreateAgent)
 			protected.PUT("/agents/:id", agentAPIHandler.HandleUpdateAgent)
 			protected.PUT("/agents/:id/meta", agentAPIHandler.HandleUpdateAgentMeta)
+			protected.GET("/agents/:id/token", agentAPIHandler.HandleGetAgentToken)
 			protected.DELETE("/agents/:id", agentAPIHandler.HandleDeleteAgent)
 
 			// 探测目标管理

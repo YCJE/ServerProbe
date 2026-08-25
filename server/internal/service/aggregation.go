@@ -96,12 +96,20 @@ func (s *AggregationService) aggregate() {
 	for _, agent := range agents {
 		rb := s.monitor.GetRingBuffer(agent.ID)
 		if rb == nil {
+			// 从未上线过的 Agent（后台直接创建、尚未连接）不产生记录
 			continue
 		}
 
 		// 获取最近 5 分钟的数据
 		points := rb.GetByTimeRange(now-300, now)
 		if len(points) == 0 {
+			// 聚合周期内无数据点 = Agent 离线，写入离线占位记录
+			// 保证在线率时间线在离线时段也有数据点（参考 Komari 的存储方式）
+			records = append(records, model.MetricRecord{
+				AgentID:   agent.ID,
+				Timestamp: now,
+				Offline:   1,
+			})
 			continue
 		}
 

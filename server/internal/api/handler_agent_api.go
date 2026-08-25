@@ -130,6 +130,67 @@ func (h *AgentAPIHandler) HandleListAgents(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"agents": agents})
 }
 
+// HandleCreateAgent 直接创建 Agent（Komari 风格）
+// 路由: POST /api/v1/agents
+// 后台先添加基本信息创建记录并生成 Token，随后前端展示一键安装命令（携带 Token），
+// 被监控服务器执行命令后 Agent 用 Token 首次连接并回填主机信息
+func (h *AgentAPIHandler) HandleCreateAgent(c *gin.Context) {
+	var req struct {
+		DisplayName string `json:"display_name"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的请求体"})
+		return
+	}
+
+	displayName := strings.TrimSpace(req.DisplayName)
+	if displayName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请输入服务器名称"})
+		return
+	}
+	if len(displayName) > 100 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "显示名称过长（最多 100 字符）"})
+		return
+	}
+
+	agent, err := h.registry.CreateAgent(displayName)
+	if err != nil {
+		log.Printf("创建 Agent 失败: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建 Agent 失败"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"agent_id":     agent.ID,
+		"display_name": agent.DisplayName,
+		"token":        agent.Token,
+	})
+}
+
+// HandleGetAgentToken 获取 Agent Token（用于生成重装命令）
+// 路由: GET /api/v1/agents/:id/token
+// Token 仅在管理员认证下返回，用于为已存在的 Agent 重新生成一键安装命令（重装/换机场景）
+func (h *AgentAPIHandler) HandleGetAgentToken(c *gin.Context) {
+	id := c.Param("id")
+	agentID, err := strconv.ParseInt(id, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 Agent ID"})
+		return
+	}
+
+	agent, err := h.agentRepo.GetByID(agentID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Agent 不存在"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"agent_id":     agent.ID,
+		"display_name": agent.DisplayName,
+		"token":        agent.Token,
+	})
+}
+
 // HandleDeleteAgent 删除 Agent
 // 路由: DELETE /api/v1/agents/:id
 func (h *AgentAPIHandler) HandleDeleteAgent(c *gin.Context) {

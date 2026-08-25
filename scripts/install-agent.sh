@@ -3,10 +3,14 @@
 # 支持两种模式:
 #   1. 从源码构建 (默认,无需 Release)
 #   2. 下载预编译二进制 (需要 GitHub Release)
+# 支持两种接入方式:
+#   --token  Token 直连（推荐，后台"添加服务器"后使用一键命令）
+#   --code   注册码接入（兼容旧流程）
 #
 # 用法:
-#   从源码构建:  ./install-agent.sh --server https://your-server.com:8443 --code ABC123XY
-#   下载二进制:  ./install-agent.sh --server https://your-server.com:8443 --code ABC123XY --release
+#   Token 直连:  ./install-agent.sh --server https://your-server.com:8443 --token <TOKEN>
+#   注册码:      ./install-agent.sh --server https://your-server.com:8443 --code ABC123XY
+#   下载二进制:  ./install-agent.sh --server https://your-server.com:8443 --token <TOKEN> --release
 
 set -e
 
@@ -22,6 +26,7 @@ error() { echo -e "${RED}[ERROR]${NC} $1"; exit 1; }
 # 参数
 SERVER_URL=""
 REGISTER_CODE=""
+TOKEN=""
 INSTALL_DIR="/usr/local/bin"
 CONFIG_DIR="/etc/probe-agent"
 SERVICE_NAME="probe-agent"
@@ -34,15 +39,19 @@ while [[ $# -gt 0 ]]; do
     case $1 in
         --server) SERVER_URL="$2"; shift 2;;
         --code) REGISTER_CODE="$2"; shift 2;;
+        --token) TOKEN="$2"; shift 2;;
         --version) VERSION="$2"; shift 2;;
         --release) FROM_SOURCE=false; shift;;
         --from-source) FROM_SOURCE=true; shift;;
         --help)
-            echo "用法: install-agent.sh --server <URL> --code <注册码> [选项]"
+            echo "用法: install-agent.sh --server <URL> (--token <Token> | --code <注册码>) [选项]"
+            echo ""
+            echo "接入方式 (二选一):"
+            echo "  --token <Token>   Token 直连 (推荐, 后台添加服务器后一键命令使用)"
+            echo "  --code <注册码>   注册码接入 (兼容旧流程)"
             echo ""
             echo "选项:"
             echo "  --server <URL>    Server 地址 (必须 https://)"
-            echo "  --code <注册码>   注册码"
             echo "  --version <版本>  指定版本 (仅 --release 模式)"
             echo "  --release         从 GitHub Release 下载二进制"
             echo "  --from-source     从源码构建 (默认)"
@@ -55,8 +64,11 @@ done
 if [ -z "$SERVER_URL" ]; then
     error "必须指定 --server 参数"
 fi
-if [ -z "$REGISTER_CODE" ]; then
-    error "必须指定 --code 参数"
+if [ -n "$TOKEN" ] && [ -n "$REGISTER_CODE" ]; then
+    error "--token 与 --code 不能同时指定, 请二选一"
+fi
+if [ -z "$TOKEN" ] && [ -z "$REGISTER_CODE" ]; then
+    error "必须指定 --token (推荐) 或 --code 参数"
 fi
 if [ "$EUID" -ne 0 ]; then
     error "请以 root 用户运行此脚本"
@@ -164,6 +176,7 @@ mkdir -p "$CONFIG_DIR"
 info "生成配置文件..."
 cat > "${CONFIG_DIR}/config.yml" << EOF
 server: "${SERVER_URL}"
+token: "${TOKEN}"
 register_code: "${REGISTER_CODE}"
 report_interval: 3
 config_sync_interval: 3600
@@ -173,6 +186,12 @@ EOF
 
 chmod 600 "${CONFIG_DIR}/config.yml"
 chown probe:probe "${CONFIG_DIR}/config.yml"
+
+if [ -n "$TOKEN" ]; then
+    info "接入方式: Token 直连 (Agent 将自动连接并上报数据)"
+else
+    info "接入方式: 注册码 (首次连接后自动换取 Token 并保存)"
+fi
 
 # setcap (ICMP Ping)
 info "配置 ICMP 权限..."
