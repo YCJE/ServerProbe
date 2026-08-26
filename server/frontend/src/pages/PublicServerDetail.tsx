@@ -11,6 +11,7 @@ import type {
 } from '@/types'
 import NetworkQualityChart, { type ChartSeries } from '@/components/NetworkQualityChart'
 import Sparkline from '@/components/Sparkline'
+import LatencyGrid, { type LatencyGridPoint } from '@/components/LatencyGrid'
 import LatencyQualityBar, { type LatencyPoint } from '@/components/LatencyQualityBar'
 import OnlineTimeline, { type OnlineTimelinePoint } from '@/components/OnlineTimeline'
 import ResourceRing from '@/components/ResourceRing'
@@ -56,6 +57,9 @@ const SPARK_TX = '#AF52DE'
 /** Sparkline 最多展示的数据点数 */
 const MAX_SPARK_POINTS = 60
 
+/** 稳定的空数组引用（延迟格子图缺省值，避免每次渲染触发 useMemo 重算） */
+const EMPTY_GRID_HISTORY: LatencyGridPoint[] = []
+
 /** 历史数据定时刷新间隔 */
 const HISTORY_REFRESH_INTERVAL = 5 * 60 * 1000
 
@@ -73,6 +77,8 @@ export default function PublicServerDetail() {
   const servers = useServerStore((s) => s.servers)
   const realtimeHistory = useServerStore((s) => s.realtimeHistory)
   const clearRealtimeHistory = useServerStore((s) => s.clearRealtimeHistory)
+  // 延迟格子图数据源：公开 WS 填充的滚动窗口（固定最近 60 分钟，不随时间范围切换）
+  const gridHistory = useServerStore((s) => s.cardHistory.get(serverId) ?? EMPTY_GRID_HISTORY)
 
   const [loading, setLoading] = useState(true)
   const [fetchError, setFetchError] = useState('')
@@ -812,6 +818,14 @@ export default function PublicServerDetail() {
                 {range.label}
               </button>
             ))}
+          </div>
+        </div>
+
+        {/* 延迟格子图（置顶：VPS 用户最常看的数据，IPv4/IPv6 分组，每目标一行） */}
+        <div className="card-soft p-5">
+          <LatencyGrid points={gridHistory} ipVersion={4} maxCells={24} />
+          <div className="mt-3 border-t border-dashed border-border/60 pt-3">
+            <LatencyGrid points={gridHistory} ipVersion={6} maxCells={24} />
           </div>
         </div>
 

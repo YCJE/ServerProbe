@@ -53,6 +53,8 @@ export interface PingResult {
   loss?: number
   packets_sent?: number
   packets_recv?: number
+  /** IP 版本标注（4/6，0 或缺省 = 未标注，前端回退到名称启发式识别） */
+  ip_version?: number
 }
 
 /** 进程信息（资源占用 Top N 进程） */
@@ -96,6 +98,8 @@ export interface ServerData {
   udp_connections: number
   process_count: number
   ping_data: PingResult[]
+  /** CPU 温度（摄氏度，0=不可用） */
+  temperature?: number
   /** 虚拟化类型（如 KVM、OpenVZ、Docker、None 等） */
   virtualization?: string
   /** Linux 发行版名称（如 Ubuntu 22.04、Debian 12 等） */
@@ -166,6 +170,8 @@ export interface DashboardItem {
   udp_connections: number
   process_count: number
   ping_data: PingResult[]
+  /** CPU 温度（摄氏度，0=不可用） */
+  temperature?: number
   /** 虚拟化类型（如 KVM、OpenVZ、Docker、None 等） */
   virtualization?: string
   /** Linux 发行版名称（如 Ubuntu 22.04、Debian 12 等） */
@@ -252,6 +258,8 @@ export interface HistoryData {
 export interface LoginRequest {
   username: string
   password: string
+  /** TOTP 动态码（启用两步验证后第二步登录使用） */
+  totp_code?: string
 }
 
 /** 登录响应（Token 通过 HttpOnly Cookie 传递，不在响应体中返回） */
@@ -355,6 +363,54 @@ export interface AlertRule {
   enabled: boolean
   notify_channel_id: number
   created_at: string
+}
+
+/** 告警历史记录（FIRING 触发与 RESOLVED 恢复时间线） */
+export interface AlertHistoryItem {
+  id: number
+  rule_id: number
+  rule_name: string
+  agent_id: number
+  server_name: string
+  metric: string
+  state: 'firing' | 'resolved'
+  value: number
+  resolved_value: number
+  message: string
+  triggered_at: string
+  resolved_at: string | null
+}
+
+/** 告警历史响应 */
+export interface AlertHistoryResponse {
+  histories: AlertHistoryItem[]
+  total: number
+  page: number
+  page_size: number
+}
+
+// ==================== 标签相关类型 ====================
+
+/** 标签（NodeGet 风格彩色标签） */
+export interface Tag {
+  id: number
+  name: string
+  /** 十六进制色值，如 "#3b82f6" */
+  color: string
+  created_at: string
+}
+
+// ==================== TOTP 两步验证相关类型 ====================
+
+/** TOTP 绑定状态 */
+export interface TOTPStatus {
+  totp_enabled: boolean
+}
+
+/** TOTP Setup 响应（生成密钥与 otpauth URL） */
+export interface TOTPSetupResponse {
+  secret: string
+  otpauth_url: string
 }
 
 // ==================== 通知渠道相关类型 ====================

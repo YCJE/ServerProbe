@@ -1,10 +1,12 @@
 import { memo, useMemo, useState, useEffect, useCallback } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useServerStore } from '@/store/useServerStore'
+import { useTagColors } from '@/store/useTagStore'
 import ServerCard from '@/components/ServerCard'
 import DistroIcon from '@/components/DistroIcon'
 import StatusDot from '@/components/StatusDot'
 import MapView from '@/components/MapView'
+import { getLatencyTextColor } from '@/components/LatencyGrid'
 import {
   formatSpeed,
   formatUptime,
@@ -18,6 +20,17 @@ import type { ServerData } from '@/types'
 
 /** 视图模式 */
 type ViewMode = 'card' | 'table' | 'map'
+
+/** IP 栈筛选 */
+type IPFilter = '' | 'v4' | 'v6' | 'dual'
+
+/** IP 栈筛选选项 */
+const IP_FILTER_OPTIONS: { value: IPFilter; label: string }[] = [
+  { value: '', label: '全部 IP 栈' },
+  { value: 'v4', label: '有 IPv4' },
+  { value: 'v6', label: '有 IPv6' },
+  { value: 'dual', label: '双栈' },
+]
 
 /** 排序选项 */
 type SortOption =
@@ -127,6 +140,7 @@ const ServerTableRow = memo(function ServerTableRow({
   const cc = getCountryCode(server)
   const flag = cc ? getFlagEmoji(cc) : ''
   const monthlyTraffic = getMonthlyTraffic(server)
+  const avgLatency = getAvgLatency(server)
   const expireDays = server.expires_in_days
   const expireColor =
     expireDays == null ? '' : expireDays < 7 ? '#f56565' : expireDays < 30 ? '#f6ad55' : ''
@@ -197,6 +211,24 @@ const ServerTableRow = memo(function ServerTableRow({
           {server.traffic_quota_bytes ? ` / ${formatTraffic(server.traffic_quota_bytes)}` : ''}
         </span>
       </td>
+      {/* 平均延迟（带颜色分级圆点） */}
+      <td className="p-3 align-middle">
+        <span className="flex items-center gap-1.5 whitespace-nowrap text-xs tabular-nums">
+          {avgLatency >= 0 ? (
+            <>
+              <span
+                className="inline-block h-1.5 w-1.5 shrink-0 rounded-full"
+                style={{ backgroundColor: getLatencyTextColor(avgLatency) }}
+              />
+              <span className="font-medium" style={{ color: getLatencyTextColor(avgLatency) }}>
+                {avgLatency.toFixed(1)}ms
+              </span>
+            </>
+          ) : (
+            <span className="text-muted-foreground/50">---</span>
+          )}
+        </span>
+      </td>
       {/* 到期 */}
       <td className="p-3 align-middle">
         <span
@@ -243,7 +275,8 @@ const ServerTableRow = memo(function ServerTableRow({
     s.monthly_rx === n.monthly_rx &&
     s.monthly_tx === n.monthly_tx &&
     s.traffic_quota_bytes === n.traffic_quota_bytes &&
-    s.expires_in_days === n.expires_in_days
+    s.expires_in_days === n.expires_in_days &&
+    s.ping_data === n.ping_data
   )
 })
 
@@ -252,24 +285,36 @@ export default function Dashboard() {
   const servers = useServerStore((s) => s.servers)
   const fetchServers = useServerStore((s) => s.fetchServers)
   const wsConnected = useServerStore((s) => s.wsConnected)
+  const tagColors = useTagColors()
+  const [searchParams, setSearchParams] = useSearchParams()
 
-  // 视图模式（持久化）
-  const [viewMode, setViewMode] = useState<ViewMode>(() =>
-    loadLS<ViewMode>(LS_VIEW_MODE, ['card', 'table', 'map'], 'card'),
-  )
-  // 排序选项（持久化）
-  const [sortOption, setSortOption] = useState<SortOption>(() =>
-    loadLS<SortOption>(LS_SORT, SORT_OPTIONS.map((o) => o.value), 'default'),
-  )
-  // 搜索关键字
-  const [searchInput, setSearchInput] = useState('')
-  const [debouncedSearch, setDebouncedSearch] = useState('')
+  // 视图模式（URL 参数优先，其次 localStorage）
+  const [viewMode, setViewMode] = useState<ViewMode>(() => {
+    const fromURL = searchParams.get('view')
+    if (fromURL === 'card' || fromURL === 'table' || fromURL === 'map') return fromURL
+    return loadLS<ViewMode>(LS_VIEW_MODE, ['card', 'table', 'map'], 'card')
+  })
+  // 排序选项（URL 参数优先，其次 localStorage）
+  const [sortOption, setSortOption] = useState<SortOption>(() => {
+    const fromURL = searchParams.get('sort')
+    if (fromURL && SORT_OPTIONS.some((o) => o.value === fromURL)) return fromURL as SortOption
+    return loadLS<SortOption>(LS_SORT, SORT_OPTIONS.map((o) => o.value), 'default')
+  })
+  // 搜索关键字（URL 参数 q）
+  const [searchInput, setSearchInput] = useState(() => searchParams.get('q') || '')
+  const [debouncedSearch, setDebouncedSearch] = useState(() => (searchParams.get('q') || '').trim().toLowerCase())
   // 标签筛选（''=全部）
-  const [tagFilter, setTagFilter] = useState('')
+  const [tagFilter, setTagFilter] = useState(() => searchParams.get('tag') || '')
   // 地区筛选（''=全部，值为 country_code）
-  const [regionFilter, setRegionFilter] = useState('')
+  const [regionFilter, setRegionFilter] = useState(() => searchParams.get('region') || '')
+  // IP 栈筛选（''=全部）
+  const [ipFilter, setIpFilter] = useState<IPFilter>(() => {
+    const v = searchParams.get('ip')
+    if (v === 'v4' || v === 'v6' || v === 'dual') return v
+    return ''
+  })
 
-  // 视图模式 / 排序选项持久化
+  // 视图模式 / 排序选项持久化（localStorage）
   useEffect(() => {
     try {
       localStorage.setItem(LS_VIEW_MODE, viewMode)
@@ -285,6 +330,21 @@ export default function Dashboard() {
       // 忽略
     }
   }, [sortOption])
+
+  // 筛选条件写入 URL 参数（刷新/分享保持筛选状态）
+  useEffect(() => {
+    const params = new URLSearchParams()
+    if (searchInput.trim()) params.set('q', searchInput.trim())
+    if (tagFilter) params.set('tag', tagFilter)
+    if (regionFilter) params.set('region', regionFilter)
+    if (ipFilter) params.set('ip', ipFilter)
+    if (sortOption !== 'default') params.set('sort', sortOption)
+    if (viewMode !== 'card') params.set('view', viewMode)
+    const qs = params.toString()
+    // replace 避免每次筛选都产生一条历史记录
+    setSearchParams(qs ? qs : {}, { replace: true })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchInput, tagFilter, regionFilter, ipFilter, sortOption, viewMode])
 
   // 搜索防抖 400ms
   useEffect(() => {
@@ -383,7 +443,23 @@ export default function Dashboard() {
       result = result.filter((s) => getCountryCode(s) === regionFilter)
     }
 
-    // 4. 排序（在线节点排在离线节点之前）
+    // 4. IP 栈筛选（v4=有 IPv4 出口 / v6=有 IPv6 出口 / dual=双栈）
+    if (ipFilter) {
+      result = result.filter((s) => {
+        switch (ipFilter) {
+          case 'v4':
+            return !!s.ipv4
+          case 'v6':
+            return !!s.ipv6
+          case 'dual':
+            return !!s.ipv4 && !!s.ipv6
+          default:
+            return true
+        }
+      })
+    }
+
+    // 5. 排序（在线节点排在离线节点之前）
     if (sortOption === 'default') {
       // 默认排序：在线优先，然后保持原顺序
       result = [...result].sort((a, b) => {
@@ -431,7 +507,7 @@ export default function Dashboard() {
     }
 
     return result
-  }, [servers, debouncedSearch, tagFilter, regionFilter, sortOption])
+  }, [servers, debouncedSearch, tagFilter, regionFilter, ipFilter, sortOption])
 
   const handleSearchChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     setSearchInput(e.target.value)
@@ -645,6 +721,30 @@ export default function Dashboard() {
             </div>
           )}
 
+          {/* IP 栈筛选下拉 */}
+          <div className="relative">
+            <select
+              value={ipFilter}
+              onChange={(e) => setIpFilter(e.target.value as IPFilter)}
+              className="h-11 cursor-pointer appearance-none rounded-xl border border-border bg-secondary px-3 pr-8 text-sm font-medium text-foreground transition-colors hover:bg-accent focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+              aria-label="按 IP 栈筛选"
+            >
+              {IP_FILTER_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+            <svg
+              className="pointer-events-none absolute right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </div>
+
           {/* 排序下拉菜单 */}
           <div className="relative">
             <select
@@ -673,7 +773,7 @@ export default function Dashboard() {
             <button
               onClick={() => setTagFilter('')}
               className="flex h-8 items-center gap-1 rounded-lg px-2 text-xs font-semibold transition-transform hover:scale-105"
-              style={getTagStyle(tagFilter)}
+              style={tagColors[tagFilter] ? { background: tagColors[tagFilter], color: '#fff' } : getTagStyle(tagFilter)}
             >
               {tagFilter}
               <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -687,6 +787,17 @@ export default function Dashboard() {
               className="flex h-8 items-center gap-1 rounded-lg bg-secondary px-2 text-xs font-semibold text-foreground transition-colors hover:bg-accent"
             >
               {getFlagEmoji(regionFilter)} {regionFilter}
+              <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          )}
+          {ipFilter && (
+            <button
+              onClick={() => setIpFilter('')}
+              className="flex h-8 items-center gap-1 rounded-lg bg-secondary px-2 text-xs font-semibold text-foreground transition-colors hover:bg-accent"
+            >
+              {ipFilter === 'dual' ? 'IPv4+IPv6' : `IPv${ipFilter === 'v4' ? 4 : 6}`}
               <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
               </svg>
@@ -774,7 +885,7 @@ export default function Dashboard() {
         // 表格视图（card-soft overflow-hidden）
         <div className="card-soft overflow-hidden">
           <div className="overflow-x-auto scrollbar-thin">
-            <table className="w-full min-w-[1080px]">
+            <table className="w-full min-w-[1160px]">
               <thead>
                 <tr className="border-b border-border">
                   <th className="h-10 px-3 text-left text-xs font-medium text-muted-foreground">状态</th>
@@ -786,6 +897,7 @@ export default function Dashboard() {
                   <th className="h-10 px-3 text-left text-xs font-medium text-muted-foreground">下行</th>
                   <th className="h-10 px-3 text-left text-xs font-medium text-muted-foreground">上行</th>
                   <th className="h-10 px-3 text-left text-xs font-medium text-muted-foreground">月流量</th>
+                  <th className="h-10 px-3 text-left text-xs font-medium text-muted-foreground">延迟</th>
                   <th className="h-10 px-3 text-left text-xs font-medium text-muted-foreground">到期</th>
                   <th className="h-10 px-3 text-left text-xs font-medium text-muted-foreground">运行时长</th>
                 </tr>

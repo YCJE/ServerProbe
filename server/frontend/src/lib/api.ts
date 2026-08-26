@@ -12,6 +12,7 @@ import type {
   AgentInfo,
   SystemStatus,
   AlertRule,
+  AlertHistoryResponse,
   NotifyChannel,
   ServiceMonitor,
   ServiceStatusResult,
@@ -21,6 +22,9 @@ import type {
   MonthlyTraffic,
   AllTrafficResponse,
   SharePage,
+  Tag,
+  TOTPStatus,
+  TOTPSetupResponse,
 } from '@/types'
 
 /** API 基础路径 */
@@ -141,6 +145,28 @@ export async function login(data: LoginRequest): Promise<LoginResponse> {
 /** 登出（后端清除 Cookie） */
 export async function logout(): Promise<void> {
   await request('/auth/logout', { method: 'POST' })
+}
+
+// ==================== TOTP 两步验证 API ====================
+
+/** 查询 TOTP 绑定状态 */
+export async function getTOTPStatus(): Promise<TOTPStatus> {
+  return request<TOTPStatus>('/auth/totp/status')
+}
+
+/** 生成 TOTP 密钥（返回 secret 与 otpauth URL，需验证一次动态码后生效） */
+export async function setupTOTP(): Promise<TOTPSetupResponse> {
+  return request<TOTPSetupResponse>('/auth/totp/setup', { method: 'POST' })
+}
+
+/** 验证动态码并启用两步验证 */
+export async function enableTOTP(code: string): Promise<{ success: boolean; message?: string }> {
+  return request('/auth/totp/enable', { method: 'POST', body: JSON.stringify({ code }) })
+}
+
+/** 停用两步验证（需密码确认） */
+export async function disableTOTP(password: string): Promise<{ success: boolean; message?: string }> {
+  return request('/auth/totp/disable', { method: 'POST', body: JSON.stringify({ password }) })
 }
 
 // ==================== 服务器相关 API ====================
@@ -309,6 +335,8 @@ export interface PingTarget {
   method: string
   enabled: boolean
   sort_order: number
+  /** IP 版本标注：0=自动识别，4=IPv4，6=IPv6 */
+  ip_version?: number
   created_at: string
 }
 
@@ -370,6 +398,48 @@ export async function deleteAlertRule(id: number): Promise<{ success: boolean }>
 /** 测试告警规则 */
 export async function testAlertRule(id: number): Promise<{ success: boolean }> {
   return request(`/alerts/${id}/test`, { method: 'POST' })
+}
+
+// ==================== 告警历史 API ====================
+
+/** 分页查询告警历史 */
+export async function getAlertHistory(params?: {
+  state?: 'firing' | 'resolved'
+  agent_id?: number
+  rule_id?: number
+  page?: number
+  page_size?: number
+}): Promise<AlertHistoryResponse> {
+  const query = new URLSearchParams()
+  if (params?.state) query.set('state', params.state)
+  if (params?.agent_id) query.set('agent_id', String(params.agent_id))
+  if (params?.rule_id) query.set('rule_id', String(params.rule_id))
+  if (params?.page) query.set('page', String(params.page))
+  if (params?.page_size) query.set('page_size', String(params.page_size))
+  const qs = query.toString()
+  return request(`/alert-history${qs ? `?${qs}` : ''}`)
+}
+
+// ==================== 标签 API ====================
+
+/** 获取标签列表（公开只读接口，登录/未登录均可用于卡片徽章取色） */
+export async function getPublicTags(): Promise<{ tags: Tag[] }> {
+  return request('/public/tags')
+}
+
+/** 创建标签 */
+export async function createTag(data: { name: string; color?: string }): Promise<{ tag: Tag }> {
+  return request('/tags', { method: 'POST', body: JSON.stringify(data) })
+}
+
+/** 更新标签 */
+export async function updateTag(id: number, data: Partial<{ name: string; color: string }>): Promise<{ tag: Tag }> {
+  return request(`/tags/${id}`, { method: 'PUT', body: JSON.stringify(data) })
+}
+
+/** 删除标签 */
+export async function deleteTag(id: number): Promise<{ success: boolean }> {
+  return request(`/tags/${id}`, { method: 'DELETE' })
 }
 
 // ==================== 通知渠道 API ====================

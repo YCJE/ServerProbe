@@ -94,11 +94,12 @@ func (s *ConfigSyncService) GetAgentConfig() (*sharedmodel.AgentConfig, error) {
 	pingTargets := make([]sharedmodel.PingTarget, 0, len(targets))
 	for _, t := range targets {
 		pingTargets = append(pingTargets, sharedmodel.PingTarget{
-			ID:      t.ID,
-			Target:  t.Target,
-			Name:    t.Name,
-			Method:  t.Method,
-			Enabled: t.Enabled,
+			ID:        t.ID,
+			Target:    t.Target,
+			Name:      t.Name,
+			Method:    t.Method,
+			Enabled:   t.Enabled,
+			IPVersion: t.IPVersion,
 		})
 	}
 

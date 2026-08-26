@@ -242,6 +242,68 @@ func (h *AlertHandler) HandleDeleteAlert(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"success": true})
 }
 
+// HandleListAlertHistory 分页查询告警历史
+// 路由: GET /api/v1/alert-history?state=&agent_id=&rule_id=&page=&page_size=
+func (h *AlertHandler) HandleListAlertHistory(c *gin.Context) {
+	state := c.Query("state")
+	if state != "" && state != "firing" && state != "resolved" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的状态过滤，支持 firing / resolved"})
+		return
+	}
+
+	agentID, err := parseIDQuery(c, "agent_id")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 agent_id"})
+		return
+	}
+	ruleID, err := parseIDQuery(c, "rule_id")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 rule_id"})
+		return
+	}
+
+	page := 1
+	pageSize := 50
+	if v, err := strconv.Atoi(c.Query("page")); err == nil && v >= 1 {
+		page = v
+	}
+	if v, err := strconv.Atoi(c.Query("page_size")); err == nil && v >= 1 && v <= 200 {
+		pageSize = v
+	}
+
+	total, err := h.repo.CountHistory(state, agentID, ruleID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询告警历史失败"})
+		return
+	}
+
+	histories, err := h.repo.ListHistory(state, agentID, ruleID, (page-1)*pageSize, pageSize)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询告警历史失败"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"histories": histories,
+		"total":     total,
+		"page":      page,
+		"page_size": pageSize,
+	})
+}
+
+// parseIDQuery 解析非负整数查询参数（缺省返回 0 表示不过滤）
+func parseIDQuery(c *gin.Context, name string) (int64, error) {
+	v := c.Query(name)
+	if v == "" {
+		return 0, nil
+	}
+	id, err := strconv.ParseInt(v, 10, 64)
+	if err != nil || id < 0 {
+		return 0, fmt.Errorf("invalid %s", name)
+	}
+	return id, nil
+}
+
 // isValidAlertMetric 校验告警规则指标是否受支持
 func isValidAlertMetric(metric string) bool {
 	switch metric {

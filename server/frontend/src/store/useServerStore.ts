@@ -80,7 +80,7 @@ interface ServerStoreState {
   // Actions
   checkSetupStatus: () => Promise<void>
   checkAuth: () => Promise<void>
-  login: (username: string, password: string) => Promise<void>
+  login: (username: string, password: string, totpCode?: string) => Promise<{ needTOTP: boolean }>
   setup: (username: string, password: string) => Promise<void>
   logout: () => Promise<void>
   fetchServers: () => Promise<void>
@@ -213,21 +213,21 @@ export const useServerStore = create<ServerStoreState>((set, get) => ({
     }
   },
 
-  // 登录
-  login: async (username: string, password: string) => {
+  // 登录（启用 TOTP 时需先提交密码（need_totp），再带 totpCode 二次提交）
+  login: async (username: string, password: string, totpCode?: string): Promise<{ needTOTP: boolean }> => {
     set({ authLoading: true })
     try {
-      const result = await apiLogin({ username, password })
-      // 必须检查 success 字段：TOTP 需要二次验证时返回 200 + success=false
+      const result = await apiLogin({ username, password, totp_code: totpCode })
+      // TOTP 需要二次验证时返回 200 + success=false + need_totp=true
       if (!result.success) {
         set({ authLoading: false })
-        // 返回 need_totp 信息供 Login 页面处理
         if (result.need_totp) {
-          throw new Error('需要两步验证')
+          return { needTOTP: true }
         }
         throw new Error(result.message || '登录失败')
       }
       set({ isAuthenticated: true, authLoading: false })
+      return { needTOTP: false }
     } catch (err) {
       set({ authLoading: false })
       throw err

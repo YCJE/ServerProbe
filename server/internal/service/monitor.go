@@ -479,6 +479,7 @@ func (m *MonitorService) WriteMetricData(agentID int64, data *sharedmodel.Metric
 		Uptime:       data.Uptime,
 		ProcessCount: data.ProcessCount,
 		TimeOffset:   data.TimeOffset,
+		Temperature:  data.Temperature,
 		Processes:    data.Processes,
 	}
 
@@ -791,6 +792,7 @@ func (m *MonitorService) GetDashboardData() []DashboardItem {
 		ProcessCount: p.ProcessCount,
 		PingData:     p.PingData,
 		TimeOffset:   p.TimeOffset,
+		Temperature:  p.Temperature,
 		Processes:    p.Processes,
 		Timestamp:    p.Timestamp,
 	}
@@ -896,6 +898,7 @@ type DashboardItem struct {
 	ProcessCount int                      `json:"process_count"`
 	PingData     []sharedmodel.PingResult `json:"ping_data"`
 	TimeOffset   int64                    `json:"time_offset"`
+	Temperature  float64                  `json:"temperature"`
 	Processes    []sharedmodel.ProcessInfo `json:"processes"`
 	Timestamp    int64                    `json:"timestamp"`
 	// NodeGet 风格元数据（管理员设置，Agent 上报不覆盖）
@@ -946,6 +949,7 @@ type DashboardSummary struct {
 	UDPConns     int                      `json:"udp_connections"`
 	ProcessCount int                      `json:"process_count"`
 	PingData     []sharedmodel.PingResult `json:"ping_data"`
+	Temperature  float64                  `json:"temperature"`
 	Timestamp    int64                    `json:"timestamp"`
 	// NodeGet 风格元数据（管理员设置，Agent 上报不覆盖）
 	Tags              string     `json:"tags"`
@@ -995,6 +999,7 @@ func (item DashboardItem) toSummary() DashboardSummary {
 		UDPConns:     item.UDPConns,
 		ProcessCount: item.ProcessCount,
 		PingData:     item.PingData,
+		Temperature:  item.Temperature,
 		Timestamp:    item.Timestamp,
 		Tags:              item.Tags,
 		Region:            item.Region,
@@ -1100,8 +1105,9 @@ func (m *MonitorService) GetPublicDashboardJSON() []byte {
 		DiskUsage    float64                  `json:"disk_usage"`
 		// 注意: 不包含 TCPConns/UDPConns/ProcessCount/Disks 详情，
 		// 与 HTTP 公开端点 (HandlePublicServers/HandlePublicDashboard/publicHistoryPoint) 保持一致，防止泄露连接数与进程信息
-		PingData  []sharedmodel.PingResult `json:"ping_data"`
-		Timestamp int64                    `json:"timestamp"`
+		PingData    []sharedmodel.PingResult `json:"ping_data"`
+		Temperature float64                  `json:"temperature"`
+		Timestamp   int64                    `json:"timestamp"`
 		// NodeGet 风格元数据（公开非敏感子集：不含出口 IPv4/IPv6）
 		Tags              string     `json:"tags"`
 		Region            string     `json:"region"`
@@ -1123,16 +1129,17 @@ func (m *MonitorService) GetPublicDashboardJSON() []byte {
 		publicPing := make([]sharedmodel.PingResult, 0, len(item.PingData))
 		for _, p := range item.PingData {
 			publicPing = append(publicPing, sharedmodel.PingResult{
-				Name:        p.Name,
-				Method:      p.Method,
-				AvgLatency:  p.AvgLatency,
-				MinLatency:  p.MinLatency,
-				MaxLatency:  p.MaxLatency,
-				Jitter:      p.Jitter,
-				Loss:        p.Loss,
-				PacketsSent: p.PacketsSent,
-				PacketsRecv: p.PacketsRecv,
-			})
+			Name:        p.Name,
+			Method:      p.Method,
+			AvgLatency:  p.AvgLatency,
+			MinLatency:  p.MinLatency,
+			MaxLatency:  p.MaxLatency,
+			Jitter:      p.Jitter,
+			Loss:        p.Loss,
+			PacketsSent: p.PacketsSent,
+			PacketsRecv: p.PacketsRecv,
+			IPVersion:   p.IPVersion,
+		})
 		}
 
 		publicItems = append(publicItems, PublicSummary{
@@ -1161,6 +1168,7 @@ func (m *MonitorService) GetPublicDashboardJSON() []byte {
 			TotalTx:      item.TotalTx,
 			DiskUsage:    item.DiskUsage,
 			PingData:     publicPing,
+			Temperature:  item.Temperature,
 			Timestamp:    item.Timestamp,
 			Tags:              item.Tags,
 			Region:            item.Region,

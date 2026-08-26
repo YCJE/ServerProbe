@@ -13,6 +13,7 @@ const NAV_GROUPS = [
     items: [
       { to: '/admin', label: '仪表盘', icon: '▣', end: true },
       { to: '/admin/agents', label: 'Agent 管理', icon: '⬡', end: false },
+      { to: '/admin/tags', label: '标签管理', icon: '🏷', end: false },
       { to: '/admin/ping-targets', label: '探测目标', icon: '◈', end: false },
       { to: '/admin/alerts', label: '告警管理', icon: '⚠', end: false },
       { to: '/admin/notify', label: '通知渠道', icon: '✉', end: false },

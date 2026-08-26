@@ -8,15 +8,18 @@ import {
   getNotifyChannels,
 } from '@/lib/api'
 import type { AlertRule, NotifyChannel } from '@/types'
+import AlertHistoryTimeline from '@/components/AlertHistoryTimeline'
 
 /** 指标选项 */
 const METRIC_OPTIONS = [
-  { value: 'cpu_usage', label: 'CPU使用率' },
-  { value: 'mem_usage', label: '内存使用率' },
-  { value: 'disk_usage', label: '磁盘使用率' },
-  { value: 'agent_offline', label: 'Agent离线' },
-  { value: 'service_status', label: '服务状态(1=down)' },
-  { value: 'ssl_cert_expiry', label: 'SSL证书剩余天数' },
+  { value: 'cpu_usage', label: 'CPU使用率', unit: '%' },
+  { value: 'mem_usage', label: '内存使用率', unit: '%' },
+  { value: 'disk_usage', label: '磁盘使用率', unit: '%' },
+  { value: 'agent_offline', label: 'Agent离线', unit: '' },
+  { value: 'service_status', label: '服务状态(1=down)', unit: '' },
+  { value: 'ssl_cert_expiry', label: 'SSL证书剩余天数', unit: '天' },
+  { value: 'traffic_quota', label: '月流量使用率', unit: '%' },
+  { value: 'expire_days', label: 'VPS剩余到期天数', unit: '天' },
 ]
 
 /** 操作符选项 */
@@ -30,6 +33,12 @@ const OPERATOR_OPTIONS = [
 function getMetricLabel(metric: string): string {
   const opt = METRIC_OPTIONS.find((o) => o.value === metric)
   return opt ? opt.label : metric
+}
+
+/** 获取指标单位（阈值/数值展示用） */
+function getMetricUnit(metric: string): string {
+  const opt = METRIC_OPTIONS.find((o) => o.value === metric)
+  return opt ? opt.unit : ''
 }
 
 /** 获取操作符显示 */
@@ -57,12 +66,14 @@ function getMetricDefaults(metric: string): { operator: string; threshold: numbe
     case 'cpu_usage':
     case 'mem_usage':
     case 'disk_usage':
+    case 'traffic_quota':
       return { operator: '>', threshold: 80 }
     case 'agent_offline':
       return { operator: '=', threshold: 1 }
     case 'service_status':
       return { operator: '>', threshold: 0 }
     case 'ssl_cert_expiry':
+    case 'expire_days':
       return { operator: '<', threshold: 30 }
     default:
       return { operator: '>', threshold: 80 }
@@ -74,6 +85,8 @@ function getMetricMaxThreshold(metric: string): number {
   switch (metric) {
     case 'ssl_cert_expiry':
       return 365
+    case 'expire_days':
+      return 3650
     default:
       return 100
   }
@@ -114,6 +127,8 @@ export default function AlertManagement() {
   const [testingId, setTestingId] = useState<number | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<AlertRule | null>(null)
   const [deleting, setDeleting] = useState(false)
+  // 页签：规则 / 告警历史
+  const [activeTab, setActiveTab] = useState<'rules' | 'history'>('rules')
 
   /** 加载数据 */
   const loadData = useCallback(async () => {
@@ -267,102 +282,134 @@ export default function AlertManagement() {
             配置监控指标告警规则，触发时通过通知渠道发送告警
           </p>
         </div>
+        {activeTab === 'rules' && (
+          <button
+            onClick={handleOpenAdd}
+            disabled={channels.length === 0}
+            title={channels.length === 0 ? '请先创建通知渠道' : ''}
+            className="flex h-10 items-center gap-1.5 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+          >
+            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+            添加规则
+          </button>
+        )}
+      </div>
+
+      {/* 页签切换：规则 / 告警历史 */}
+      <div className="flex items-center rounded-xl border border-border bg-muted p-1">
         <button
-          onClick={handleOpenAdd}
-          disabled={channels.length === 0}
-          title={channels.length === 0 ? '请先创建通知渠道' : ''}
-          className="flex h-10 items-center gap-1.5 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+          onClick={() => setActiveTab('rules')}
+          className={`flex h-9 items-center gap-1.5 rounded-lg px-4 text-sm font-medium transition-all ${
+            activeTab === 'rules'
+              ? 'bg-background text-foreground shadow-sm'
+              : 'text-muted-foreground hover:text-foreground'
+          }`}
         >
-          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-          </svg>
-          添加规则
+          告警规则
+        </button>
+        <button
+          onClick={() => setActiveTab('history')}
+          className={`flex h-9 items-center gap-1.5 rounded-lg px-4 text-sm font-medium transition-all ${
+            activeTab === 'history'
+              ? 'bg-background text-foreground shadow-sm'
+              : 'text-muted-foreground hover:text-foreground'
+          }`}
+        >
+          告警历史
         </button>
       </div>
 
-      {channels.length === 0 && (
-        <div className="rounded-md border border-dashed border-warning/50 bg-warning/10 p-3 text-sm text-warning">
-          尚未创建通知渠道，请先到「通知渠道」页面创建一个渠道，否则告警规则无法发送通知。
-        </div>
-      )}
+      {activeTab === 'history' ? (
+        <AlertHistoryTimeline rules={rules} />
+      ) : (
+        <>
+          {channels.length === 0 && (
+            <div className="rounded-md border border-dashed border-warning/50 bg-warning/10 p-3 text-sm text-warning">
+              尚未创建通知渠道，请先到「通知渠道」页面创建一个渠道，否则告警规则无法发送通知。
+            </div>
+          )}
 
-      {/* 规则列表 */}
-      <div className="card-soft overflow-hidden">
-        <div className="border-b border-dashed border-border px-4 py-3">
-          <h2 className="text-sm font-semibold text-foreground">告警规则列表 ({rules.length})</h2>
-        </div>
+          {/* 规则列表 */}
+          <div className="card-soft overflow-hidden">
+            <div className="border-b border-dashed border-border px-4 py-3">
+              <h2 className="text-sm font-semibold text-foreground">告警规则列表 ({rules.length})</h2>
+            </div>
 
-        {loading && rules.length === 0 ? (
-          <div className="flex items-center justify-center py-12">
-            <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-          </div>
-        ) : rules.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-12">
-            <svg className="mb-3 h-10 w-10 text-muted-foreground/50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
-            </svg>
-            <p className="text-sm text-muted-foreground">暂无告警规则</p>
-            <p className="mt-1 text-xs text-muted-foreground/70">点击"添加规则"创建第一个告警规则</p>
-          </div>
-        ) : (
-          <div className="overflow-x-auto scrollbar-thin">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border bg-secondary/30">
-                  <th className="h-10 px-3 text-left font-medium text-muted-foreground">ID</th>
-                  <th className="h-10 px-3 text-left font-medium text-muted-foreground">名称</th>
-                  <th className="h-10 px-3 text-left font-medium text-muted-foreground">指标</th>
-                  <th className="h-10 px-3 text-left font-medium text-muted-foreground">操作符</th>
-                  <th className="h-10 px-3 text-left font-medium text-muted-foreground">阈值</th>
-                  <th className="h-10 px-3 text-left font-medium text-muted-foreground">持续时间</th>
-                  <th className="h-10 px-3 text-left font-medium text-muted-foreground">启用状态</th>
-                  <th className="h-10 px-3 text-left font-medium text-muted-foreground">通知渠道</th>
-                  <th className="h-10 px-3 text-left font-medium text-muted-foreground">操作</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-dashed divide-border">
-                {rules.map((rule) => (
-                  <tr key={rule.id} className="text-foreground transition-colors hover:bg-muted/50">
-                    <td className="px-3 py-3 tabular-nums text-muted-foreground">{rule.id}</td>
-                    <td className="px-3 py-3 font-medium">{rule.name}</td>
-                    <td className="px-3 py-3">
-                      <span className="badge-pill badge-primary">
-                        {getMetricLabel(rule.metric)}
-                      </span>
-                    </td>
-                    <td className="px-3 py-3 font-mono tabular-nums text-muted-foreground">
-                      {getOperatorLabel(rule.operator)}
-                    </td>
-                    <td className="px-3 py-3 tabular-nums text-muted-foreground">
-                      {rule.metric === 'agent_offline' ? '-' : `${rule.threshold}%`}
-                    </td>
-                    <td className="px-3 py-3 tabular-nums text-muted-foreground">
-                      {formatDuration(rule.duration)}
-                    </td>
-                    <td className="px-3 py-3">
-                      <button
-                        onClick={() => handleToggleEnabled(rule)}
-                        className={`badge-pill ${rule.enabled ? 'badge-success' : 'badge-warning'}`}
-                      >
-                        <span
-                          className={`inline-block h-1.5 w-1.5 rounded-full ${
-                            rule.enabled ? 'bg-success' : 'bg-muted-foreground'
-                          }`}
-                        />
-                        {rule.enabled ? '启用' : '禁用'}
-                      </button>
-                    </td>
-                    <td className="px-3 py-3 text-muted-foreground">
-                      {getChannelName(channels, rule.notify_channel_id)}
-                    </td>
-                    <td className="px-3 py-3">
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => handleOpenEdit(rule)}
-                          className="text-xs font-medium text-primary transition-colors hover:underline"
-                        >
-                          编辑
-                        </button>
+            {loading && rules.length === 0 ? (
+              <div className="flex items-center justify-center py-12">
+                <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+              </div>
+            ) : rules.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-12">
+                <svg className="mb-3 h-10 w-10 text-muted-foreground/50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                </svg>
+                <p className="text-sm text-muted-foreground">暂无告警规则</p>
+                <p className="mt-1 text-xs text-muted-foreground/70">点击"添加规则"创建第一个告警规则</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto scrollbar-thin">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-border bg-secondary/30">
+                      <th className="h-10 px-3 text-left font-medium text-muted-foreground">ID</th>
+                      <th className="h-10 px-3 text-left font-medium text-muted-foreground">名称</th>
+                      <th className="h-10 px-3 text-left font-medium text-muted-foreground">指标</th>
+                      <th className="h-10 px-3 text-left font-medium text-muted-foreground">操作符</th>
+                      <th className="h-10 px-3 text-left font-medium text-muted-foreground">阈值</th>
+                      <th className="h-10 px-3 text-left font-medium text-muted-foreground">持续时间</th>
+                      <th className="h-10 px-3 text-left font-medium text-muted-foreground">启用状态</th>
+                      <th className="h-10 px-3 text-left font-medium text-muted-foreground">通知渠道</th>
+                      <th className="h-10 px-3 text-left font-medium text-muted-foreground">操作</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-dashed divide-border">
+                    {rules.map((rule) => (
+                      <tr key={rule.id} className="text-foreground transition-colors hover:bg-muted/50">
+                        <td className="px-3 py-3 tabular-nums text-muted-foreground">{rule.id}</td>
+                        <td className="px-3 py-3 font-medium">{rule.name}</td>
+                        <td className="px-3 py-3">
+                          <span className="badge-pill badge-primary">
+                            {getMetricLabel(rule.metric)}
+                          </span>
+                        </td>
+                        <td className="px-3 py-3 font-mono tabular-nums text-muted-foreground">
+                          {getOperatorLabel(rule.operator)}
+                        </td>
+                        <td className="px-3 py-3 tabular-nums text-muted-foreground">
+                          {rule.metric === 'agent_offline'
+                            ? '-'
+                            : `${rule.threshold}${getMetricUnit(rule.metric)}`}
+                        </td>
+                        <td className="px-3 py-3 tabular-nums text-muted-foreground">
+                          {formatDuration(rule.duration)}
+                        </td>
+                        <td className="px-3 py-3">
+                          <button
+                            onClick={() => handleToggleEnabled(rule)}
+                            className={`badge-pill ${rule.enabled ? 'badge-success' : 'badge-warning'}`}
+                          >
+                            <span
+                              className={`inline-block h-1.5 w-1.5 rounded-full ${
+                                rule.enabled ? 'bg-success' : 'bg-muted-foreground'
+                              }`}
+                            />
+                            {rule.enabled ? '启用' : '禁用'}
+                          </button>
+                        </td>
+                        <td className="px-3 py-3 text-muted-foreground">
+                          {getChannelName(channels, rule.notify_channel_id)}
+                        </td>
+                        <td className="px-3 py-3">
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => handleOpenEdit(rule)}
+                              className="text-xs font-medium text-primary transition-colors hover:underline"
+                            >
+                              编辑
+                            </button>
                         <button
                           onClick={() => handleTest(rule)}
                           disabled={testingId === rule.id}
@@ -589,6 +636,8 @@ export default function AlertManagement() {
           </div>
         </div>
       )}
+      </>
+    )}
     </div>
   )
 }

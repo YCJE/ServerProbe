@@ -31,6 +31,7 @@ type Router struct {
 	trafficHandler        *TrafficHandler
 	prometheusHandler     *PrometheusHandler
 	shareHandler          *ShareHandler
+	tagHandler            *TagHandler
 }
 
 // NewRouter 创建路由
@@ -55,6 +56,7 @@ func NewRouter(
 	sharePageRepo *repository.SharePageRepository,
 	serviceMonitorEngine *service.ServiceMonitorEngine,
 	sslMonitorEngine *service.SSLMonitorEngine,
+	tagRepo *repository.TagRepository,
 ) *Router {
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
@@ -102,6 +104,7 @@ func NewRouter(
 	trafficHandler := NewTrafficHandler(trafficRepo)
 	prometheusHandler := NewPrometheusHandler(monitor)
 	shareHandler := NewShareHandler(sharePageRepo)
+	tagHandler := NewTagHandler(tagRepo)
 
 	// 健康检查
 	r.GET("/api/v1/health", func(c *gin.Context) {
@@ -135,6 +138,8 @@ func NewRouter(
 			public.GET("/servers", serverHandler.HandlePublicServers)
 			public.GET("/dashboard", serverHandler.HandlePublicDashboard)
 			public.GET("/servers/:id/history", serverHandler.HandlePublicServerHistory)
+			// 标签列表（只读，标签名已随公开服务器数据暴露，颜色非敏感；供公开页卡片徽章取色）
+			public.GET("/tags", tagHandler.HandleListTags)
 		}
 
 		// 公开仪表盘 WebSocket（无需登录，限速防 DoS）
@@ -199,6 +204,21 @@ func NewRouter(
 			protected.DELETE("/alerts/:id", alertHandler.HandleDeleteAlert)
 			protected.POST("/alerts/:id/test", alertHandler.HandleTestAlert)
 
+			// 告警历史（独立前缀，避免与 /alerts/:id 参数路由冲突）
+			protected.GET("/alert-history", alertHandler.HandleListAlertHistory)
+
+			// 标签管理
+			protected.GET("/tags", tagHandler.HandleListTags)
+			protected.POST("/tags", tagHandler.HandleCreateTag)
+			protected.PUT("/tags/:id", tagHandler.HandleUpdateTag)
+			protected.DELETE("/tags/:id", tagHandler.HandleDeleteTag)
+
+			// TOTP 两步验证（需登录后操作）
+			protected.GET("/auth/totp/status", authHandler.HandleTOTPStatus)
+			protected.POST("/auth/totp/setup", authHandler.HandleTOTPSetup)
+			protected.POST("/auth/totp/enable", authHandler.HandleTOTPEnable)
+			protected.POST("/auth/totp/disable", authHandler.HandleTOTPDisable)
+
 			// 通知渠道管理
 			protected.GET("/notify/channels", notifyHandler.HandleListChannels)
 			protected.POST("/notify/channels", notifyHandler.HandleCreateChannel)
@@ -252,6 +272,7 @@ func NewRouter(
 		trafficHandler:        trafficHandler,
 		prometheusHandler:     prometheusHandler,
 		shareHandler:          shareHandler,
+		tagHandler:            tagHandler,
 	}
 }
 

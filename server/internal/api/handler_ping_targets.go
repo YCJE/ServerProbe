@@ -56,6 +56,7 @@ func (h *PingTargetHandler) HandleCreatePingTarget(c *gin.Context) {
 		Method    string `json:"method"`
 		Enabled   *bool  `json:"enabled"`
 		SortOrder *int   `json:"sort_order"`
+		IPVersion *int   `json:"ip_version"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -87,6 +88,12 @@ func (h *PingTargetHandler) HandleCreatePingTarget(c *gin.Context) {
 		return
 	}
 
+	// 验证 IP 版本标注
+	if req.IPVersion != nil && *req.IPVersion != 0 && *req.IPVersion != 4 && *req.IPVersion != 6 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "IP 版本无效，支持: 0(自动), 4, 6"})
+		return
+	}
+
 	target := &model.PingTarget{
 		Name:      req.Name,
 		Target:    req.Target,
@@ -104,6 +111,9 @@ func (h *PingTargetHandler) HandleCreatePingTarget(c *gin.Context) {
 	}
 	if req.SortOrder != nil {
 		target.SortOrder = *req.SortOrder
+	}
+	if req.IPVersion != nil {
+		target.IPVersion = *req.IPVersion
 	}
 
 	if err := h.repo.Create(target); err != nil {
@@ -148,6 +158,7 @@ func (h *PingTargetHandler) HandleUpdatePingTarget(c *gin.Context) {
 		Method    *string `json:"method"`
 		Enabled   *bool   `json:"enabled"`
 		SortOrder *int    `json:"sort_order"`
+		IPVersion *int    `json:"ip_version"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -191,6 +202,13 @@ func (h *PingTargetHandler) HandleUpdatePingTarget(c *gin.Context) {
 	}
 	if req.SortOrder != nil {
 		existing.SortOrder = *req.SortOrder
+	}
+	if req.IPVersion != nil {
+		if *req.IPVersion != 0 && *req.IPVersion != 4 && *req.IPVersion != 6 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "IP 版本无效，支持: 0(自动), 4, 6"})
+			return
+		}
+		existing.IPVersion = *req.IPVersion
 	}
 
 	if err := h.repo.Update(existing); err != nil {

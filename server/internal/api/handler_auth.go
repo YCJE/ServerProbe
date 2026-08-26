@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -79,6 +80,26 @@ var dummyPasswordHash = func() []byte {
 	return hash
 }()
 
+// usedTOTPSteps 记录每个管理员最近成功消费的 TOTP 时间步（adminID → step）
+// RFC 6238 §5.2 要求验证码一次性使用：同一时间步的验证码验证成功后不得再次接受（防重放）
+var usedTOTPSteps sync.Map
+
+// consumeTOTPStep 验证 TOTP 验证码并消费其时间步
+// 验证码无效、或所属时间步已被消费（重放）时返回 false
+func consumeTOTPStep(adminID int64, secret, code string) bool {
+	ok, step := pkg.ValidateTOTPWithStep(secret, code)
+	if !ok {
+		return false
+	}
+	if v, loaded := usedTOTPSteps.LoadOrStore(adminID, step); loaded {
+		if lastStep, _ := v.(int64); step <= lastStep {
+			return false
+		}
+		usedTOTPSteps.Store(adminID, step)
+	}
+	return true
+}
+
 // HandleLogin 处理登录
 // 路由: POST /api/v1/auth/login
 func (h *AuthHandler) HandleLogin(c *gin.Context) {
@@ -127,12 +148,13 @@ func (h *AuthHandler) HandleLogin(c *gin.Context) {
 			return
 		}
 
-		// TOTP 验证暂未实现，拒绝登录而非跳过
-		c.JSON(http.StatusUnauthorized, LoginResponse{
-			Success: false,
-			Message: "两步验证未配置，请联系管理员重置账户",
-		})
-		return
+		if !consumeTOTPStep(admin.ID, admin.TOTPSecret, req.TOTPCode) {
+			c.JSON(http.StatusUnauthorized, LoginResponse{
+				Success: false,
+				Message: "两步验证码错误",
+			})
+			return
+		}
 	}
 
 	// 生成 JWT
@@ -293,4 +315,127 @@ func (h *AuthHandler) HandleCheckSetup(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"needs_setup": count == 0,
 	})
+}
+
+// HandleTOTPStatus 查询当前 TOTP 绑定状态
+// 路由: GET /api/v1/auth/totp/status
+func (h *AuthHandler) HandleTOTPStatus(c *gin.Context) {
+	admin, err := h.adminRepo.GetByID(c.GetInt64("admin_id"))
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "账户不存在"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"totp_enabled": admin.TOTPEnabled})
+}
+
+// HandleTOTPSetup 生成 TOTP 密钥（未启用状态，需验证一次动态码后才生效）
+// 路由: POST /api/v1/auth/totp/setup
+func (h *AuthHandler) HandleTOTPSetup(c *gin.Context) {
+	admin, err := h.adminRepo.GetByID(c.GetInt64("admin_id"))
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "账户不存在"})
+		return
+	}
+
+	if admin.TOTPEnabled {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "两步验证已启用，如需重新绑定请先停用"})
+		return
+	}
+
+	secret, err := pkg.GenerateTOTPSecret()
+	if err != nil {
+		log.Printf("生成 TOTP 密钥失败: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "生成密钥失败"})
+		return
+	}
+
+	// 仅写入密钥，TOTPEnabled 保持 false，验证通过后才真正启用
+	admin.TOTPSecret = secret
+	admin.TOTPEnabled = false
+	if err := h.adminRepo.Update(admin); err != nil {
+		log.Printf("保存 TOTP 密钥失败: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存密钥失败"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"secret":      secret,
+		"otpauth_url": pkg.GenerateOTPAuthURL(secret, admin.Username, "ServerProbe"),
+	})
+}
+
+// HandleTOTPEnable 验证动态码并启用两步验证
+// 路由: POST /api/v1/auth/totp/enable
+func (h *AuthHandler) HandleTOTPEnable(c *gin.Context) {
+	var req struct {
+		Code string `json:"code" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请输入验证码"})
+		return
+	}
+
+	admin, err := h.adminRepo.GetByID(c.GetInt64("admin_id"))
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "账户不存在"})
+		return
+	}
+
+	if admin.TOTPEnabled {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "两步验证已启用"})
+		return
+	}
+	if admin.TOTPSecret == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请先生成密钥"})
+		return
+	}
+
+	if !consumeTOTPStep(admin.ID, admin.TOTPSecret, req.Code) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "验证码错误，请确认认证器时间同步后重试"})
+		return
+	}
+
+	admin.TOTPEnabled = true
+	if err := h.adminRepo.Update(admin); err != nil {
+		log.Printf("启用 TOTP 失败: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "启用失败"})
+		return
+	}
+
+	log.Printf("管理员 %s 启用了 TOTP 两步验证", admin.Username)
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": "两步验证已启用"})
+}
+
+// HandleTOTPDisable 停用两步验证（需密码确认，防止会话被劫持后直接关闭）
+// 路由: POST /api/v1/auth/totp/disable
+func (h *AuthHandler) HandleTOTPDisable(c *gin.Context) {
+	var req struct {
+		Password string `json:"password" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请输入密码确认"})
+		return
+	}
+
+	admin, err := h.adminRepo.GetByID(c.GetInt64("admin_id"))
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "账户不存在"})
+		return
+	}
+
+	if err := bcrypt.CompareHashAndPassword([]byte(admin.PasswordHash), []byte(req.Password)); err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "密码错误"})
+		return
+	}
+
+	admin.TOTPSecret = ""
+	admin.TOTPEnabled = false
+	if err := h.adminRepo.Update(admin); err != nil {
+		log.Printf("停用 TOTP 失败: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "停用失败"})
+		return
+	}
+
+	log.Printf("管理员 %s 停用了 TOTP 两步验证", admin.Username)
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": "两步验证已停用"})
 }

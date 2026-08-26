@@ -38,6 +38,7 @@ type alertState struct {
 	state          model.AlertState
 	firstTriggered time.Time // 首次超阈值时间
 	lastNotified   time.Time // 上次通知时间
+	historyID      int64     // 本次 FIRING 对应的 AlertHistory 记录 ID（用于恢复时回填）
 }
 
 // NewAlertEngine 创建告警引擎
@@ -69,7 +70,7 @@ func (e *AlertEngine) SetMonitorRepos(
 func (e *AlertEngine) Start() {
 	e.ticker = time.NewTicker(10 * time.Second)
 
-	e.wg.Add(1)
+	e.wg.Add(2)
 	go func() {
 		defer e.wg.Done()
 		for {
@@ -82,7 +83,33 @@ func (e *AlertEngine) Start() {
 		}
 	}()
 
+	// 告警历史清理：每小时删除 30 天前的记录
+	historyCleanup := time.NewTicker(time.Hour)
+	go func() {
+		defer e.wg.Done()
+		defer historyCleanup.Stop()
+		e.cleanupHistory() // 启动时先执行一次
+		for {
+			select {
+			case <-historyCleanup.C:
+				e.cleanupHistory()
+			case <-e.stopCh:
+				return
+			}
+		}
+	}()
+
 	log.Println("告警引擎已启动")
+}
+
+// cleanupHistory 删除保留期外的告警历史
+func (e *AlertEngine) cleanupHistory() {
+	cutoff := time.Now().AddDate(0, 0, -30)
+	if n, err := e.alertRepo.CleanupHistoryBefore(cutoff); err != nil {
+		log.Printf("清理告警历史失败: %v", err)
+	} else if n > 0 {
+		log.Printf("已清理 %d 条过期告警历史", n)
+	}
 }
 
 // Stop 停止告警引擎
@@ -265,12 +292,16 @@ func (e *AlertEngine) evaluateRule(rule model.AlertRule, agentID int64, value fl
 
 	now := time.Now()
 
-	// 待发送通知（锁外执行，避免持锁发送通知导致阻塞）
+	// 待发送通知（锁外执行，避免持锁发送通知或写库导致阻塞）
 	type pendingNotification struct {
-		rule    model.AlertRule
-		agentID int64
-		value   float64
-		state   model.AlertState
+		rule        model.AlertRule
+		agentID     int64
+		value       float64
+		state       model.AlertState
+		key         string // 状态键，FIRING 时用于写回 historyID
+		historyID   int64  // RESOLVED 时待回填的历史记录 ID
+		isFiringNew bool   // true = 首次 FIRING（需新建历史记录）；false = 静默期重复通知或恢复
+		isResolved  bool   // true = FIRING → RESOLVED（需回填恢复信息）
 	}
 	var pendingNotifications []pendingNotification
 
@@ -289,50 +320,88 @@ func (e *AlertEngine) evaluateRule(rule model.AlertRule, agentID int64, value fl
 			// OK → PENDING
 			state.state = model.AlertStatePending
 			state.firstTriggered = now
+			state.historyID = 0
 
 		case model.AlertStatePending:
 			// PENDING → FIRING（达到 duration）
 			if now.Sub(state.firstTriggered) >= time.Duration(rule.Duration)*time.Second {
 				state.state = model.AlertStateFiring
 				state.lastNotified = now
-				pendingNotifications = append(pendingNotifications, pendingNotification{rule, agentID, value, model.AlertStateFiring})
+				pendingNotifications = append(pendingNotifications, pendingNotification{rule, agentID, value, model.AlertStateFiring, key, 0, true, false})
 			}
 
 		case model.AlertStateFiring:
 			// 检查静默期
 			if now.Sub(state.lastNotified) >= e.silencePeriod {
 				state.lastNotified = now
-				pendingNotifications = append(pendingNotifications, pendingNotification{rule, agentID, value, model.AlertStateFiring})
+				pendingNotifications = append(pendingNotifications, pendingNotification{rule, agentID, value, model.AlertStateFiring, key, 0, false, false})
 			}
 
 		case model.AlertStateResolved:
 			// RESOLVED → PENDING
 			state.state = model.AlertStatePending
 			state.firstTriggered = now
+			state.historyID = 0
 		}
 	} else {
 		switch state.state {
 		case model.AlertStatePending:
 			// PENDING → OK
 			state.state = model.AlertStateOK
+			state.historyID = 0
 
 		case model.AlertStateFiring:
 			// FIRING → RESOLVED
 			state.state = model.AlertStateResolved
-			pendingNotifications = append(pendingNotifications, pendingNotification{rule, agentID, value, model.AlertStateResolved})
+			pendingNotifications = append(pendingNotifications, pendingNotification{rule, agentID, value, model.AlertStateResolved, key, state.historyID, false, true})
+			state.historyID = 0
 
 		case model.AlertStateResolved:
 			// RESOLVED → OK (已恢复告警回到正常状态，避免 states map 中条目永远存在)
 			state.state = model.AlertStateOK
+			state.historyID = 0
 		}
 	}
 
 	e.mu.Unlock()
 
-	// 锁外发送通知
+	// 锁外落盘历史记录与发送通知
 	for _, n := range pendingNotifications {
-		e.sendAlertNotification(n.rule, n.agentID, n.value, n.state)
+		e.recordAndNotify(n.rule, n.agentID, n.value, n.state, n.key, n.historyID, n.isFiringNew, n.isResolved)
 	}
+}
+
+// recordAndNotify 落盘告警历史（仅状态转换时）并发送通知
+func (e *AlertEngine) recordAndNotify(rule model.AlertRule, agentID int64, value float64, state model.AlertState, key string, historyID int64, isFiringNew, isResolved bool) {
+	if isFiringNew {
+		h := &model.AlertHistory{
+			RuleID:      rule.ID,
+			RuleName:    rule.Name,
+			AgentID:     agentID,
+			ServerName:  e.getServerDisplayName(agentID),
+			Metric:      rule.Metric,
+			State:       "firing",
+			Value:       value,
+			TriggeredAt: time.Now(),
+		}
+		if err := e.alertRepo.CreateHistory(h); err != nil {
+			log.Printf("保存告警历史失败: %v", err)
+		} else {
+			// 写回 historyID，供后续 RESOLVED 回填
+			e.mu.Lock()
+			if s, ok := e.states[key]; ok {
+				s.historyID = h.ID
+			}
+			e.mu.Unlock()
+		}
+	}
+	if isResolved && historyID > 0 {
+		if err := e.alertRepo.ResolveHistoryByID(historyID, time.Now(), value); err != nil {
+			log.Printf("回填告警恢复信息失败: %v", err)
+		}
+	}
+
+	e.sendAlertNotification(rule, agentID, value, state)
 }
 
 // getMetricValue 获取指标值（使用预读取的数据点，避免重复读取 RingBuffer）

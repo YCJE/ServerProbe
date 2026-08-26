@@ -137,8 +137,9 @@ func (c *PingCollector) PingTargets(targets []sharedmodel.PingTarget) []sharedmo
 // pingTarget 对单个目标执行 Ping 探测
 func (c *PingCollector) pingTarget(target sharedmodel.PingTarget) sharedmodel.PingResult {
 	result := sharedmodel.PingResult{
-		Target: target.Target,
-		Name:   target.Name,
+		Target:    target.Target,
+		Name:      target.Name,
+		IPVersion: target.IPVersion,
 	}
 
 	method := c.method

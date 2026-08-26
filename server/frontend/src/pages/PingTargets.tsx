@@ -29,6 +29,13 @@ const INTERVAL_OPTIONS = [
   { value: 600, label: '10 分钟' },
 ]
 
+/** IP 版本选项（0=自动按名称/地址识别） */
+const IP_VERSION_OPTIONS = [
+  { value: 0, label: '自动识别' },
+  { value: 4, label: 'IPv4' },
+  { value: 6, label: 'IPv6' },
+]
+
 /** 表单数据 */
 interface FormData {
   name: string
@@ -36,6 +43,7 @@ interface FormData {
   method: string
   enabled: boolean
   sort_order: number
+  ip_version: number
 }
 
 /** 空表单 */
@@ -45,6 +53,7 @@ const EMPTY_FORM: FormData = {
   method: 'icmp',
   enabled: true,
   sort_order: 0,
+  ip_version: 0,
 }
 
 /** 探测目标管理页 */
@@ -134,6 +143,7 @@ export default function PingTargets() {
       method: target.method || 'icmp',
       enabled: target.enabled,
       sort_order: target.sort_order || 0,
+      ip_version: target.ip_version || 0,
     })
     setFormError('')
     setModalOpen(true)
@@ -182,6 +192,7 @@ export default function PingTargets() {
         method: form.method,
         enabled: form.enabled,
         sort_order: form.sort_order,
+        ip_version: form.ip_version,
       }
 
       if (editingId !== null) {
@@ -455,6 +466,25 @@ export default function PingTargets() {
                     </option>
                   ))}
                 </select>
+              </div>
+
+              {/* IP 版本标注 */}
+              <div>
+                <label className="mb-1 block text-xs font-medium text-muted-foreground">IP 版本</label>
+                <select
+                  value={form.ip_version}
+                  onChange={(e) => setForm({ ...form, ip_version: Number(e.target.value) })}
+                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm shadow-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                >
+                  {IP_VERSION_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-1 text-xs text-muted-foreground/70">
+                  决定延迟格子图中的 v4/v6 分组；选"自动识别"时按名称中的 v6 标记或 IPv6 地址判断
+                </p>
               </div>
 
               {/* 排序 + 启用 */}

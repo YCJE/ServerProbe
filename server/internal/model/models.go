@@ -96,6 +96,36 @@ const (
 	AlertStateResolved AlertState = "RESOLVED"
 )
 
+// AlertHistory 告警历史记录（FIRING 触发与 RESOLVED 恢复的持久化时间线）
+type AlertHistory struct {
+	ID            int64      `gorm:"primaryKey;autoIncrement" json:"id"`
+	RuleID        int64      `gorm:"index" json:"rule_id"`
+	RuleName      string     `json:"rule_name"`
+	AgentID       int64      `gorm:"index" json:"agent_id"`
+	ServerName    string     `json:"server_name"`
+	Metric        string     `json:"metric"`
+	State         string     `gorm:"index" json:"state"` // firing / resolved
+	Value         float64    `json:"value"`              // 触发时的指标值
+	ResolvedValue float64    `json:"resolved_value"`     // 恢复时的指标值
+	Message       string     `json:"message"`
+	TriggeredAt   time.Time  `gorm:"index" json:"triggered_at"`
+	ResolvedAt    *time.Time `json:"resolved_at"`
+}
+
+// TableName 指定表名
+func (AlertHistory) TableName() string { return "alert_history" }
+
+// Tag 标签（NodeGet 风格：彩色标签徽章，管理员创建，Agent 通过名称引用）
+type Tag struct {
+	ID        int64     `gorm:"primaryKey;autoIncrement" json:"id"`
+	Name      string    `gorm:"uniqueIndex;not null" json:"name"`
+	Color     string    `json:"color"` // 十六进制色值，如 "#3b82f6"
+	CreatedAt time.Time `gorm:"autoCreateTime" json:"created_at"`
+}
+
+// TableName 指定表名
+func (Tag) TableName() string { return "tags" }
+
 // NotifyChannel 通知渠道（GORM 模型）
 type NotifyChannel struct {
 	ID        int64     `gorm:"primaryKey;autoIncrement" json:"id"`
@@ -140,13 +170,14 @@ type EmailConfig struct {
 
 // PingTarget 探测目标（GORM 模型）
 type PingTarget struct {
-	ID        int64     `gorm:"primaryKey;autoIncrement" json:"id"`
-	Name      string    `gorm:"not null" json:"name"`
-	Target    string    `gorm:"not null" json:"target"`
-	Method    string    `gorm:"default:icmp" json:"method"`
-	Enabled   bool      `gorm:"default:true" json:"enabled"`
-	SortOrder int       `gorm:"default:0" json:"sort_order"`
-	CreatedAt time.Time `gorm:"autoCreateTime" json:"created_at"`
+    ID        int64     `gorm:"primaryKey;autoIncrement" json:"id"`
+    Name      string    `gorm:"not null" json:"name"`
+    Target    string    `gorm:"not null" json:"target"`
+    Method    string    `gorm:"default:icmp" json:"method"`
+    Enabled   bool      `gorm:"default:true" json:"enabled"`
+    SortOrder int       `gorm:"default:0" json:"sort_order"`
+    IPVersion int       `gorm:"default:0" json:"ip_version"` // 0=自动识别，4=IPv4，6=IPv6
+    CreatedAt time.Time `gorm:"autoCreateTime" json:"created_at"`
 }
 
 // TableName 指定表名

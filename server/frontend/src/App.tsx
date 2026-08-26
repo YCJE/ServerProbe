@@ -11,6 +11,7 @@ import PublicServerDetail from '@/pages/PublicServerDetail'
 import Dashboard from '@/pages/Dashboard'
 import ServerDetail from '@/pages/ServerDetail'
 import AgentManagement from '@/pages/AgentManagement'
+import TagManagement from '@/pages/TagManagement'
 import PingTargets from '@/pages/PingTargets'
 import AlertManagement from '@/pages/AlertManagement'
 import NotifyChannels from '@/pages/NotifyChannels'
@@ -79,6 +80,7 @@ function App() {
       >
         <Route index element={<Dashboard />} />
         <Route path="agents" element={<AgentManagement />} />
+        <Route path="tags" element={<TagManagement />} />
         <Route path="ping-targets" element={<PingTargets />} />
         <Route path="alerts" element={<AlertManagement />} />
         <Route path="notify" element={<NotifyChannels />} />

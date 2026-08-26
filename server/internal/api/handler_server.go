@@ -465,6 +465,7 @@ func toPublicHistoryPoint(hp historyPoint) publicHistoryPoint {
 				Loss:        p.Loss,
 				PacketsSent: p.PacketsSent,
 				PacketsRecv: p.PacketsRecv,
+				IPVersion:   p.IPVersion,
 				// Target 字段不包含，防止泄露探测目标地址
 			})
 		}
@@ -708,6 +709,7 @@ func (h *ServerHandler) HandlePublicServers(c *gin.Context) {
 						Loss:        ping.Loss,
 						PacketsSent: ping.PacketsSent,
 						PacketsRecv: ping.PacketsRecv,
+						IPVersion:   ping.IPVersion,
 						// Target 字段不包含
 					})
 				}
@@ -790,6 +792,7 @@ func (h *ServerHandler) HandlePublicDashboard(c *gin.Context) {
 				Loss:        p.Loss,
 				PacketsSent: p.PacketsSent,
 				PacketsRecv: p.PacketsRecv,
+				IPVersion:   p.IPVersion,
 				// Target 字段不包含
 			})
 		}

@@ -1,6 +1,8 @@
 package repository
 
 import (
+	"time"
+
 	"gorm.io/gorm"
 
 	"github.com/server-probe/server/internal/model"
@@ -68,6 +70,64 @@ func (r *AlertRepository) CountByNotifyChannelID(channelID int64) (int64, error)
 	var count int64
 	err := r.db.Model(&model.AlertRule{}).Where("notify_channel_id = ?", channelID).Count(&count).Error
 	return count, err
+}
+
+// CreateHistory 落盘一条告警历史（FIRING 触发）
+func (r *AlertRepository) CreateHistory(h *model.AlertHistory) error {
+	return r.db.Create(h).Error
+}
+
+// ResolveHistoryByID 按 ID 补记恢复信息（RESOLVED）
+func (r *AlertRepository) ResolveHistoryByID(id int64, resolvedAt time.Time, resolvedValue float64) error {
+	return r.db.Model(&model.AlertHistory{}).Where("id = ?", id).
+		Updates(map[string]interface{}{
+			"state":          "resolved",
+			"resolved_at":    resolvedAt,
+			"resolved_value": resolvedValue,
+		}).Error
+}
+
+// CountHistory 统计告警历史条数（用于分页）
+func (r *AlertRepository) CountHistory(state string, agentID, ruleID int64) (int64, error) {
+	q := r.db.Model(&model.AlertHistory{})
+	if state != "" {
+		q = q.Where("state = ?", state)
+	}
+	if agentID > 0 {
+		q = q.Where("agent_id = ?", agentID)
+	}
+	if ruleID > 0 {
+		q = q.Where("rule_id = ?", ruleID)
+	}
+	var count int64
+	err := q.Count(&count).Error
+	return count, err
+}
+
+// ListHistory 分页查询告警历史（按触发时间倒序）
+func (r *AlertRepository) ListHistory(state string, agentID, ruleID int64, offset, limit int) ([]model.AlertHistory, error) {
+	q := r.db.Model(&model.AlertHistory{})
+	if state != "" {
+		q = q.Where("state = ?", state)
+	}
+	if agentID > 0 {
+		q = q.Where("agent_id = ?", agentID)
+	}
+	if ruleID > 0 {
+		q = q.Where("rule_id = ?", ruleID)
+	}
+	var histories []model.AlertHistory
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	err := q.Order("triggered_at DESC").Offset(offset).Limit(limit).Find(&histories).Error
+	return histories, err
+}
+
+// CleanupHistoryBefore 删除指定时间之前的告警历史
+func (r *AlertRepository) CleanupHistoryBefore(t time.Time) (int64, error) {
+	res := r.db.Where("triggered_at < ?", t).Delete(&model.AlertHistory{})
+	return res.RowsAffected, res.Error
 }
 
 // NotifyRepository 通知渠道 CRUD

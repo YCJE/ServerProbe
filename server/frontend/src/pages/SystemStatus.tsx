@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useRef } from 'react'
 import { getSystemStatus } from '@/lib/api'
 import { formatBytes, getUsageColor, getUsageTextColor } from '@/lib/utils'
 import type { SystemStatus } from '@/types'
+import TOTPSettings from '@/components/TOTPSettings'
 
 /** 将秒数格式化为 x天x小时x分x秒 */
 function formatUptimeFull(seconds: number): string {
@@ -297,6 +298,9 @@ export default function SystemStatus() {
           <p className="text-sm text-muted-foreground">暂无系统状态数据</p>
         </div>
       ) : null}
+
+      {/* 账户安全：TOTP 两步验证（独立于系统状态数据加载） */}
+      <TOTPSettings />
     </div>
   )
 }

@@ -31,6 +31,7 @@ type MetricPoint struct {
 	ProcessCount int                         // 进程数
 	PingData     []sharedmodel.PingResult    // Ping 探测结果
 	TimeOffset   int64                       // NTP 时间偏移（毫秒）
+	Temperature  float64                     // CPU 温度（摄氏度，0=不可用）
 	Processes    []sharedmodel.ProcessInfo   // Top N 进程列表
 }
 

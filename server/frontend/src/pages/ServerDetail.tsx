@@ -10,6 +10,7 @@ import LatencyQualityBar, { type LatencyPoint } from '@/components/LatencyQualit
 import OnlineTimeline, { type OnlineTimelinePoint } from '@/components/OnlineTimeline'
 import ResourceRing from '@/components/ResourceRing'
 import DistroIcon from '@/components/DistroIcon'
+import LatencyGrid, { type LatencyGridPoint } from '@/components/LatencyGrid'
 import {
   formatBytes,
   formatSpeed,
@@ -48,6 +49,9 @@ const SPARK_TX = '#AF52DE'
 /** Sparkline / 实时图表最多展示的数据点数 */
 const MAX_SPARK_POINTS = 60
 
+/** 稳定的空数组引用（cardHistory 缺省值） */
+const EMPTY_GRID_HISTORY: LatencyGridPoint[] = []
+
 /** 历史数据定时刷新间隔 */
 const HISTORY_REFRESH_INTERVAL = 5 * 60 * 1000
 
@@ -65,6 +69,8 @@ export default function ServerDetail() {
   const realtimeHistory = useServerStore((s) => s.realtimeHistory)
   const clearRealtimeHistory = useServerStore((s) => s.clearRealtimeHistory)
   const liveData = useServerStore((s) => s.dashboardData.get(serverId))
+  // 延迟格子图数据源：卡片历史滚动窗口（Layout 挂载起累积，不随时间范围切换变化）
+  const cardHistory = useServerStore((s) => s.cardHistory.get(serverId) ?? EMPTY_GRID_HISTORY)
 
   // 本地状态
   const [timeRange, setTimeRange] = useState<TimeRange>('1h')
@@ -207,6 +213,9 @@ export default function ServerDetail() {
         distro: liveData.distro || currentServer.distro,
         processes: liveData.processes || currentServer.processes,
         time_offset: liveData.time_offset ?? currentServer.time_offset,
+        temperature: liveData.temperature ?? currentServer.temperature,
+        ipv4: liveData.ipv4 ?? currentServer.ipv4,
+        ipv6: liveData.ipv6 ?? currentServer.ipv6,
       }
     }
     return currentServer
@@ -467,6 +476,29 @@ export default function ServerDetail() {
                 </span>
               )}
           </div>
+          {/* 出口 IP（NodeGet 风格：IPv4 完整显示，IPv6 折叠） */}
+          {(displayServer.ipv4 || displayServer.ipv6) && (
+            <div className="mt-2 space-y-1 text-xs text-muted-foreground">
+              {displayServer.ipv4 && (
+                <div className="flex items-center gap-1.5">
+                  <span className="shrink-0 rounded bg-secondary px-1.5 py-0.5 text-[9px] font-semibold">IPv4</span>
+                  <span className="truncate font-mono" title={displayServer.ipv4}>
+                    {displayServer.ipv4}
+                  </span>
+                </div>
+              )}
+              {displayServer.ipv6 && (
+                <div className="flex items-center gap-1.5">
+                  <span className="shrink-0 rounded bg-secondary px-1.5 py-0.5 text-[9px] font-semibold">IPv6</span>
+                  <span className="truncate font-mono" title={displayServer.ipv6}>
+                    {displayServer.ipv6.length > 24
+                      ? `${displayServer.ipv6.slice(0, 24)}…`
+                      : displayServer.ipv6}
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* 硬件信息卡片 */}
@@ -482,6 +514,20 @@ export default function ServerDetail() {
             />
             <InfoRow label="内存" value={formatBytes(displayServer.mem_total)} />
             <InfoRow label="硬盘" value={diskTotal > 0 ? formatBytes(diskTotal) : '-'} />
+            {/* CPU 温度（>0 表示有传感器读数） */}
+            {displayServer.temperature != null && displayServer.temperature > 0 && (
+              <InfoRow
+                label="CPU 温度"
+                value={`${displayServer.temperature.toFixed(1)} °C`}
+                valueClassName={
+                  displayServer.temperature >= 85
+                    ? 'text-destructive'
+                    : displayServer.temperature >= 70
+                      ? 'text-warning'
+                      : 'text-foreground'
+                }
+              />
+            )}
             <InfoRow label="系统" value={displayServer.os || '-'} />
             {/* 发行版信息（如果有） */}
             {displayServer.distro && (
@@ -604,6 +650,14 @@ export default function ServerDetail() {
                 {range.label}
               </button>
             ))}
+          </div>
+        </div>
+
+        {/* 延迟格子图（置顶：VPS 用户最常看的数据，IPv4/IPv6 分组，每目标一行） */}
+        <div className="card-soft p-5">
+          <LatencyGrid points={cardHistory} ipVersion={4} maxCells={24} />
+          <div className="mt-3 border-t border-dashed border-border/60 pt-3">
+            <LatencyGrid points={cardHistory} ipVersion={6} maxCells={24} />
           </div>
         </div>
 

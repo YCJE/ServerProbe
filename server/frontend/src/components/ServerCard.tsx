@@ -17,14 +17,25 @@ import {
   getExpireColor,
 } from '@/lib/utils'
 import { useServerStore, type CardHistoryPoint } from '@/store/useServerStore'
+import { useTagColors } from '@/store/useTagStore'
 import ResourceRing from '@/components/ResourceRing'
 import DistroIcon from '@/components/DistroIcon'
 import StatusDot from '@/components/StatusDot'
+import LatencyGrid from '@/components/LatencyGrid'
 import { useAnimatedNumber } from '@/hooks/useAnimatedNumber'
 import { useInViewport } from '@/hooks/useInViewport'
 
 /** 稳定的空数组引用，避免 || [] 每次创建新引用导致 Zustand 不必要重渲染 */
 const EMPTY_HISTORY: CardHistoryPoint[] = []
+
+/** 标签徽章样式：优先用管理端标签表设置的颜色，未设置回退 hash 配色 */
+function tagBadgeStyle(tag: string, colorMap: Record<string, string>) {
+  const color = colorMap[tag]
+  if (color) {
+    return { background: color, color: '#ffffff' }
+  }
+  return getTagStyle(tag)
+}
 
 interface ServerCardProps {
   server: ServerData
@@ -37,349 +48,10 @@ interface ServerCardProps {
   basePath?: string
 }
 
-/** 紧凑图表桶数 */
-const COMPACT_BUCKETS = 30
-
-/** 延迟质量桶颜色（与 LatencyQualityBar 保持一致） */
-const BUCKET_COLORS = {
-  deepGreen: '#69BE7B',
-  lightGreen: '#A7D879',
-  lightYellow: '#E8CC68',
-  deepYellow: '#EFA85F',
-  lightRed: '#E98686',
-  deepRed: '#D96B6B',
-  empty: 'rgba(148, 163, 184, 0.22)',
-} as const
-
-/** 根据平均延迟和丢包率返回桶颜色 */
-function getBucketColor(avgLatency: number, avgLoss: number, hasData: boolean): string {
-  if (!hasData) return BUCKET_COLORS.empty
-  if (avgLoss > 50) return BUCKET_COLORS.deepRed
-  if (avgLatency <= 50) return BUCKET_COLORS.deepGreen
-  if (avgLatency <= 100) return BUCKET_COLORS.lightGreen
-  if (avgLatency <= 180) return BUCKET_COLORS.lightYellow
-  if (avgLatency <= 300) return BUCKET_COLORS.deepYellow
-  return BUCKET_COLORS.lightRed
-}
-
-/** 延迟桶聚合结果 */
-interface LatencyBucket {
-  index: number
-  color: string
-  hasData: boolean
-  avgLatency: number
-  avgLoss: number
-  count: number
-}
-
-/** 丢包率桶颜色 */
-const LOSS_COLORS = {
-  perfect: '#69BE7B',     // 0%
-  good: '#A7D879',        // 0-5%
-  fair: '#E8CC68',        // 5-15%
-  warning: '#EFA85F',     // 15-30%
-  bad: '#E98686',         // 30-50%
-  critical: '#D96B6B',    // >50%
-  empty: 'rgba(148, 163, 184, 0.22)',
-} as const
-
-/** 根据丢包率返回颜色 */
-function getLossColor(avgLoss: number, hasData: boolean): string {
-  if (!hasData) return LOSS_COLORS.empty
-  if (avgLoss <= 0) return LOSS_COLORS.perfect
-  if (avgLoss <= 5) return LOSS_COLORS.good
-  if (avgLoss <= 15) return LOSS_COLORS.fair
-  if (avgLoss <= 30) return LOSS_COLORS.warning
-  if (avgLoss <= 50) return LOSS_COLORS.bad
-  return LOSS_COLORS.critical
-}
-
-/** 丢包率桶聚合结果 */
-interface LossBucket {
-  index: number
-  color: string
-  hasData: boolean
-  avgLoss: number
-  count: number
-}
-
-/**
- * 紧凑延迟质量分布条（卡片专用）
- *
- * - 30 个时间桶，自适应历史数据范围
- * - 高度 16px，悬停显示延迟和丢包率
- * - 颜色与 LatencyQualityBar 保持一致
- */
-function CompactLatencyBar({
-  points,
-  online,
-  currentAvgLatency,
-}: {
-  points: CardHistoryPoint[]
-  online: boolean
-  currentAvgLatency: number | null
-}) {
-  const [hoveredIdx, setHoveredIdx] = useState<number | null>(null)
-
-  const buckets = useMemo<LatencyBucket[]>(() => {
-    const result: LatencyBucket[] = Array.from({ length: COMPACT_BUCKETS }, (_, i) => ({
-      index: i,
-      color: BUCKET_COLORS.empty,
-      hasData: false,
-      avgLatency: 0,
-      avgLoss: 0,
-      count: 0,
-    }))
-
-    if (points.length === 0) return result
-
-    // 过滤掉 timestamp 无效的数据点，防止 bucketIdx 计算为 NaN 导致数组越界
-    const validPoints = points.filter(
-      (p) => typeof p.timestamp === 'number' && !isNaN(p.timestamp) && p.ping_data,
-    )
-    if (validPoints.length === 0) return result
-
-    const oldestTs = validPoints[0].timestamp
-    const newestTs = validPoints[validPoints.length - 1].timestamp
-    const range = newestTs - oldestTs || 1
-
-    for (const point of validPoints) {
-      const ratio = (point.timestamp - oldestTs) / range
-      // 确保比值在 [0, 1] 范围内，防止 NaN 或 Infinity
-      if (!isFinite(ratio)) continue
-      const bucketIdx = Math.min(
-        Math.max(0, Math.floor(ratio * COMPACT_BUCKETS)),
-        COMPACT_BUCKETS - 1,
-      )
-      const bucket = result[bucketIdx]
-      if (!bucket) continue
-      const pings = point.ping_data || []
-      if (pings.length === 0) continue
-
-      let latencySum = 0
-      let lossSum = 0
-      let validCount = 0
-      for (const ping of pings) {
-        if (ping.avg_latency != null && ping.avg_latency >= 0) {
-          latencySum += ping.avg_latency
-          lossSum += ping.loss || 0
-          validCount++
-        }
-      }
-
-      if (validCount > 0) {
-        const pointAvgLatency = latencySum / validCount
-        const pointAvgLoss = lossSum / validCount
-        bucket.avgLatency =
-          (bucket.avgLatency * bucket.count + pointAvgLatency) / (bucket.count + 1)
-        bucket.avgLoss =
-          (bucket.avgLoss * bucket.count + pointAvgLoss) / (bucket.count + 1)
-        bucket.count++
-        bucket.hasData = true
-      }
-    }
-
-    for (const bucket of result) {
-      if (bucket.hasData) {
-        bucket.color = getBucketColor(bucket.avgLatency, bucket.avgLoss, true)
-      }
-    }
-
-    return result
-  }, [points])
-
-  const hoveredBucket = hoveredIdx !== null ? buckets[hoveredIdx] : null
-
-  return (
-    <div>
-      {/* 标题行 */}
-      <div className="mb-1.5 flex items-center justify-between">
-        <span className="text-[10px] font-medium text-muted-foreground">延迟质量分布</span>
-        <span className="text-[10px] font-medium tabular-nums text-foreground/70">
-          {online && currentAvgLatency !== null
-            ? `${currentAvgLatency.toFixed(0)}ms`
-            : '---'}
-        </span>
-      </div>
-      {/* 桶条 */}
-      <div className="relative">
-        <div className="flex items-end gap-[2px]" style={{ height: 16 }}>
-          {buckets.map((bucket) => (
-            <div
-              key={bucket.index}
-              className="flex-1 cursor-pointer rounded-[2px] transition-all"
-              style={{
-                height: '100%',
-                backgroundColor: bucket.color,
-                opacity: hoveredIdx !== null && hoveredIdx !== bucket.index ? 0.45 : 1,
-                transform: hoveredIdx === bucket.index ? 'scaleY(1.18)' : 'scaleY(1)',
-                transitionProperty: 'opacity, transform',
-                transitionDuration: '150ms',
-              }}
-              onMouseEnter={() => setHoveredIdx(bucket.index)}
-              onMouseLeave={() => setHoveredIdx(null)}
-            />
-          ))}
-        </div>
-        {/* 悬停 Tooltip */}
-        {hoveredBucket && (
-          <div className="pointer-events-none absolute -top-1.5 left-1/2 z-10 -translate-x-1/2 -translate-y-full rounded-md border border-border bg-card px-2.5 py-1.5 text-[10px] shadow-tooltip">
-            {hoveredBucket.hasData ? (
-              <div className="whitespace-nowrap">
-                <span className="font-medium text-foreground">
-                  {hoveredBucket.avgLatency.toFixed(0)}ms
-                </span>
-                <span className="ml-2 text-muted-foreground">
-                  丢包 {hoveredBucket.avgLoss.toFixed(0)}%
-                </span>
-              </div>
-            ) : (
-              <span className="text-muted-foreground">无数据</span>
-            )}
-          </div>
-        )}
-      </div>
-    </div>
-  )
-}
-
-/**
- * 紧凑丢包率分布条（卡片专用）
- *
- * - 30 个时间桶，自适应历史数据范围
- * - 高度 8px，右侧显示当前平均丢包率
- * - 0% 绿色，随丢包率升高渐变到深红
- */
-function CompactPacketLossBar({
-  points,
-  online,
-  currentAvgLoss,
-}: {
-  points: CardHistoryPoint[]
-  online: boolean
-  currentAvgLoss: number | null
-}) {
-  const [hoveredIdx, setHoveredIdx] = useState<number | null>(null)
-
-  const buckets = useMemo<LossBucket[]>(() => {
-    const result: LossBucket[] = Array.from({ length: COMPACT_BUCKETS }, (_, i) => ({
-      index: i,
-      color: LOSS_COLORS.empty,
-      hasData: false,
-      avgLoss: 0,
-      count: 0,
-    }))
-
-    if (points.length === 0) return result
-
-    const validPoints = points.filter(
-      (p) => typeof p.timestamp === 'number' && !isNaN(p.timestamp) && p.ping_data,
-    )
-    if (validPoints.length === 0) return result
-
-    const oldestTs = validPoints[0].timestamp
-    const newestTs = validPoints[validPoints.length - 1].timestamp
-    const range = newestTs - oldestTs || 1
-
-    for (const point of validPoints) {
-      const ratio = (point.timestamp - oldestTs) / range
-      if (!isFinite(ratio)) continue
-      const bucketIdx = Math.min(
-        Math.max(0, Math.floor(ratio * COMPACT_BUCKETS)),
-        COMPACT_BUCKETS - 1,
-      )
-      const bucket = result[bucketIdx]
-      if (!bucket) continue
-      const pings = point.ping_data || []
-      if (pings.length === 0) continue
-
-      let lossSum = 0
-      let validCount = 0
-      for (const ping of pings) {
-        if (ping.avg_latency != null && ping.avg_latency >= 0) {
-          lossSum += ping.loss || 0
-          validCount++
-        }
-      }
-
-      if (validCount > 0) {
-        const pointAvgLoss = lossSum / validCount
-        bucket.avgLoss = (bucket.avgLoss * bucket.count + pointAvgLoss) / (bucket.count + 1)
-        bucket.count++
-        bucket.hasData = true
-      }
-    }
-
-    for (const bucket of result) {
-      if (bucket.hasData) {
-        bucket.color = getLossColor(bucket.avgLoss, true)
-      }
-    }
-
-    return result
-  }, [points])
-
-  const hoveredBucket = hoveredIdx !== null ? buckets[hoveredIdx] : null
-
-  return (
-    <div>
-      {/* 标题行 */}
-      <div className="mb-1.5 flex items-center justify-between">
-        <span className="text-[10px] font-medium text-muted-foreground">丢包率</span>
-        <span
-          className="text-[10px] font-medium tabular-nums"
-          style={{
-            color:
-              online && currentAvgLoss !== null
-                ? getLossColor(currentAvgLoss, true)
-                : 'hsl(var(--muted-foreground))',
-          }}
-        >
-          {online && currentAvgLoss !== null
-            ? `${currentAvgLoss.toFixed(1)}%`
-            : '---'}
-        </span>
-      </div>
-      {/* 桶条 */}
-      <div className="relative">
-        <div className="flex items-end gap-[2px]" style={{ height: 8 }}>
-          {buckets.map((bucket) => (
-            <div
-              key={bucket.index}
-              className="flex-1 cursor-pointer rounded-[1.5px] transition-all"
-              style={{
-                height: '100%',
-                backgroundColor: bucket.color,
-                opacity: hoveredIdx !== null && hoveredIdx !== bucket.index ? 0.45 : 1,
-                transform: hoveredIdx === bucket.index ? 'scaleY(1.25)' : 'scaleY(1)',
-                transitionProperty: 'opacity, transform',
-                transitionDuration: '150ms',
-              }}
-              onMouseEnter={() => setHoveredIdx(bucket.index)}
-              onMouseLeave={() => setHoveredIdx(null)}
-            />
-          ))}
-        </div>
-        {/* 悬停 Tooltip */}
-        {hoveredBucket && (
-          <div className="pointer-events-none absolute -top-1.5 left-1/2 z-10 -translate-x-1/2 -translate-y-full rounded-md border border-border bg-card px-2.5 py-1.5 text-[10px] shadow-tooltip">
-            {hoveredBucket.hasData ? (
-              <span className="whitespace-nowrap font-medium text-foreground">
-                丢包 {hoveredBucket.avgLoss.toFixed(1)}%
-              </span>
-            ) : (
-              <span className="text-muted-foreground">无数据</span>
-            )}
-          </div>
-        )}
-      </div>
-    </div>
-  )
-}
-
 /** 服务器卡片组件（NodeGet 风格） */
 function ServerCard({ server, basePath = '/admin' }: ServerCardProps) {
   const navigate = useNavigate()
+  const tagColors = useTagColors()
 
   // 视口懒加载：仅当卡片进入视口时才渲染延迟和丢包率部分
   const { ref: viewportRef, isInViewport } = useInViewport<HTMLDivElement>(320)
@@ -441,22 +113,6 @@ function ServerCard({ server, basePath = '/admin' }: ServerCardProps) {
     ? ((server.mem_used || 0) / server.mem_total) * 100
     : server.mem || 0
 
-  // 当前平均延迟（所有探测目标的平均值）
-  const currentAvgLatency = useMemo(() => {
-    const pings = server.ping_data || []
-    const valid = pings.filter((p) => p.avg_latency != null && p.avg_latency >= 0)
-    if (valid.length === 0) return null
-    return valid.reduce((sum, p) => sum + (p.avg_latency || 0), 0) / valid.length
-  }, [server.ping_data])
-
-  // 当前平均丢包率（所有探测目标的平均值）
-  const currentAvgLoss = useMemo(() => {
-    const pings = server.ping_data || []
-    const valid = pings.filter((p) => p.avg_latency != null && p.avg_latency >= 0)
-    if (valid.length === 0) return null
-    return valid.reduce((sum, p) => sum + (p.loss || 0), 0) / valid.length
-  }, [server.ping_data])
-
   const displayName = server.display_name || server.hostname
 
   // 月流量使用量与配额进度（NodeGet 风格）
@@ -502,7 +158,7 @@ function ServerCard({ server, basePath = '/admin' }: ServerCardProps) {
           {displayName}
         </h3>
         {tagBadges.map((tag) => {
-          const style = getTagStyle(tag)
+          const style = tagBadgeStyle(tag, tagColors)
           return (
             <span
               key={tag}
@@ -592,24 +248,13 @@ function ServerCard({ server, basePath = '/admin' }: ServerCardProps) {
         </div>
       </div>
 
-      {/* 5. 延迟质量分布 + 丢包率（仅在卡片进入视口时渲染） */}
+      {/* 5. 延迟格子图（每目标一行，NodeGet 风格；仅在卡片进入视口时渲染） */}
       <div className="mt-3 rounded-xl border border-dashed border-border/80 px-3 py-2.5">
         {isInViewport ? (
-          <div className="space-y-2.5">
-            <CompactLatencyBar
-              points={history}
-              online={server.online}
-              currentAvgLatency={currentAvgLatency}
-            />
-            <CompactPacketLossBar
-              points={history}
-              online={server.online}
-              currentAvgLoss={currentAvgLoss}
-            />
-          </div>
+          <LatencyGrid points={history} ipVersion={4} maxCells={24} maxRows={4} compact />
         ) : (
           // 占位符：不在视口时不渲染，显示占位高度避免布局抖动
-          <div className="flex h-16 items-center justify-center">
+          <div className="flex h-24 items-center justify-center">
             <span className="text-[10px] text-muted-foreground/40">加载中...</span>
           </div>
         )}

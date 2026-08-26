@@ -53,6 +53,7 @@ func main() {
 	pingCollector := collector.NewPingCollector(cfg.PingMethod, cfg.InsecureTLS, cfg.AllowPrivateTargets)
 	processCollector := collector.NewProcessCollector(fileReader)
 	ntpCollector := collector.NewNTPCollector("") // 使用默认 NTP 服务器
+	thermalCollector := collector.NewThermalCollector(fileReader)
 
 	// 创建 WebSocket 客户端
 	wsClient := reporter.NewWSClient(cfg.ServerURL, cfg.Token, cfg.RegisterCode, cfg.InsecureTLS)
@@ -182,7 +183,7 @@ func main() {
 	uploader := reporter.NewUploader(wsClient, reportInterval, &reportIntervalVal)
 	uploader.Start(func() (*sharedmodel.MetricData, error) {
 		collectCounter++
-		return collectAllData(cpuCollector, memCollector, diskCollector, netCollector, sysCollector, processCollector, ntpCollector, collectCounter)
+		return collectAllData(cpuCollector, memCollector, diskCollector, netCollector, sysCollector, processCollector, ntpCollector, thermalCollector, collectCounter)
 	})
 
 	// 启动 Ping 探测 (使用动态间隔，支持优雅停止)
@@ -249,6 +250,7 @@ func collectAllData(
 	sys *collector.SystemCollector,
 	proc *collector.ProcessCollector,
 	ntp *collector.NTPCollector,
+	thermal *collector.ThermalCollector,
 	counter int64,
 ) (*sharedmodel.MetricData, error) {
 	var (
@@ -339,6 +341,13 @@ func collectAllData(
 	} else {
 		data.TimeOffset = offset
 		success++
+	}
+
+	// 采集 CPU 温度（无传感器时为 0，不视为错误）
+	if thermalResult, err := thermal.Collect(); err == nil {
+		if temp, ok := thermalResult.(float64); ok {
+			data.Temperature = temp
+		}
 	}
 
 	// 所有采集器均失败才放弃本轮上报

@@ -11,6 +11,7 @@ type MetricData struct {
 	System       SystemInfo     `json:"system"`
 	Processes    []ProcessInfo  `json:"processes"`  // Top N 进程列表
 	TimeOffset   int64          `json:"time_offset"` // NTP 时间偏移（毫秒）
+	Temperature  float64        `json:"temperature"` // CPU 温度（摄氏度，0=不可用）
 }
 
 // ProcessInfo 进程信息（Top N，按 CPU 或内存排序）
@@ -80,15 +81,17 @@ type PingResult struct {
 	Loss        float64 `json:"loss"`         // 丢包率 0-100
 	PacketsSent int     `json:"packets_sent"` // 发送包数
 	PacketsRecv int     `json:"packets_recv"` // 接收包数
+	IPVersion   int     `json:"ip_version,omitempty"` // IP 版本标注（4/6，0=未标注，由目标配置透传）
 }
 
 // PingTarget 探测目标配置
 type PingTarget struct {
-	ID      int64  `json:"id"`
-	Target  string `json:"target"` // IP 或域名
-	Name    string `json:"name"`   // 显示名称
-	Method  string `json:"method"` // 探测方式: icmp, tcp, http
-	Enabled bool   `json:"enabled"`
+	ID        int64  `json:"id"`
+	Target    string `json:"target"`    // IP 或域名
+	Name      string `json:"name"`      // 显示名称
+	Method    string `json:"method"`    // 探测方式: icmp, tcp, http
+	Enabled   bool   `json:"enabled"`
+	IPVersion int    `json:"ip_version"` // IP 版本标注（0=自动按名称/地址识别，4=IPv4，6=IPv6）
 }
 
 // AgentConfig Agent 从 Server 拉取的配置

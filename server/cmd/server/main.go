@@ -84,6 +84,7 @@ func main() {
 	serviceMonitorRepo := repository.NewServiceMonitorRepository(db.DB())
 	sslMonitorRepo := repository.NewSSLCertMonitorRepository(db.DB())
 	sharePageRepo := repository.NewSharePageRepository(db.DB())
+	tagRepo := repository.NewTagRepository(db.DB())
 
 	// 生成或加载 JWT 密钥
 	jwtSecretFile := filepath.Join(*dataDir, "jwt_secret")
@@ -167,6 +168,7 @@ func main() {
 		sharePageRepo,
 		serviceMonitorEngine,
 		sslMonitorEngine,
+		tagRepo,
 	)
 
 	// 注册前端静态文件处理器
