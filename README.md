@@ -9,15 +9,14 @@
 
 - [特性](#特性)
 - [架构](#架构)
-- [安装 Server](#安装-server)
-  - [方式一: 一键脚本安装 (推荐)](#方式一-一键脚本安装-推荐)
-  - [方式二: 手动安装](#方式二-手动安装)
-  - [方式三: Docker 安装](#方式三-docker-安装)
+- [安装、升级与卸载](#安装升级与卸载)
+  - [安装 Server](#安装-server)
+  - [安装 Agent](#安装-agent)
+  - [升级](#升级)
+  - [卸载](#卸载)
 - [配置域名和 HTTPS 证书](#配置域名和-https-证书)
-  - [使用 Nginx 反向代理 + Let's Encrypt](#使用-nginx-反向代理--lets-encrypt)
-  - [使用自有证书](#使用自有证书)
+- [功能使用指南](#功能使用指南)
 - [JWT 配置说明](#jwt-配置说明)
-- [安装 Agent](#安装-agent)
 - [Server 配置详解](#server-配置详解)
 - [Agent 配置详解](#agent-配置详解)
 - [日常运维](#日常运维)
@@ -26,16 +25,44 @@
 
 ## 特性
 
-- **只读架构**: Agent 仅采集系统指标,不接收任何控制指令
-- **强制 TLS**: 全程加密通信,拒绝明文连接
-- **非 root 运行**: Agent 以 `probe` 用户运行,最小权限
+### 监控与数据采集
+
+- **实时监控**: CPU/内存/磁盘/网络，3 秒粒度，WebSocket 实时推送
+- **网络探测**: ICMP/TCP/HTTP Ping，自动降级，每目标独立延迟统计（平均/最小/最大/抖动/丢包）
+- **延迟格子图**: NodeGet 风格的每目标延迟可视化，颜色分级 + 高度映射，IPv4/IPv6 自动分组
+- **CPU 温度采集**: 读取 `/sys/class/thermal`，详情页展示温度
+- **服务器元数据**: 位置/国家/ISP/到期时间/价格/月流量配额，支持国旗徽章、流量进度条、月成本汇总
+- **进程监控**: Top N 进程列表（按 CPU/内存排序）
+- **NTP 时间偏移**: 检测系统时钟偏差
+
+### 面板与视图
+
+- **三种视图**: 卡片视图 / 表格视图 / 离线世界地图（ECharts 气泡标注）
+- **多维筛选**: 名称搜索、标签筛选、地区筛选、IPv4/IPv6/双栈筛选
+- **URL 参数持久化**: 筛选状态写入 URL，刷新和分享链接均保持视图
+- **标签系统**: 独立标签表，自定义颜色，卡片徽章统一着色
+- **公开仪表盘**: 无需登录的只读公开页（敏感字段已过滤）
+- **分享页**: 可配置展示内容的独立分享页面
+
+### 告警与通知
+
+- **告警规则**: CPU/内存/磁盘/离线/服务状态/SSL 证书/流量配额/到期天数，8 种指标
+- **告警历史**: FIRING 触发落盘、RESOLVED 恢复回填，时间线展示，90 天自动清理
+- **状态机去重**: PENDING → FIRING → RESOLVED，静默期内不重复通知
+- **通知渠道**: Webhook/Telegram/Email，配置脱敏返回，支持测试发送
+
+### 服务监控与安全
+
+- **服务监控**: HTTP/TCP 服务可用性检测，独立告警
+- **SSL 证书监控**: 证书到期天数检测与告警
+- **TOTP 两步验证**: RFC 6238 标准，二维码绑定，验证码一次性消费防重放
+- **只读架构**: Agent 仅采集系统指标，不接收任何控制指令
+- **强制 TLS**: 全程加密通信，拒绝明文连接
+- **非 root 运行**: Agent 以 `probe` 用户运行，最小权限
 - **无远程执行**: Agent 不包含任何命令执行/终端/文件操作能力
-- **SSRF 防护**: Webhook 通知内置 SSRF 防护层
-- **单管理员**: 无多租户攻击面,JWT + HttpOnly Cookie
-- **实时监控**: CPU/内存/磁盘/网络,3 秒粒度
-- **网络探测**: ICMP/TCP/HTTP Ping,自动降级
-- **告警通知**: Webhook/Telegram/Email,状态机去重
-- **单二进制部署**: 前端内嵌,一个文件即可运行
+- **SSRF 防护**: Webhook 通知与 Ping 目标内置 SSRF 防护层
+- **单管理员**: 无多租户攻击面，JWT + HttpOnly Cookie + 登录限速
+- **单二进制部署**: 前端内嵌，一个文件即可运行
 
 ## 架构
 
@@ -47,23 +74,27 @@
 └──────────────┘                   └──────────────┘                └────────────┘
 ```
 
-- **Agent**: 部署在被监控服务器,采集系统指标并上报
-- **Server**: 接收数据,提供 Web 面板和 API,内嵌 React 前端
+- **Agent**: 部署在被监控服务器，采集系统指标并上报
+- **Server**: 接收数据，提供 Web 面板和 API，内嵌 React 前端
 - **Browser**: 管理员通过浏览器访问监控面板
 
 ---
 
-## 安装 Server
+## 安装、升级与卸载
 
-### 前提条件
+本章涵盖完整的生命周期管理：安装 → 升级 → 卸载。所有操作均提供一键脚本，升级保留全部配置和数据，卸载有交互式确认防误操作。
+
+### 安装 Server
+
+#### 前提条件
 
 - Linux 服务器 (Ubuntu/Debian/CentOS 等)
 - root 权限
 - 开放一个端口 (默认 8443)
 
-### 方式一: 一键脚本安装 (推荐)
+#### 方式一: 一键脚本安装 (推荐)
 
-此方式会自动安装 Go 和 Node.js,从源码编译,无需预编译二进制。
+此方式会自动安装 Go 和 Node.js，从源码编译，无需预编译二进制。
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/YCJE/ServerProbe/master/scripts/install-server.sh | bash -s -- --port 8443
@@ -76,11 +107,11 @@ curl -fsSL https://raw.githubusercontent.com/YCJE/ServerProbe/master/scripts/ins
 4. 生成 JWT 密钥和配置文件
 5. 安装 systemd 服务并启动
 
-安装完成后会显示访问地址,首次访问需要在浏览器中设置管理员账号。
+安装完成后会显示访问地址，首次访问需要在浏览器中设置管理员账号。
 
-### 方式二: 手动安装
+#### 方式二: 手动安装
 
-如果你已经有编译好的二进制文件,可以手动安装:
+如果你已经有编译好的二进制文件，可以手动安装:
 
 **第 1 步: 安装二进制**
 
@@ -174,11 +205,11 @@ systemctl status probe-server
 
 **第 8 步: 访问面板**
 
-浏览器打开 `https://你的服务器IP:8443`,首次访问会要求设置管理员账号和密码。
+浏览器打开 `https://你的服务器IP:8443`，首次访问会要求设置管理员账号和密码。
 
-> 浏览器会提示证书不安全,因为使用的是自签名证书。点击"高级" -> "继续前往"即可。如需使用正式证书,请参考下面的[域名配置](#配置域名和-https-证书)章节。
+> 浏览器会提示证书不安全，因为使用的是自签名证书。点击"高级" -> "继续前往"即可。如需使用正式证书，请参考下面的[域名配置](#配置域名和-https-证书)章节。
 
-### 方式三: Docker 安装
+#### 方式三: Docker 安装
 
 ```bash
 # 克隆仓库
@@ -192,17 +223,215 @@ docker compose up -d
 docker compose logs -f
 ```
 
-默认监听 443 端口。如需修改,编辑 `docker-compose.yml` 中的端口映射。
+默认监听 443 端口。如需修改，编辑 `docker-compose.yml` 中的端口映射。
+
+### 安装 Agent
+
+#### 前提条件
+
+- Server 已安装并运行
+
+#### 方式一: 两步式添加 + 一键安装 (推荐)
+
+面板采用「先添加、后安装」的两步流程（Komari 风格）:
+
+1. 登录 Server 面板，进入 **Agent 管理** 页面
+2. 点击 **添加服务器**，填写基本信息和元数据（可选：位置/国家/ISP/到期时间/价格/月流量配额）
+3. 创建成功后，页面会显示一键安装命令，复制到被监控服务器上以 root 执行:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/YCJE/ServerProbe/master/scripts/install-agent.sh | bash -s -- --server https://your-server.com:8443 --token YOUR_TOKEN
+```
+
+Agent 首次连接时自动绑定主机指纹并回填系统信息（主机名/系统/架构），同时记录 IPv4/IPv6 出口 IP，此后按指纹严格校验，防止 Token 泄露后被其他主机冒用。
+
+已添加的服务器可在列表中点击 **安装命令** 随时重新获取命令（用于重装或迁移）。
+
+#### 方式二: 注册码 (兼容旧流程)
+
+在 **Agent 管理** 页面点击 **生成注册码**，然后:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/YCJE/ServerProbe/master/scripts/install-agent.sh | bash -s -- --server https://your-server.com:8443 --code YOUR_CODE
+```
+
+参数说明:
+- `--server`: Server 地址，**必须以 `https://` 开头**
+- `--token`: 后台添加服务器后生成的 Token（推荐，与 `--code` 二选一）
+- `--code`: 在 Server 面板中生成的注册码（与 `--token` 二选一，15 分钟有效）
+- `--secure-tls`: 启用 TLS 证书验证（Server 使用受信任 CA 签发的证书时使用；默认跳过以兼容自签名证书）
+
+脚本会自动:
+1. 安装 Go (如未安装)
+2. 从源码编译 Agent
+3. 创建 `probe` 系统用户
+4. 生成配置文件 (权限 600)
+5. 设置 ICMP Ping 权限 (setcap)
+6. 安装 systemd 服务并启动
+
+#### 手动安装
+
+```bash
+# 1. 安装二进制
+cp probe-agent /usr/local/bin/probe-agent
+chmod +x /usr/local/bin/probe-agent
+
+# 2. 创建用户
+useradd -r -s /usr/sbin/nologin probe
+
+# 3. 创建配置
+mkdir -p /etc/probe-agent
+cat > /etc/probe-agent/config.yml << 'EOF'
+server: "https://your-server.com:8443"
+token: "YOUR_TOKEN"        # Token 直连 (推荐)
+# register_code: "YOUR_CODE"  # 或使用注册码 (二选一)
+report_interval: 3
+config_sync_interval: 3600
+ping_method: "auto"
+EOF
+chmod 600 /etc/probe-agent/config.yml
+chown probe:probe /etc/probe-agent/config.yml
+
+# 4. 设置 ICMP 权限
+setcap cap_net_raw+ep /usr/local/bin/probe-agent
+
+# 5. 创建 systemd 服务
+cat > /etc/systemd/system/probe-agent.service << 'EOF'
+[Unit]
+Description=Server Probe Agent
+After=network.target
+
+[Service]
+Type=simple
+User=probe
+Group=probe
+ExecStart=/usr/local/bin/probe-agent --config /etc/probe-agent/config.yml
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/etc/probe-agent
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# 6. 启动
+systemctl daemon-reload
+systemctl enable probe-agent
+systemctl start probe-agent
+```
+
+#### 验证 Agent 连接
+
+```bash
+# 查看 Agent 日志
+journalctl -u probe-agent -f
+
+# 正常日志应显示:
+# "注册成功，保存 Token"
+# "Agent 已启动，开始监控"
+```
+
+在 Server 面板中应该能看到该 Agent 上线，卡片上会显示国旗徽章、标签和延迟格子图。
+
+### 升级
+
+升级脚本仅更新二进制文件，**保留所有配置和数据**，无需卸载重装。升级失败会自动回滚到旧版本。
+
+**升级 Server:**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/YCJE/ServerProbe/master/scripts/upgrade-server.sh | bash
+```
+
+**升级 Agent:**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/YCJE/ServerProbe/master/scripts/upgrade-agent.sh | bash
+```
+
+可选参数:
+- `--release`: 从 Release 下载预编译二进制（默认从源码编译）
+- `--from-source`: 强制从源码编译
+- `--version <版本号>`: 指定升级到的版本
+
+升级过程:
+1. 检查已安装状态，备份当前二进制
+2. 编译/下载新版本
+3. 替换二进制（Agent 会重新设置 setcap ICMP 权限）
+4. 重启 systemd 服务
+5. 失败自动回滚备份
+
+> 升级 Agent 后无需重新配置，Token 和指纹绑定保持不变。
+
+> 如果 `curl` 无法解析 `raw.githubusercontent.com`，可使用 ghproxy 加速:
+> ```bash
+> curl -fsSL https://ghproxy.com/https://raw.githubusercontent.com/YCJE/ServerProbe/master/scripts/upgrade-server.sh -o /tmp/upgrade.sh && bash /tmp/upgrade.sh
+> ```
+
+### 卸载
+
+如需完全移除 Server Probe，可使用一键卸载脚本。**两个卸载脚本都有交互式确认 (`y/N`)，防止误操作。**
+
+**卸载 Server:**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/YCJE/ServerProbe/master/scripts/uninstall-server.sh | bash
+```
+
+清理内容:
+- 停止并禁用 systemd 服务
+- 删除二进制文件 `/usr/local/bin/probe-server`
+- 删除配置目录 `/etc/probe-server`
+- 删除数据目录 `/var/lib/probe-server`
+- 删除系统用户 `probe-server`
+- 可选清理 Go 环境
+
+如需保留数据（例如仅重装），使用 `--keep-data` 参数:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/YCJE/ServerProbe/master/scripts/uninstall-server.sh | bash -s -- --keep-data
+```
+
+**卸载 Agent:**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/YCJE/ServerProbe/master/scripts/uninstall-agent.sh | bash
+```
+
+清理内容:
+- 停止并禁用 systemd 服务
+- 移除 setcap CAP_NET_RAW 权限
+- 删除二进制文件 `/usr/local/bin/probe-agent`
+- 删除配置目录 `/etc/probe-agent`
+- 删除系统用户 `probe`
+- 可选清理 Go 环境
+
+> 卸载 Agent 只是移除被监控机器上的程序。如需同时在面板中删除该服务器记录，请在 **Agent 管理** 页面中删除，否则会残留离线记录。
+
+> 如果 `curl` 无法解析 `raw.githubusercontent.com`，可以先下载脚本再执行:
+> ```bash
+> # 方法一: 使用 ghproxy 加速
+> curl -fsSL https://ghproxy.com/https://raw.githubusercontent.com/YCJE/ServerProbe/master/scripts/uninstall-server.sh -o /tmp/uninstall.sh && bash /tmp/uninstall.sh
+>
+> # 方法二: 手动下载后上传
+> # 1. 在能访问 GitHub 的电脑上下载脚本
+> # 2. 上传到服务器
+> # 3. 执行: bash uninstall-server.sh
+> ```
 
 ---
 
 ## 配置域名和 HTTPS 证书
 
-默认情况下 Server 使用自签名证书,浏览器会报警告。生产环境建议配置域名和正式证书。
+默认情况下 Server 使用自签名证书，浏览器会报警告。生产环境建议配置域名和正式证书。
 
 ### 使用 Nginx 反向代理 + Let's Encrypt
 
-这是最推荐的方式,免费获取正式证书。
+这是最推荐的方式，免费获取正式证书。
 
 **第 1 步: 安装 Nginx 和 Certbot**
 
@@ -217,14 +446,14 @@ yum install -y nginx certbot python3-certbot-nginx
 
 **第 2 步: 配置 DNS**
 
-在你的域名服务商处,添加 A 记录:
+在你的域名服务商处，添加 A 记录:
 - 记录类型: A
 - 主机记录: probe (或你喜欢的子域名)
 - 记录值: 你的服务器 IP
 
 **第 3 步: 修改 Server 监听端口**
 
-编辑 `/etc/probe-server/config.yml`,将端口改为本地端口 (不对外暴露):
+编辑 `/etc/probe-server/config.yml`，将端口改为本地端口 (不对外暴露):
 
 ```yaml
 listen: "127.0.0.1:8443"
@@ -281,6 +510,8 @@ systemctl reload nginx
 
 此时通过 `http://probe.yourdomain.com` 即可访问 (HTTP，浏览器会提示不安全，下一步申请证书后自动变为 HTTPS)。
 
+> 如果使用反向代理，建议在 Server 环境变量中设置 `TRUSTED_PROXIES`（如 `TRUSTED_PROXIES=127.0.0.1,::1`），这样限速中间件才能按真实客户端 IP 生效。
+
 **第 5 步: 申请 SSL 证书**
 
 ```bash
@@ -319,7 +550,7 @@ certbot renew --dry-run
 
 ### 使用自有证书
 
-如果你已经有 SSL 证书,可以直接配置到 Server:
+如果你已经有 SSL 证书，可以直接配置到 Server:
 
 **第 1 步: 上传证书**
 
@@ -353,9 +584,72 @@ systemctl restart probe-server
 
 ---
 
+## 功能使用指南
+
+### 两步验证 (TOTP)
+
+为管理员账户启用动态口令两步验证，防止密码泄露导致面板被入侵:
+
+1. 进入 **系统状态** 页面的 **两步验证** 区域
+2. 点击 **生成密钥**，使用 Google Authenticator / Microsoft Authenticator 等扫码导入
+3. 输入认证器上的 6 位验证码完成绑定
+4. 此后登录需输入密码 + 动态验证码两步完成
+
+安全细节:
+- 验证码一次性消费，同一 30 秒窗口内不可重放
+- 登录接口限速（每 IP 每分钟 5 次），暴力破解动态码会被拦截
+- 停用两步验证需再次确认密码，防止会话被劫持后直接关闭
+
+### 告警与告警历史
+
+**告警管理** 页面分为两个 Tab:
+
+- **告警规则**: 支持 8 种指标 —— CPU 使用率 / 内存使用率 / 磁盘使用率 / Agent 离线 / 服务状态 / SSL 证书到期 / 流量配额使用率 / 服务器到期天数。每条规则可绑定通知渠道，支持手动测试发送
+- **告警历史**: 时间线展示 FIRING（触发）→ RESOLVED（恢复）完整记录，包含触发时间、恢复时间、指标值，支持按状态/服务器/规则筛选，历史保留 90 天
+
+### 标签管理
+
+**标签管理** 页面维护独立标签表:
+
+- 自定义标签名称与颜色（`#RRGGBB` 格式，内置色板可选）
+- 在 Agent 元数据编辑中为服务器打标签，卡片与表格视图统一显示彩色徽章
+- 公开仪表盘同步展示标签颜色
+
+### Ping 目标与延迟格子图
+
+**探测目标** 页面管理 Ping 探测目标:
+
+- 每个目标可指定探测方式（ICMP/TCP/HTTP）、排序、启用状态
+- **IP 版本标注**: 每个目标可标注 IPv4/IPv6（默认自动按名称/地址识别），用于延迟格子图准确分组
+- 目标变更实时推送到所有在线 Agent，无需重启
+
+服务器卡片和详情页的**延迟格子图**按 IPv4/IPv6 分组展示每个目标:
+- 颜色分级: 绿色（快）→ 黄色 → 红色（慢/超时）
+- 高度映射延迟大小，悬停显示详细统计（平均/最小/最大延迟、抖动、丢包率）
+
+### 仪表盘视图与筛选
+
+- **卡片视图**: 国旗徽章 + 名称 + 虚拟化标签 + 资源进度条 + 延迟格子图
+- **表格视图**: 状态灯 + 名称 + CPU/内存/磁盘进度条 + 网速 + 月流量 + 平均延迟 + 到期时间 + 运行时长
+- **地图视图**: 离线世界地图，按服务器位置显示气泡标注
+- **筛选**: 搜索、标签、地区、IP 栈（v4/v6/双栈）四种维度，筛选状态写入 URL 可直接分享
+- 顶部汇总栏: 在线/离线数、平均负载、总网速、本月总流量、月成本合计（按币种分组，年付折算为月）
+
+### 服务器元数据
+
+在 **Agent 管理** 页面编辑服务器元数据:
+
+- 位置/国家代码（国旗徽章）、ISP
+- 到期时间（到期倒计时与告警）
+- 价格与计费周期（月成本汇总）
+- 月流量配额（流量使用进度条与配额告警）
+- IPv4/IPv6 出口 IP（Agent 连接时自动记录，也可手动修正）
+
+---
+
 ## JWT 配置说明
 
-JWT (JSON Web Token) 用于管理员登录认证。安装脚本会自动生成随机密钥,你也可以手动配置。
+JWT (JSON Web Token) 用于管理员登录认证。安装脚本会自动生成随机密钥，你也可以手动配置。
 
 ### 自动生成 (推荐)
 
@@ -395,122 +689,10 @@ systemctl restart probe-server
 
 ### 注意事项
 
-- **密钥保密**: 不要泄露 JWT 密钥,任何拿到密钥的人可以伪造管理员 Token
+- **密钥保密**: 不要泄露 JWT 密钥，任何拿到密钥的人可以伪造管理员 Token
 - **更换密钥**: 更换密钥后所有已登录用户需要重新登录
 - **密钥长度**: 建议至少 32 字符
-- **文件权限**: 配置文件权限为 600,只有 root 和 probe-server 用户可读
-
----
-
-## 安装 Agent
-
-### 前提条件
-
-- Server 已安装并运行
-
-### 方式一: Token 直连 (推荐)
-
-1. 登录 Server 面板,进入 **Agent 管理** 页面
-2. 点击 **添加服务器**,填写服务器名称 (备注可选)
-3. 创建成功后,页面会显示一键安装命令,复制到被监控服务器上以 root 执行:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/YCJE/ServerProbe/master/scripts/install-agent.sh | bash -s -- --server https://your-server.com:8443 --token YOUR_TOKEN
-```
-
-Agent 首次连接时自动绑定主机指纹并回填系统信息 (主机名/系统/架构),此后按指纹严格校验,防止 Token 泄露后被其他主机冒用。
-
-已添加的服务器可在列表中点击 **安装命令** 随时重新获取命令 (用于重装或迁移)。
-
-### 方式二: 注册码 (兼容旧流程)
-
-在 **Agent 管理** 页面点击 **生成注册码**,然后:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/YCJE/ServerProbe/master/scripts/install-agent.sh | bash -s -- --server https://your-server.com:8443 --code YOUR_CODE
-```
-
-参数说明:
-- `--server`: Server 地址,**必须以 `https://` 开头**
-- `--token`: 后台添加服务器后生成的 Token (推荐,与 `--code` 二选一)
-- `--code`: 在 Server 面板中生成的注册码 (与 `--token` 二选一,15 分钟有效)
-- `--secure-tls`: 启用 TLS 证书验证 (Server 使用受信任 CA 签发的证书时使用;默认跳过以兼容自签名证书)
-
-脚本会自动:
-1. 安装 Go (如未安装)
-2. 从源码编译 Agent
-3. 创建 `probe` 系统用户
-4. 生成配置文件 (权限 600)
-5. 设置 ICMP Ping 权限 (setcap)
-6. 安装 systemd 服务并启动
-
-### 手动安装
-
-```bash
-# 1. 安装二进制
-cp probe-agent /usr/local/bin/probe-agent
-chmod +x /usr/local/bin/probe-agent
-
-# 2. 创建用户
-useradd -r -s /usr/sbin/nologin probe
-
-# 3. 创建配置
-mkdir -p /etc/probe-agent
-cat > /etc/probe-agent/config.yml << 'EOF'
-server: "https://your-server.com:8443"
-token: "YOUR_TOKEN"        # Token 直连 (推荐)
-# register_code: "YOUR_CODE"  # 或使用注册码 (二选一)
-report_interval: 3
-config_sync_interval: 3600
-ping_method: "auto"
-EOF
-chmod 600 /etc/probe-agent/config.yml
-chown probe:probe /etc/probe-agent/config.yml
-
-# 4. 设置 ICMP 权限
-setcap cap_net_raw+ep /usr/local/bin/probe-agent
-
-# 5. 创建 systemd 服务
-cat > /etc/systemd/system/probe-agent.service << 'EOF'
-[Unit]
-Description=Server Probe Agent
-After=network.target
-
-[Service]
-Type=simple
-User=probe
-Group=probe
-ExecStart=/usr/local/bin/probe-agent --config /etc/probe-agent/config.yml
-Restart=always
-RestartSec=5
-NoNewPrivileges=true
-ProtectSystem=strict
-ProtectHome=true
-PrivateTmp=true
-ReadWritePaths=/etc/probe-agent
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-# 6. 启动
-systemctl daemon-reload
-systemctl enable probe-agent
-systemctl start probe-agent
-```
-
-### 验证 Agent 连接
-
-```bash
-# 查看 Agent 日志
-journalctl -u probe-agent -f
-
-# 正常日志应显示:
-# "注册成功，保存 Token"
-# "Agent 已启动，开始监控"
-```
-
-在 Server 面板中应该能看到该 Agent 上线。
+- **文件权限**: 配置文件权限为 600，只有 root 和 probe-server 用户可读
 
 ---
 
@@ -545,6 +727,13 @@ aggregation:
 ring_buffer:
   size: 3600              # 缓存点数 (3600 = 1 小时,每 3 秒一个点)
 ```
+
+### 环境变量
+
+| 变量 | 说明 | 默认 |
+|------|------|------|
+| `TRUSTED_PROXIES` | 信任的反代 IP 列表（逗号分隔），设置后限速按真实客户端 IP 生效 | 空（不信任任何代理） |
+| `COOKIE_SECURE` | 登录 Cookie 的 Secure 标记 | 生产模式 (`GIN_MODE=release`) 自动开启 |
 
 修改配置后重启生效:
 
@@ -601,8 +790,8 @@ systemctl restart probe-agent
 Agent 对 Server 下发的 Ping 目标执行安全校验:
 
 - **永远禁止**: 回环地址 (127.0.0.1, ::1)、链路本地地址 (169.254.x.x, fe80::)、未指定地址 (0.0.0.0)、多播/广播地址
-- **默认禁止**: 私有网段 (10.x, 172.16-31.x, 192.168.x, IPv6 ULA),需通过 `allow_private_targets: true` 显式开启
-- **数量上限**: 单轮最多探测 20 个目标,超出部分丢弃并记录日志
+- **默认禁止**: 私有网段 (10.x, 172.16-31.x, 192.168.x, IPv6 ULA)，需通过 `allow_private_targets: true` 显式开启
+- **数量上限**: 单轮最多探测 20 个目标，超出部分丢弃并记录日志
 
 ---
 
@@ -625,78 +814,6 @@ systemctl restart probe-agent      # 重启
 systemctl status probe-agent       # 状态
 journalctl -u probe-agent -f       # 实时日志
 ```
-
-### 卸载
-
-如需完全移除 Server Probe，可使用一键卸载脚本:
-
-**卸载 Server:**
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/YCJE/ServerProbe/master/scripts/uninstall-server.sh | bash
-```
-
-清理内容:
-- 停止并禁用 systemd 服务
-- 删除二进制文件 `/usr/local/bin/probe-server`
-- 删除配置目录 `/etc/probe-server`
-- 删除数据目录 `/var/lib/probe-server`
-- 删除系统用户 `probe-server`
-- 可选清理 Go 环境
-
-如需保留数据，使用 `--keep-data` 参数:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/YCJE/ServerProbe/master/scripts/uninstall-server.sh | bash -s -- --keep-data
-```
-
-**卸载 Agent:**
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/YCJE/ServerProbe/master/scripts/uninstall-agent.sh | bash
-```
-
-清理内容:
-- 停止并禁用 systemd 服务
-- 移除 setcap CAP_NET_RAW 权限
-- 删除二进制文件 `/usr/local/bin/probe-agent`
-- 删除配置目录 `/etc/probe-agent`
-- 删除系统用户 `probe`
-- 可选清理 Go 环境
-
-两个卸载脚本都有交互式确认 (`y/N`)，防止误操作。
-
-> 如果 `curl` 无法解析 `raw.githubusercontent.com`，可以先下载脚本再执行:
-> ```bash
-> # 方法一: 使用 ghproxy 加速
-> curl -fsSL https://ghproxy.com/https://raw.githubusercontent.com/YCJE/ServerProbe/master/scripts/uninstall-server.sh -o /tmp/uninstall.sh && bash /tmp/uninstall.sh
->
-> # 方法二: 手动下载后上传
-> # 1. 在能访问 GitHub 的电脑上下载脚本
-> # 2. 上传到服务器
-> # 3. 执行: bash uninstall-server.sh
-> ```
-
-### 升级
-
-升级脚本仅更新二进制文件，保留所有配置和数据，无需卸载重装。升级失败会自动回滚到旧版本。
-
-**升级 Server:**
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/YCJE/ServerProbe/master/scripts/upgrade-server.sh | bash
-```
-
-**升级 Agent:**
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/YCJE/ServerProbe/master/scripts/upgrade-agent.sh | bash
-```
-
-> 如果 `curl` 无法解析 `raw.githubusercontent.com`，可使用 ghproxy 加速:
-> ```bash
-> curl -fsSL https://ghproxy.com/https://raw.githubusercontent.com/YCJE/ServerProbe/master/scripts/upgrade-server.sh -o /tmp/upgrade.sh && bash /tmp/upgrade.sh
-> ```
 
 ### 备份数据
 
@@ -782,7 +899,7 @@ Server 默认使用自签名 TLS 证书。解决方案:
 
 ### Q: 一键安装脚本下载失败?
 
-脚本默认从源码构建,需要网络连接。如果 GitHub 访问慢,可以:
+脚本默认从源码构建，需要网络连接。如果 GitHub 访问慢，可以:
 
 1. 手动克隆仓库: `git clone https://github.com/YCJE/ServerProbe.git`
 2. 手动构建 (参考[从源码构建](#从源码构建))
@@ -811,7 +928,7 @@ ufw status
 
 ### Q: ICMP Ping 不工作?
 
-Agent 默认尝试 ICMP Ping,需要 `CAP_NET_RAW` 权限。安装脚本会自动设置。如果不可用:
+Agent 默认尝试 ICMP Ping，需要 `CAP_NET_RAW` 权限。安装脚本会自动设置。如果不可用:
 
 ```bash
 # 手动设置
@@ -821,20 +938,25 @@ setcap cap_net_raw+ep /usr/local/bin/probe-agent
 # ping_method: "tcp"
 ```
 
+### Q: 延迟格子图中目标分组错误?
+
+延迟格子图按 IPv4/IPv6 分组展示。默认按目标名称/地址自动识别（如名称含 "6" 或地址含 ":" 判定为 IPv6）。如果自动识别不准，在 **探测目标** 页面编辑该目标，显式指定 IP 版本为 IPv4 或 IPv6。
+
 ### Q: 如何修改上报间隔?
 
-编辑 `/etc/probe-agent/config.yml`,修改 `report_interval` 后重启:
+编辑 `/etc/probe-agent/config.yml`，修改 `report_interval` 后重启:
 
 ```bash
 systemctl restart probe-agent
 ```
 
-注意: Server 端会校验上报频率,过快会被拒绝。建议保持默认 3 秒。
+注意: Server 端会校验上报频率，过快会被拒绝。建议保持默认 3 秒。
 
 ### Q: 数据存储在哪里?
 
 - 实时数据: 内存环形缓冲 (最近 1 小时)
 - 历史数据: SQLite (`/var/lib/probe-server/data.db`)
+- 告警历史: 同一 SQLite 数据库，保留 90 天
 - 默认保留 90 天
 
 ### Q: 支持哪些操作系统?
@@ -858,7 +980,7 @@ sqlite3 /var/lib/probe-server/data.db "DELETE FROM admins;"
 systemctl start probe-server
 ```
 
-重启后访问面板,会自动跳转到"初始化设置"页面,重新设置管理员账号和密码。
+重启后访问面板，会自动跳转到"初始化设置"页面，重新设置管理员账号和密码。
 
 **方法二: 如果没有 sqlite3 命令**
 
@@ -873,7 +995,17 @@ rm /var/lib/probe-server/data.db
 systemctl start probe-server
 ```
 
-> 注意: 方法二会丢失所有数据,仅在没有重要数据时使用。
+> 注意: 方法二会丢失所有数据，仅在没有重要数据时使用。
+
+### Q: 换了手机如何重新绑定两步验证?
+
+两步验证绑定在管理员账户上，换手机需先解绑再重新绑定:
+
+1. 登录面板（需要旧手机上的动态码），进入 **系统状态** → **两步验证**
+2. 输入密码确认后停用
+3. 重新生成密钥，用新手机扫码绑定
+
+如果旧手机已丢失无法登录，用上面的密码重置方法删除管理员账户，重新设置后重新绑定。
 
 ### Q: 如何查看 Server 版本?
 
