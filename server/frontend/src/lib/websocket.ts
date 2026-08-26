@@ -39,6 +39,12 @@ export class DashboardWebSocket {
       return
     }
 
+    // 清理待执行的重连定时器，否则定时器稍后触发 openSocket 会造成重复连接
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer)
+      this.reconnectTimer = null
+    }
+
     this.shouldReconnect = true
     // 手动连接重置退避索引，避免上次断连累积的长延迟影响首次重连
     this.reconnectIndex = 0
@@ -188,6 +194,7 @@ export class DashboardWebSocket {
     console.log(`[WS] 将在 ${delay}ms 后重连 (第 ${this.reconnectIndex} 次):`, this.url)
 
     this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null
       // 调用 openSocket 而非 connect，避免重置退避索引导致指数退避失效
       this.openSocket()
     }, delay)

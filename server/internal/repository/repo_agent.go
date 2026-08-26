@@ -186,6 +186,34 @@ func (r *AgentRepository) UpdateStaticInfo(id int64, os, arch, kernel, hostname,
 		}).Error
 }
 
+// AdoptHostIfUnbound 首次绑定主机指纹并回填系统信息（原子条件更新）。
+// 仅当 host_fingerprint 仍为空时生效；返回 false 表示已被并发连接抢先绑定。
+// 条件更新保证同一 Token 的首次绑定只有一次写入生效，防止竞态覆盖
+func (r *AgentRepository) AdoptHostIfUnbound(id int64, fingerprint, hostname, osName, arch, agentVersion string) (bool, error) {
+	updates := map[string]interface{}{
+		"host_fingerprint": fingerprint,
+	}
+	if hostname != "" {
+		updates["hostname"] = hostname
+	}
+	if osName != "" {
+		updates["os"] = osName
+	}
+	if arch != "" {
+		updates["arch"] = arch
+	}
+	if agentVersion != "" {
+		updates["agent_version"] = agentVersion
+	}
+	result := r.db.Model(&model.Agent{}).
+		Where("id = ? AND host_fingerprint = ''", id).
+		Updates(updates)
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected > 0, nil
+}
+
 // Delete 删除 Agent
 func (r *AgentRepository) Delete(id int64) error {
 	return r.db.Delete(&model.Agent{}, id).Error

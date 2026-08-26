@@ -28,11 +28,11 @@ export default function CpuChart({
         textStyle: {
           color: isDark ? '#e5e7eb' : '#1f2937',
         },
-        formatter: (params: any) => {
-          if (!params || params.length === 0) return ''
-          const point = params[0]
-          if (point.value == null) return ''
-          const time = new Date(point.axisValue * 1000).toLocaleTimeString('zh-CN')
+        formatter: (params: unknown) => {
+          const points = params as Array<{ value?: number | null; axisValue?: number }> | undefined
+          const point = points?.[0]
+          if (!point || point.value == null) return ''
+          const time = new Date((point.axisValue ?? 0) * 1000).toLocaleTimeString('zh-CN')
           return `${time}<br/>CPU: <strong>${point.value.toFixed(1)}%</strong>`
         },
       },

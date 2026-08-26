@@ -3,6 +3,7 @@ package service
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"log"
 	"time"
@@ -212,14 +213,28 @@ func (s *AgentRegistryService) CreateAgent(displayName string) (*model.Agent, er
 	return agent, nil
 }
 
+// ErrFingerprintBound 指纹已被并发连接抢先绑定（可能存在 Token 被多机使用）
+var ErrFingerprintBound = errors.New("主机指纹已被其他主机绑定")
+
 // AdoptAgentInfo Token 首次连接时回填主机信息
 // 适用于后台直接创建（无主机指纹）的 Agent：首次用 Token 连接时
-// 绑定主机指纹并记录系统信息，此后重连将按指纹严格校验
+// 绑定主机指纹并记录系统信息，此后重连将按指纹严格校验。
+// 使用条件更新保证原子性：并发首连时仅首个主机绑定成功，
+// 其余主机收到 ErrFingerprintBound，由调用方拒绝注册
 func (s *AgentRegistryService) AdoptAgentInfo(agent *model.Agent, hostname, osName, arch, agentVersion, fingerprint string) error {
 	if fingerprint == "" {
 		return fmt.Errorf("主机指纹不能为空")
 	}
 
+	bound, err := s.agentRepo.AdoptHostIfUnbound(agent.ID, fingerprint, hostname, osName, arch, agentVersion)
+	if err != nil {
+		return fmt.Errorf("回填主机信息失败: %w", err)
+	}
+	if !bound {
+		return ErrFingerprintBound
+	}
+
+	// 同步内存对象（DB 已更新成功）
 	agent.HostFingerprint = fingerprint
 	if hostname != "" {
 		agent.Hostname = hostname
@@ -232,9 +247,6 @@ func (s *AgentRegistryService) AdoptAgentInfo(agent *model.Agent, hostname, osNa
 	}
 	if agentVersion != "" {
 		agent.AgentVersion = agentVersion
-	}
-	if err := s.agentRepo.Update(agent); err != nil {
-		return fmt.Errorf("回填主机信息失败: %w", err)
 	}
 	return nil
 }

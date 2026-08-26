@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 	"strings"
@@ -248,6 +249,16 @@ func (h *AgentHandler) handleRegister(ws *agentWSConn, msg *sharedmodel.WSMessag
 			// 绑定主机指纹并回填系统信息，此后重连按指纹严格校验
 			if msg.HostFingerprint != "" {
 				if err := h.registry.AdoptAgentInfo(agent, msg.Hostname, msg.OS, msg.Arch, msg.AgentVersion, msg.HostFingerprint); err != nil {
+					if errors.Is(err, service.ErrFingerprintBound) {
+						// 指纹已被其他主机抢先绑定（Token 可能泄露被多机使用），拒绝本次连接
+						log.Printf("Agent %d 指纹绑定冲突，拒绝连接（Token 疑似被多机使用）", agent.ID)
+						response := sharedmodel.WSMessage{
+							Type:   sharedmodel.MsgTypeRegisterFail,
+							Reason: "主机指纹已被其他主机绑定",
+						}
+						_ = ws.writeJSON(response)
+						return
+					}
 					log.Printf("Agent %d 回填主机信息失败: %v", agent.ID, err)
 				} else {
 					log.Printf("Agent %d 已绑定主机指纹并回填系统信息", agent.ID)
@@ -279,7 +290,10 @@ func (h *AgentHandler) handleRegister(ws *agentWSConn, msg *sharedmodel.WSMessag
 			Type:  sharedmodel.MsgTypeRegisterOK,
 			Token: msg.Token,
 		}
-		_ = ws.writeJSON(response)
+		if err := ws.writeJSON(response); err != nil {
+			log.Printf("Agent %d 发送会话恢复响应失败（连接可能已断开）: %v", agent.ID, err)
+			return
+		}
 
 		// 发送初始配置
 		h.sendConfigUpdate(ws, agent.ID)
@@ -325,7 +339,10 @@ func (h *AgentHandler) handleRegister(ws *agentWSConn, msg *sharedmodel.WSMessag
 		Type:  sharedmodel.MsgTypeRegisterOK,
 		Token: result.Token,
 	}
-	_ = ws.writeJSON(response)
+	if err := ws.writeJSON(response); err != nil {
+		log.Printf("Agent %d 发送注册响应失败（连接可能已断开）: %v", result.AgentID, err)
+		return
+	}
 
 	// 发送初始配置
 	h.sendConfigUpdate(ws, result.AgentID)
@@ -475,6 +492,11 @@ func (h *AgentHandler) lazyRegister(ws *agentWSConn, msg *sharedmodel.WSMessage,
 	} else if msg.HostFingerprint != "" {
 		// 后台直接创建的 Agent 首连：绑定指纹并回填系统信息
 		if err := h.registry.AdoptAgentInfo(agent, msg.Hostname, msg.OS, msg.Arch, msg.AgentVersion, msg.HostFingerprint); err != nil {
+			if errors.Is(err, service.ErrFingerprintBound) {
+				// 指纹已被其他主机抢先绑定（Token 疑似被多机使用），拒绝会话
+				log.Printf("Agent %d 懒注册指纹绑定冲突，拒绝会话", agent.ID)
+				return false
+			}
 			log.Printf("Agent %d 回填主机信息失败: %v", agent.ID, err)
 		}
 	}

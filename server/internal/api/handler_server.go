@@ -511,6 +511,25 @@ func (h *ServerHandler) HandlePublicServerHistory(c *gin.Context) {
 		return
 	}
 
+	// 降采样保护：与管理端一致，防止点数过多导致公开页渲染卡顿
+	const maxHistoryPoints = 800
+	if len(records) > maxHistoryPoints {
+		sampled := make([]model.MetricRecord, 0, maxHistoryPoints+2)
+		step := float64(len(records)-1) / float64(maxHistoryPoints-1)
+		lastIdx := -1
+		for i := 0; i < maxHistoryPoints; i++ {
+			idx := int(math.Round(float64(i) * step))
+			if idx > lastIdx {
+				sampled = append(sampled, records[idx])
+				lastIdx = idx
+			}
+		}
+		if lastIdx < len(records)-1 {
+			sampled = append(sampled, records[len(records)-1])
+		}
+		records = sampled
+	}
+
 	publicPoints := make([]publicHistoryPoint, 0, len(records))
 	for _, r := range records {
 		// P3: CPUUsage / Load 字段以 ×10 整数存储，查询时除以 10.0 还原为浮点数
@@ -529,6 +548,7 @@ func (h *ServerHandler) HandlePublicServerHistory(c *gin.Context) {
 			Load5:     float64(r.Load5) / 10.0,
 			Load15:    float64(r.Load15) / 10.0,
 			Uptime:    r.Uptime,
+			Online:    1 - r.Offline,
 		}
 		// 解析 ping_data JSON 字符串为数组
 		if r.PingData != "" {
