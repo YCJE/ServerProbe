@@ -38,6 +38,9 @@ func (h *Heartbeat) Start() {
 				if h.client.IsConnected() {
 					if err := h.client.SendHeartbeat(); err != nil {
 						log.Printf("发送心跳失败: %v", err)
+						// 写失败说明连接已半死，主动断开让 Run() 读循环立即触发重连，
+						// 避免等到 90s 读超时才恢复
+						h.client.DropConnection()
 					}
 				}
 			case <-h.stopCh:
@@ -115,6 +118,8 @@ func (u *Uploader) Start(collectFn func() (*sharedmodel.MetricData, error)) {
 
 				if err := u.client.SendReport(data); err != nil {
 					log.Printf("上报数据失败: %v", err)
+					// 写失败说明连接已半死，主动断开触发重连（同心跳处理）
+					u.client.DropConnection()
 				}
 
 			case <-u.stopCh:

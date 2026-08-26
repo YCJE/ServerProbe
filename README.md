@@ -434,6 +434,7 @@ curl -fsSL https://raw.githubusercontent.com/YCJE/ServerProbe/master/scripts/ins
 - `--server`: Server 地址,**必须以 `https://` 开头**
 - `--token`: 后台添加服务器后生成的 Token (推荐,与 `--code` 二选一)
 - `--code`: 在 Server 面板中生成的注册码 (与 `--token` 二选一,15 分钟有效)
+- `--secure-tls`: 启用 TLS 证书验证 (Server 使用受信任 CA 签发的证书时使用;默认跳过以兼容自签名证书)
 
 脚本会自动:
 1. 安装 Go (如未安装)
@@ -578,6 +579,15 @@ config_sync_interval: 3600
 # tcp:  强制 TCP
 # http: 强制 HTTP
 ping_method: "auto"
+
+# 跳过 TLS 证书验证 (Server 使用自签名证书时使用;受信任 CA 证书请设为 false)
+insecure_tls: true
+
+# 允许 Ping 私有网段地址 (默认 false)
+# 安全机制: 回环/链路本地/多播地址永远禁止探测;私有网段 (RFC1918) 默认禁止,
+# 防止 Server 被攻破后 Agent 被当作内网探测跳板 (SSRF)。
+# 如需监控内网目标 (如网关 192.168.1.1), 改为 true
+allow_private_targets: false
 ```
 
 修改配置后重启生效:
@@ -585,6 +595,14 @@ ping_method: "auto"
 ```bash
 systemctl restart probe-agent
 ```
+
+### Ping 目标安全限制
+
+Agent 对 Server 下发的 Ping 目标执行安全校验:
+
+- **永远禁止**: 回环地址 (127.0.0.1, ::1)、链路本地地址 (169.254.x.x, fe80::)、未指定地址 (0.0.0.0)、多播/广播地址
+- **默认禁止**: 私有网段 (10.x, 172.16-31.x, 192.168.x, IPv6 ULA),需通过 `allow_private_targets: true` 显式开启
+- **数量上限**: 单轮最多探测 20 个目标,超出部分丢弃并记录日志
 
 ---
 

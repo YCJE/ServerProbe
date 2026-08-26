@@ -31,6 +31,7 @@ INSTALL_DIR="/usr/local/bin"
 CONFIG_DIR="/etc/probe-agent"
 SERVICE_NAME="probe-agent"
 FROM_SOURCE=true
+SECURE_TLS=false
 VERSION=""
 REPO_URL="https://github.com/YCJE/ServerProbe.git"
 DOWNLOAD_BASE="https://github.com/YCJE/ServerProbe/releases/latest/download"
@@ -43,6 +44,7 @@ while [[ $# -gt 0 ]]; do
         --version) VERSION="$2"; shift 2;;
         --release) FROM_SOURCE=false; shift;;
         --from-source) FROM_SOURCE=true; shift;;
+        --secure-tls) SECURE_TLS=true; shift;;
         --help)
             echo "用法: install-agent.sh --server <URL> (--token <Token> | --code <注册码>) [选项]"
             echo ""
@@ -52,6 +54,7 @@ while [[ $# -gt 0 ]]; do
             echo ""
             echo "选项:"
             echo "  --server <URL>    Server 地址 (必须 https://)"
+            echo "  --secure-tls      启用 TLS 证书验证 (Server 使用受信任 CA 签发的证书时使用)"
             echo "  --version <版本>  指定版本 (仅 --release 模式)"
             echo "  --release         从 GitHub Release 下载二进制"
             echo "  --from-source     从源码构建 (默认)"
@@ -69,6 +72,9 @@ if [ -n "$TOKEN" ] && [ -n "$REGISTER_CODE" ]; then
 fi
 if [ -z "$TOKEN" ] && [ -z "$REGISTER_CODE" ]; then
     error "必须指定 --token (推荐) 或 --code 参数"
+fi
+if [[ "$SERVER_URL" != https://* ]]; then
+    error "Server 地址必须以 https:// 开头 (Agent 拒绝明文连接)"
 fi
 if [ "$EUID" -ne 0 ]; then
     error "请以 root 用户运行此脚本"
@@ -174,6 +180,15 @@ mkdir -p "$CONFIG_DIR"
 
 # 生成配置文件
 info "生成配置文件..."
+if [ "$SECURE_TLS" = true ]; then
+    INSECURE_TLS_VALUE=false
+else
+    # Server 默认使用自签名证书 (tls.auto: true)，默认保持跳过验证以保证开箱可用；
+    # 生产环境建议为 Server 配置受信任 CA 证书并加 --secure-tls 安装
+    INSECURE_TLS_VALUE=true
+    warn "TLS 证书验证已跳过 (Server 使用自签名证书的默认配置)。"
+    warn "若 Server 已配置受信任 CA 证书 (如 Let's Encrypt)，建议加 --secure-tls 重新安装。"
+fi
 cat > "${CONFIG_DIR}/config.yml" << EOF
 server: "${SERVER_URL}"
 token: "${TOKEN}"
@@ -181,7 +196,9 @@ register_code: "${REGISTER_CODE}"
 report_interval: 3
 config_sync_interval: 3600
 ping_method: "auto"
-insecure_tls: true
+insecure_tls: ${INSECURE_TLS_VALUE}
+# 允许 Ping 私有网段地址 (默认 false，防 SSRF；需监控内网目标时改为 true)
+allow_private_targets: false
 EOF
 
 chmod 600 "${CONFIG_DIR}/config.yml"

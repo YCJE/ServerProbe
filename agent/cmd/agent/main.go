@@ -21,13 +21,14 @@ import (
 
 // AgentConfig Agent 配置
 type AgentConfig struct {
-	ServerURL          string `yaml:"server"`
-	Token              string `yaml:"token"`
-	RegisterCode       string `yaml:"register_code"`
-	ReportInterval     int    `yaml:"report_interval"`
-	ConfigSyncInterval int    `yaml:"config_sync_interval"`
-	PingMethod         string `yaml:"ping_method"`
-	InsecureTLS        bool   `yaml:"insecure_tls"` // 跳过 TLS 证书验证 (自签名证书时使用)
+	ServerURL           string `yaml:"server"`
+	Token               string `yaml:"token"`
+	RegisterCode        string `yaml:"register_code"`
+	ReportInterval      int    `yaml:"report_interval"`
+	ConfigSyncInterval  int    `yaml:"config_sync_interval"`
+	PingMethod          string `yaml:"ping_method"`
+	InsecureTLS         bool   `yaml:"insecure_tls"`           // 跳过 TLS 证书验证 (自签名证书时使用)
+	AllowPrivateTargets bool   `yaml:"allow_private_targets"` // 允许 Ping 私有网段地址 (默认禁止，防 SSRF)
 }
 
 func main() {
@@ -49,7 +50,7 @@ func main() {
 	diskCollector := collector.NewDiskCollector(&collector.OSDiskMounter{})
 	netCollector := collector.NewNetworkCollector(fileReader)
 	sysCollector := collector.NewSystemCollector(fileReader, "v1.0.0")
-	pingCollector := collector.NewPingCollector(cfg.PingMethod, cfg.InsecureTLS)
+	pingCollector := collector.NewPingCollector(cfg.PingMethod, cfg.InsecureTLS, cfg.AllowPrivateTargets)
 	processCollector := collector.NewProcessCollector(fileReader)
 	ntpCollector := collector.NewNTPCollector("") // 使用默认 NTP 服务器
 
@@ -101,12 +102,21 @@ func main() {
 		pingTargetsMu.Lock()
 		pingTargets = config.PingTargets
 		pingTargetsMu.Unlock()
+		// 边界钳制：防止异常配置（如超大值撑爆 ticker、0 值引发除零/空转）
 		if config.PingInterval > 0 {
-			atomic.StoreInt64(&pingInterval, int64(config.PingInterval))
+			v := int64(config.PingInterval)
+			if v > 600 {
+				v = 600 // 上限 10 分钟
+			}
+			atomic.StoreInt64(&pingInterval, v)
 		}
 		// 支持 Server 下发新的上报间隔
 		if config.ReportInterval > 0 {
-			atomic.StoreInt64(&reportIntervalVal, int64(config.ReportInterval))
+			v := int64(config.ReportInterval)
+			if v > 60 {
+				v = 60 // 上限 60s
+			}
+			atomic.StoreInt64(&reportIntervalVal, v)
 		}
 		lastAppliedCfgMu.Lock()
 		lastAppliedCfg = config
@@ -121,7 +131,18 @@ func main() {
 			cfg.Token = token
 			cfg.RegisterCode = "" // 清除注册码
 			cfgMu.Unlock()
-			saveConfig(*configFile, cfg, &cfgMu)
+			// Token 持久化失败时重试；若最终仍失败，Agent 重启后将丢失认证凭据
+			var saveErr error
+			for attempt := 1; attempt <= 3; attempt++ {
+				if saveErr = saveConfig(*configFile, cfg, &cfgMu); saveErr == nil {
+					break
+				}
+				log.Printf("保存 Token 失败 (第 %d 次): %v", attempt, saveErr)
+				time.Sleep(time.Duration(attempt) * time.Second)
+			}
+			if saveErr != nil {
+				log.Printf("严重错误: Token 持久化失败，Agent 重启后将无法自动恢复会话，请检查配置目录权限: %v", saveErr)
+			}
 
 			// 启动配置拉取
 			if configSyncer != nil {
@@ -364,26 +385,26 @@ func loadConfig(path string) *AgentConfig {
 }
 
 // saveConfig 保存 YAML 配置文件（原子操作：先写临时文件再 rename）
-func saveConfig(path string, cfg *AgentConfig, mu *sync.Mutex) {
+// 返回 error 供调用方感知失败（Token 丢失会导致重启后无法恢复会话）
+func saveConfig(path string, cfg *AgentConfig, mu *sync.Mutex) error {
 	mu.Lock()
 	defer mu.Unlock()
 
 	data, err := yaml.Marshal(cfg)
 	if err != nil {
-		log.Printf("序列化配置失败: %v", err)
-		return
+		return fmt.Errorf("序列化配置失败: %w", err)
 	}
 
 	// 先写入临时文件，再原子替换，避免写入过程中崩溃导致配置文件损坏
 	tmpPath := path + ".tmp"
 	if err := os.WriteFile(tmpPath, data, 0600); err != nil {
-		log.Printf("保存配置文件失败: %v", err)
-		return
+		return fmt.Errorf("保存配置文件失败: %w", err)
 	}
 	if err := os.Rename(tmpPath, path); err != nil {
-		log.Printf("替换配置文件失败: %v", err)
 		os.Remove(tmpPath)
+		return fmt.Errorf("替换配置文件失败: %w", err)
 	}
+	return nil
 }
 
 // startPingProbe 启动 Ping 探测

@@ -6,6 +6,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"io"
+	"log"
 	"math"
 	"net"
 	"net/http"
@@ -30,20 +31,55 @@ const (
 	PingMethodAuto             PingMethod = "auto"
 )
 
+// maxPingTargets 单轮探测目标数上限（防止 Server 被攻破后下发海量目标打满 Agent 资源）
+const maxPingTargets = 20
+
 // PingCollector Ping 探测采集器
 type PingCollector struct {
-	method         PingMethod
-	detectedMethod PingMethod
-	detectOnce     sync.Once
-	insecureTLS    bool
+	method             PingMethod
+	detectedMethod     PingMethod
+	detectOnce         sync.Once
+	insecureTLS        bool
+	allowPrivateTarget bool // 允许探测私有网段地址（默认禁止，防 SSRF；监控内网场景需显式开启）
 }
 
 // NewPingCollector 创建 Ping 采集器
-func NewPingCollector(method string, insecureTLS bool) *PingCollector {
+func NewPingCollector(method string, insecureTLS bool, allowPrivateTarget bool) *PingCollector {
 	return &PingCollector{
-		method:      PingMethod(method),
-		insecureTLS: insecureTLS,
+		method:             PingMethod(method),
+		insecureTLS:        insecureTLS,
+		allowPrivateTarget: allowPrivateTarget,
 	}
+}
+
+// isBlockedIP 判断 IP 是否为禁止探测的危险地址。
+// 回环/链路本地/未指定/多播/广播地址永远禁止；私有地址（RFC1918/ULA）默认禁止，
+// 仅当 allowPrivate 显式开启时放行（用于监控自身内网的合法场景）。
+// 目标由 Server 下发，Server 被攻破时若不加过滤，Agent 会被当作内网探测跳板（SSRF）。
+func isBlockedIP(ip net.IP, allowPrivate bool) bool {
+	if ip == nil {
+		return true
+	}
+	if ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() ||
+		ip.IsUnspecified() || ip.IsMulticast() || ip.Equal(net.IPv4bcast) {
+		return true
+	}
+	// IsPrivate 同时覆盖 IPv4 RFC1918 与 IPv6 ULA (fc00::/7)
+	if !allowPrivate && ip.IsPrivate() {
+		return true
+	}
+	return false
+}
+
+// validateResolvedIPs 校验域名解析出的全部 IP 均允许探测
+// （校验所有 IP 而非仅选中的 IP，防止恶意 DNS 用混合地址绕过）
+func validateResolvedIPs(ips []net.IPAddr, allowPrivate bool) bool {
+	for i := range ips {
+		if isBlockedIP(ips[i].IP, allowPrivate) {
+			return false
+		}
+	}
+	return true
 }
 
 // Name 返回采集器名称
@@ -64,6 +100,12 @@ func (c *PingCollector) PingTargets(targets []sharedmodel.PingTarget) []sharedmo
 		if t.Enabled {
 			enabled = append(enabled, t)
 		}
+	}
+
+	// 目标数上限保护，超出部分丢弃并告警
+	if len(enabled) > maxPingTargets {
+		log.Printf("Ping 目标数 %d 超过上限 %d，超出部分已丢弃", len(enabled), maxPingTargets)
+		enabled = enabled[:maxPingTargets]
 	}
 
 	n := len(enabled)
@@ -166,6 +208,16 @@ func pickStableIP(ips []net.IPAddr) string {
 
 // doICMPPing 执行 ICMP Ping
 func (c *PingCollector) doICMPPing(result *sharedmodel.PingResult, target string, method PingMethod) {
+	// 目标安全校验：直接 IP 目标先校验（防 SSRF：禁止探测回环/内网等危险地址）
+	if ip := net.ParseIP(target); ip != nil {
+		if isBlockedIP(ip, c.allowPrivateTarget) {
+			log.Printf("Ping 目标 %s 为禁止探测的地址，已跳过", target)
+			result.Loss = 100
+			result.Method = string(method)
+			return
+		}
+	}
+
 	pinger, err := probing.NewPinger(target)
 	if err != nil {
 		result.Loss = 100
@@ -192,6 +244,13 @@ func (c *PingCollector) doICMPPing(result *sharedmodel.PingResult, target string
 		resolver := &net.Resolver{}
 		ips, err := resolver.LookupIPAddr(ctx, target)
 		if err != nil || len(ips) == 0 {
+			result.Loss = 100
+			result.Method = string(method)
+			return
+		}
+		// 域名解析结果安全校验（校验全部 IP，防混合地址绕过）
+		if !validateResolvedIPs(ips, c.allowPrivateTarget) {
+			log.Printf("Ping 目标 %s 解析出禁止探测的地址，已跳过", target)
 			result.Loss = 100
 			result.Method = string(method)
 			return
@@ -251,6 +310,13 @@ func (c *PingCollector) doTCPPing(result *sharedmodel.PingResult, target string)
 	resolver := &net.Resolver{}
 	ips, err := resolver.LookupIPAddr(ctx, host)
 	if err != nil || len(ips) == 0 {
+		result.Loss = 100
+		return
+	}
+
+	// 域名解析结果安全校验（防 SSRF：禁止探测回环/内网等危险地址）
+	if !validateResolvedIPs(ips, c.allowPrivateTarget) {
+		log.Printf("TCP Ping 目标 %s 解析出禁止探测的地址，已跳过", target)
 		result.Loss = 100
 		return
 	}
@@ -338,6 +404,13 @@ func (c *PingCollector) doHTTPPing(result *sharedmodel.PingResult, target string
 	resolver := &net.Resolver{}
 	ips, err := resolver.LookupIPAddr(ctx, parsed.host)
 	if err != nil || len(ips) == 0 {
+		result.Loss = 100
+		return
+	}
+
+	// 域名解析结果安全校验（防 SSRF：禁止探测回环/内网等危险地址）
+	if !validateResolvedIPs(ips, c.allowPrivateTarget) {
+		log.Printf("HTTP Ping 目标 %s 解析出禁止探测的地址，已跳过", target)
 		result.Loss = 100
 		return
 	}

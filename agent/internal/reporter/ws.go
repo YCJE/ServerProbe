@@ -70,6 +70,20 @@ func (c *WSClient) Stop() {
 	c.mu.Unlock()
 }
 
+// DropConnection 主动断开当前连接（不停止客户端）。
+// 心跳/上报写入失败说明 TCP 连接已半死（对端崩溃、NAT 超时等），
+// 读循环可能因无数据可读而阻塞到读超时（90s）；主动关闭连接可让
+// Run() 的 ReadMessage 立即出错并进入重连流程。
+func (c *WSClient) DropConnection() {
+	c.mu.Lock()
+	c.connected = false
+	conn := c.conn
+	c.mu.Unlock()
+	if conn != nil {
+		conn.Close()
+	}
+}
+
 // SetCallbacks 设置回调函数
 func (c *WSClient) SetCallbacks(
 	onRegisterOK func(token string),
@@ -364,10 +378,13 @@ func (c *WSClient) Run() {
 			// 重连
 			if err := c.reconnect(); err != nil {
 				log.Printf("重连失败: %v", err)
+				// 使用 NewTimer 并在退出分支 Stop，避免 time.After 的 timer 在 stopCh 分支选中后滞留至超时
+				timer := time.NewTimer(c.getReconnectInterval())
 				select {
 				case <-c.stopCh:
+					timer.Stop()
 					return
-				case <-time.After(c.getReconnectInterval()):
+				case <-timer.C:
 				}
 				continue
 			}
