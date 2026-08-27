@@ -270,12 +270,21 @@ func (m *MonitorService) updateExitIP(agentID int64, conn *websocket.Conn) {
 // UnregisterConnection 注销 Agent 连接
 func (m *MonitorService) UnregisterConnection(agentID int64) {
 	m.mu.Lock()
-	defer m.mu.Unlock()
 
 	if conn, ok := m.connections[agentID]; ok {
 		conn.Conn.Close()
 		delete(m.connections, agentID)
 	}
+
+	// 清理 lastDBUpdate 记录，防止内存泄漏（与 UnregisterConnectionIfMatch 保持一致）
+	delete(m.lastDBUpdate, agentID)
+
+	m.mu.Unlock()
+
+	// 清理静态数据哈希缓存，防止内存泄漏
+	m.staticHashMu.Lock()
+	delete(m.staticHashCache, agentID)
+	m.staticHashMu.Unlock()
 
 	// 更新数据库在线状态
 	_ = m.agentRepo.UpdateOnlineStatus(agentID, false)
@@ -332,6 +341,11 @@ func (m *MonitorService) UnregisterAgent(agentID int64) {
 
 	// 清理 lastDBUpdate 记录，防止内存泄漏
 	delete(m.lastDBUpdate, agentID)
+
+	// 使 Agent 列表缓存立即失效（与 GetAllAgents 的 m.mu 读写锁保持一致），
+	// 避免已删除 Agent 在缓存 TTL 内仍出现在仪表盘
+	m.agentListCache = nil
+	m.agentListCacheAt = time.Time{}
 
 	m.mu.Unlock()
 

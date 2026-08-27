@@ -32,13 +32,6 @@ type ServerConfig struct {
 		CertFile string `yaml:"cert_file"`
 		KeyFile  string `yaml:"key_file"`
 	} `yaml:"tls"`
-	Aggregation struct {
-		Interval      int `yaml:"interval"`
-		RetentionDays int `yaml:"retention_days"`
-	} `yaml:"aggregation"`
-	RingBuffer struct {
-		Size int `yaml:"size"`
-	} `yaml:"ring_buffer"`
 }
 
 func main() {
@@ -139,19 +132,10 @@ func main() {
 		monitor.SetHeartbeatTimeout(time.Duration(s.OfflineGraceSeconds()) * time.Second)
 	})
 
-	// 启动数据聚合服务
+	// 启动数据聚合服务（聚合周期固定 5 分钟）
 	aggregation.Start()
-	// 保留天数从设置服务动态读取（配置文件值作为默认兜底）
-	defaultRetention := 4
-	if cfg.Aggregation.RetentionDays > 0 {
-		defaultRetention = cfg.Aggregation.RetentionDays
-	}
-	aggregation.StartCleanupTask(func() int {
-		if d := settingsSvc.RetentionDays(); d > 0 {
-			return d
-		}
-		return defaultRetention
-	})
+	// 保留天数从系统设置动态读取（后台 系统设置 页面可改，默认 4 天，范围 1-3650）
+	aggregation.StartCleanupTask(settingsSvc.RetentionDays)
 
 	// 启动告警引擎
 	alertEngine.Start()

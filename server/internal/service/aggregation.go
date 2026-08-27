@@ -87,7 +87,10 @@ func (s *AggregationService) aggregate() {
 		return
 	}
 
+	// 对齐到 5 分钟边界（向下取整），保证聚合窗口固定且连续，
+	// 避免服务启动时刻导致窗口漂移与相邻窗口重叠/留空
 	now := time.Now().Unix()
+	now = now - now%300
 	records := make([]model.MetricRecord, 0, len(agents))
 	// 收集每个 Agent 的最新累计流量，避免流量循环中重复查询 RingBuffer
 	type trafficInfo struct{ rx, tx uint64 }

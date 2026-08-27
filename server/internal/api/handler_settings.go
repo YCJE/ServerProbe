@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"sync/atomic"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -21,6 +22,8 @@ type SettingsHandler struct {
 	alertRepo  *repository.AlertRepository
 	db         *gorm.DB
 	dataDir    string
+	// DB 维护操作（备份/清理/压缩）互斥标志：VACUUM 并发执行会触发 database is locked
+	dbMaintaining atomic.Bool
 }
 
 // NewSettingsHandler 创建设置处理器
@@ -173,15 +176,26 @@ func (h *SettingsHandler) HandleDBStats(c *gin.Context) {
 // HandleDBBackup 下载数据库备份（VACUUM INTO 一致性快照）
 // 路由: GET /api/v1/db/backup
 func (h *SettingsHandler) HandleDBBackup(c *gin.Context) {
+	// 互斥：防止并发 VACUUM 触发 database is locked
+	if !h.dbMaintaining.CompareAndSwap(false, true) {
+		c.JSON(http.StatusConflict, gin.H{"error": "数据库维护操作进行中，请稍后再试"})
+		return
+	}
+	defer h.dbMaintaining.Store(false)
+
 	backupDir := filepath.Join(h.dataDir, "backup")
 	if err := os.MkdirAll(backupDir, 0700); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建备份目录失败"})
 		return
 	}
 
+	// 清理残留的旧备份文件（进程重启后异步清理 goroutine 丢失，防止孤立文件无限堆积）
+	h.cleanStaleBackups(backupDir)
+
 	backupPath := filepath.Join(backupDir, fmt.Sprintf("probe-backup-%s.db", time.Now().Format("20060102-150405")))
 	// VACUUM INTO 生成一致性快照，不影响在线服务
 	if err := h.db.Exec("VACUUM INTO ?", backupPath).Error; err != nil {
+		_ = os.Remove(backupPath)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "生成备份失败: " + err.Error()})
 		return
 	}
@@ -195,9 +209,33 @@ func (h *SettingsHandler) HandleDBBackup(c *gin.Context) {
 	}()
 }
 
+// cleanStaleBackups 删除超过 30 分钟的残留备份文件
+func (h *SettingsHandler) cleanStaleBackups(backupDir string) {
+	entries, err := os.ReadDir(backupDir)
+	if err != nil {
+		return
+	}
+	cutoff := time.Now().Add(-30 * time.Minute)
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		if info, err := e.Info(); err == nil && info.ModTime().Before(cutoff) {
+			_ = os.Remove(filepath.Join(backupDir, e.Name()))
+		}
+	}
+}
+
 // HandleDBCleanup 按天数清理历史数据（指标记录 + 告警历史）
 // 路由: POST /api/v1/db/cleanup
 func (h *SettingsHandler) HandleDBCleanup(c *gin.Context) {
+	// 互斥：防止与其他 DB 维护操作并发执行
+	if !h.dbMaintaining.CompareAndSwap(false, true) {
+		c.JSON(http.StatusConflict, gin.H{"error": "数据库维护操作进行中，请稍后再试"})
+		return
+	}
+	defer h.dbMaintaining.Store(false)
+
 	var req struct {
 		Days int `json:"days"`
 	}
@@ -232,6 +270,13 @@ func (h *SettingsHandler) HandleDBCleanup(c *gin.Context) {
 // HandleDBCompact 压缩优化数据库（VACUUM 回收空闲页）
 // 路由: POST /api/v1/db/compact
 func (h *SettingsHandler) HandleDBCompact(c *gin.Context) {
+	// 互斥：VACUUM 会独占数据库写锁，并发执行必然失败，也防止清理/备份同时进行
+	if !h.dbMaintaining.CompareAndSwap(false, true) {
+		c.JSON(http.StatusConflict, gin.H{"error": "数据库维护操作进行中，请稍后再试"})
+		return
+	}
+	defer h.dbMaintaining.Store(false)
+
 	if err := h.db.Exec("VACUUM").Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库压缩失败: " + err.Error()})
 		return

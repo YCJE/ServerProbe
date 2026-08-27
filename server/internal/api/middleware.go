@@ -252,6 +252,38 @@ func (m *Middleware) PublicRateLimit() gin.HandlerFunc {
 	}
 }
 
+// testActionLimiter 测试操作限流器（触发外部请求/通知的操作全局共享）
+// 防止管理员或被劫持的会话连续触发测试，造成通知轰炸或对外部目标的高频探测
+type testActionLimiter struct {
+	mu       sync.Mutex
+	count    int
+	windowAt time.Time
+}
+
+var testLimiter = &testActionLimiter{}
+
+// TestActionRateLimit 测试操作限速中间件（全局每分钟最多 10 次）
+// 应用于告警测试/通知渠道测试/服务监控测试/SSL 证书测试等会触发外部请求的接口
+func (m *Middleware) TestActionRateLimit() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		testLimiter.mu.Lock()
+		now := time.Now()
+		if now.Sub(testLimiter.windowAt) >= time.Minute {
+			testLimiter.windowAt = now
+			testLimiter.count = 0
+		}
+		if testLimiter.count >= 10 {
+			testLimiter.mu.Unlock()
+			c.JSON(http.StatusTooManyRequests, gin.H{"error": "测试操作过于频繁，请稍后再试"})
+			c.Abort()
+			return
+		}
+		testLimiter.count++
+		testLimiter.mu.Unlock()
+		c.Next()
+	}
+}
+
 // SecurityHeaders 安全响应头中间件
 func (m *Middleware) SecurityHeaders() gin.HandlerFunc {
 	return func(c *gin.Context) {

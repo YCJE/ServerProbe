@@ -52,6 +52,13 @@ func (h *AgentAPIHandler) HandleGenerateRegisterCode(c *gin.Context) {
 	// 忽略绑定错误，允许空 body
 	_ = c.ShouldBindJSON(&req)
 
+	// 注册码必须关联显示名称，防止空名 Agent 混入列表
+	req.DisplayName = strings.TrimSpace(req.DisplayName)
+	if req.DisplayName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "显示名称不能为空"})
+		return
+	}
+
 	// 校验输入长度，防止超长字符串写入数据库
 	if len(req.DisplayName) > 100 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "显示名称过长（最多 100 字符）"})

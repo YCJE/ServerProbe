@@ -212,7 +212,7 @@ func NewRouter(
 			protected.POST("/alerts", alertHandler.HandleCreateAlert)
 			protected.PUT("/alerts/:id", alertHandler.HandleUpdateAlert)
 			protected.DELETE("/alerts/:id", alertHandler.HandleDeleteAlert)
-			protected.POST("/alerts/:id/test", alertHandler.HandleTestAlert)
+			protected.POST("/alerts/:id/test", middleware.TestActionRateLimit(), alertHandler.HandleTestAlert)
 
 			// 告警历史（独立前缀，避免与 /alerts/:id 参数路由冲突）
 			protected.GET("/alert-history", alertHandler.HandleListAlertHistory)
@@ -234,14 +234,14 @@ func NewRouter(
 			protected.POST("/notify/channels", notifyHandler.HandleCreateChannel)
 			protected.PUT("/notify/channels/:id", notifyHandler.HandleUpdateChannel)
 			protected.DELETE("/notify/channels/:id", notifyHandler.HandleDeleteChannel)
-			protected.POST("/notify/channels/:id/test", notifyHandler.HandleTestChannel)
+			protected.POST("/notify/channels/:id/test", middleware.TestActionRateLimit(), notifyHandler.HandleTestChannel)
 
 			// 服务监控管理 (P0-3)
 			protected.GET("/service-monitors", serviceMonitorHandler.HandleListServiceMonitors)
 			protected.POST("/service-monitors", serviceMonitorHandler.HandleCreateServiceMonitor)
 			protected.PUT("/service-monitors/:id", serviceMonitorHandler.HandleUpdateServiceMonitor)
 			protected.DELETE("/service-monitors/:id", serviceMonitorHandler.HandleDeleteServiceMonitor)
-			protected.POST("/service-monitors/:id/test", serviceMonitorHandler.HandleTestServiceMonitor)
+			protected.POST("/service-monitors/:id/test", middleware.TestActionRateLimit(), serviceMonitorHandler.HandleTestServiceMonitor)
 			protected.GET("/service-monitors/statuses", serviceMonitorHandler.HandleServiceMonitorStatuses)
 
 			// SSL 证书监控管理 (P0-4)
@@ -249,7 +249,7 @@ func NewRouter(
 			protected.POST("/ssl-monitors", sslMonitorHandler.HandleCreateSSLMonitor)
 			protected.PUT("/ssl-monitors/:id", sslMonitorHandler.HandleUpdateSSLMonitor)
 			protected.DELETE("/ssl-monitors/:id", sslMonitorHandler.HandleDeleteSSLMonitor)
-			protected.POST("/ssl-monitors/:id/test", sslMonitorHandler.HandleTestSSLMonitor)
+			protected.POST("/ssl-monitors/:id/test", middleware.TestActionRateLimit(), sslMonitorHandler.HandleTestSSLMonitor)
 			protected.GET("/ssl-monitors/statuses", sslMonitorHandler.HandleSSLMonitorStatuses)
 
 			// 流量统计 (P0-1)

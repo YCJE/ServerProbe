@@ -11,8 +11,8 @@ export const DEFAULT_SITE_SETTINGS = {
   default_history_range: '1h',
 }
 
-/** 有效历史范围值 */
-const VALID_HISTORY_RANGES = ['realtime', '1h', '6h', '12h', '1d', '2d', '3d']
+/** 有效历史范围值（与后端 settings.go 的 validHistoryRanges 保持一致） */
+const VALID_HISTORY_RANGES = ['1h', '6h', '12h', '1d', '2d', '3d']
 
 /** 站点设置 Store：站点标题/描述/公告/自定义页脚/默认历史范围（来自后台"站点设置"） */
 interface SiteSettingsStoreState {

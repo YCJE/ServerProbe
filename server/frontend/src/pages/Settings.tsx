@@ -33,7 +33,7 @@ const DEFAULT_SETTINGS: SystemSettings = {
 
 /** 字节格式化 */
 function formatBytes(bytes: number): string {
-  if (!bytes) return '0 B'
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B'
   const units = ['B', 'KB', 'MB', 'GB']
   const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1)
   return `${(bytes / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 1)} ${units[i]}`
@@ -41,7 +41,7 @@ function formatBytes(bytes: number): string {
 
 /** 数字格式化 */
 function formatNumber(n: number): string {
-  if (!n) return '0'
+  if (!Number.isFinite(n) || n <= 0) return '0'
   return n.toLocaleString('zh-CN')
 }
 

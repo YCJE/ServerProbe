@@ -3,7 +3,6 @@ package service
 import (
 	"fmt"
 	"log"
-	"math"
 	"strings"
 	"sync"
 	"time"
@@ -269,7 +268,9 @@ func getMetaMetricValue(metric string, agent *model.Agent, monthly repository.Mo
 
 	case model.MetricExpireDays:
 		if agent.ExpiresAt == nil {
-			return math.MaxFloat64 / 1e6 // 永不过期，剩余天数视为极大（配合 < 阈值永不触发）
+			// 永不过期：返回一个远超任何合理阈值的有限值（10 亿天 ≈ 274 万年）。
+			// 不用 math.Inf(1)：AlertHistory.Value 会经 c.JSON 序列化，+Inf 会导致 json.Marshal 报错。
+			return 1e9
 		}
 		days := agent.ExpiresAt.Sub(now).Hours() / 24
 		if days < 0 {

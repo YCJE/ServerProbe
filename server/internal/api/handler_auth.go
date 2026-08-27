@@ -277,8 +277,7 @@ func (h *AuthHandler) HandleCheckAuth(c *gin.Context) {
 		return
 	}
 
-	claims, err := h.jwtManager.ValidateToken(tokenString)
-	if err != nil {
+	if _, err := h.jwtManager.ValidateToken(tokenString); err != nil {
 		// Token 过期或无效，清除 Cookie
 		c.SetSameSite(http.SameSiteStrictMode)
 		c.SetCookie("token", "", -1, "/", "", cookieSecure(), true)
@@ -288,7 +287,6 @@ func (h *AuthHandler) HandleCheckAuth(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"authenticated": true,
-		"admin_id":      claims.AdminID,
 	})
 }
 
