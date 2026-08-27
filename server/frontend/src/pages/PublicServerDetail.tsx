@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, useCallback, useRef } from 'react'
 import type { ReactNode } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useServerStore } from '@/store/useServerStore'
+import { useSiteSettings } from '@/store/useSiteSettingsStore'
 import { getPublicServers, getPublicServerHistory } from '@/lib/api'
 import type {
   ServerData,
@@ -79,6 +80,8 @@ export default function PublicServerDetail() {
   const clearRealtimeHistory = useServerStore((s) => s.clearRealtimeHistory)
   // 延迟格子图数据源：公开 WS 填充的滚动窗口（固定最近 60 分钟，不随时间范围切换）
   const gridHistory = useServerStore((s) => s.cardHistory.get(serverId) ?? EMPTY_GRID_HISTORY)
+  // 默认历史范围（后台"站点设置"可配置）
+  const { defaultHistoryRange } = useSiteSettings()
 
   const [loading, setLoading] = useState(true)
   const [fetchError, setFetchError] = useState('')
@@ -86,6 +89,15 @@ export default function PublicServerDetail() {
   const [timeRange, setTimeRange] = useState<TimeRange>('1h')
   const [historyData, setHistoryData] = useState<HistoryData | null>(null)
   const [historyLoading, setHistoryLoading] = useState(false)
+
+  // 站点设置加载完成后同步默认历史范围（仅初始化时应用，用户手动切换后不再覆盖）
+  const rangeAppliedRef = useRef(false)
+  useEffect(() => {
+    if (!rangeAppliedRef.current && defaultHistoryRange) {
+      rangeAppliedRef.current = true
+      setTimeRange(defaultHistoryRange as TimeRange)
+    }
+  }, [defaultHistoryRange])
 
   // 资源环形图响应式尺寸：移动 112px / 桌面 124px
   const [ringSize, setRingSize] = useState(112)

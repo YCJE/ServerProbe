@@ -1,4 +1,4 @@
-import { memo, useMemo, useState, useRef, useEffect } from 'react'
+﻿import { memo, useMemo, useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { ServerData } from '@/types'
 import {
@@ -147,7 +147,7 @@ function ServerCard({ server, basePath = '/admin' }: ServerCardProps) {
       }}
       role="button"
       tabIndex={0}
-      className={`group relative flex min-h-[360px] cursor-pointer flex-col rounded-2xl border border-border p-4 card-soft node-card-hover animate-fade-in focus:outline-none focus-visible:ring-2 focus-visible:ring-primary sm:min-h-[420px] sm:p-5 ${
+      className={`group relative flex min-h-[360px] cursor-pointer flex-col rounded-lg border border-border p-4 card-soft node-card-hover animate-fade-in focus:outline-none focus-visible:ring-2 focus-visible:ring-primary sm:min-h-[420px] sm:p-5 ${
         server.online ? '' : 'opacity-80'
       }`}
     >
@@ -203,7 +203,7 @@ function ServerCard({ server, basePath = '/admin' }: ServerCardProps) {
       </div>
 
       {/* 4. 网络信息面板：实时速率 + 月流量进度条 */}
-      <div className="mt-3 rounded-xl border border-dashed border-border/80 px-3 py-2.5">
+      <div className="mt-3 rounded-md border border-dashed border-border/80 px-3 py-2.5">
         {/* 实时速率行 - 使用动画数值，上升显示主题色，下降显示橙色 */}
         <div className="flex items-center justify-between">
           <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
@@ -249,7 +249,7 @@ function ServerCard({ server, basePath = '/admin' }: ServerCardProps) {
       </div>
 
       {/* 5. 延迟格子图（每目标一行，NodeGet 风格；仅在卡片进入视口时渲染） */}
-      <div className="mt-3 rounded-xl border border-dashed border-border/80 px-3 py-2.5">
+      <div className="mt-3 rounded-md border border-dashed border-border/80 px-3 py-2.5">
         {isInViewport ? (
           <LatencyGrid points={history} ipVersion={4} maxCells={24} maxRows={4} compact />
         ) : (

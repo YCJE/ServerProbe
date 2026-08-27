@@ -1,4 +1,4 @@
-import { useState, useEffect, type FormEvent } from 'react'
+﻿import { useState, useEffect, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useServerStore } from '@/store/useServerStore'
 import ThemeToggle from '@/components/ThemeToggle'
@@ -92,7 +92,7 @@ export default function Setup() {
             <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-xl bg-primary text-primary-foreground font-bold text-xl">
               SP
             </div>
-            <h1 className="text-2xl font-bold text-primary">初始化设置</h1>
+            <h1 className="text-2xl font-semibold text-foreground">初始化设置</h1>
             <p className="mt-1 text-sm text-muted-foreground">创建管理员账户以开始使用</p>
           </div>
 
@@ -158,7 +158,7 @@ export default function Setup() {
             <button
               type="submit"
               disabled={authLoading}
-              className="w-full rounded-xl bg-primary py-2.5 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+              className="w-full rounded-md bg-primary py-2.5 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {authLoading ? '创建中...' : '创建管理员账户'}
             </button>

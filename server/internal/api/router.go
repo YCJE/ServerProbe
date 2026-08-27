@@ -11,6 +11,7 @@ import (
 	"github.com/server-probe/server/internal/pkg"
 	"github.com/server-probe/server/internal/repository"
 	"github.com/server-probe/server/internal/service"
+	"gorm.io/gorm"
 )
 
 // Router API 路由
@@ -30,8 +31,9 @@ type Router struct {
 	sslMonitorHandler     *SSLMonitorHandler
 	trafficHandler        *TrafficHandler
 	prometheusHandler     *PrometheusHandler
-	shareHandler          *ShareHandler
-	tagHandler            *TagHandler
+	shareHandler         *ShareHandler
+	tagHandler           *TagHandler
+	settingsHandler      *SettingsHandler
 }
 
 // NewRouter 创建路由
@@ -57,6 +59,10 @@ func NewRouter(
 	serviceMonitorEngine *service.ServiceMonitorEngine,
 	sslMonitorEngine *service.SSLMonitorEngine,
 	tagRepo *repository.TagRepository,
+	settingRepo *repository.SettingRepository,
+	settingsSvc *service.SettingsService,
+	db *gorm.DB,
+	dataDir string,
 ) *Router {
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
@@ -92,6 +98,7 @@ func NewRouter(
 	// 创建处理器
 	authHandler := NewAuthHandler(adminRepo, jwtManager)
 	serverHandler := NewServerHandler(agentRepo, monitor, recordRepo)
+	serverHandler.SetSettings(settingsSvc)
 	agentHandler := NewAgentHandler(registry, monitor, configSync, validator)
 	agentAPIHandler := NewAgentAPIHandler(registry, agentRepo, recordRepo, monitor, alertEngine)
 	dashboardWSHandler := NewDashboardWSHandler(monitor, jwtManager)
@@ -105,6 +112,7 @@ func NewRouter(
 	prometheusHandler := NewPrometheusHandler(monitor)
 	shareHandler := NewShareHandler(sharePageRepo)
 	tagHandler := NewTagHandler(tagRepo)
+	settingsHandler := NewSettingsHandler(settingsSvc, recordRepo, alertRepo, db, dataDir)
 
 	// 健康检查
 	r.GET("/api/v1/health", func(c *gin.Context) {
@@ -140,6 +148,8 @@ func NewRouter(
 			public.GET("/servers/:id/history", serverHandler.HandlePublicServerHistory)
 			// 标签列表（只读，标签名已随公开服务器数据暴露，颜色非敏感；供公开页卡片徽章取色）
 			public.GET("/tags", tagHandler.HandleListTags)
+			// 公开站点设置（标题/描述/公告/页脚，非敏感）
+			public.GET("/settings", settingsHandler.HandlePublicSettings)
 		}
 
 		// 公开仪表盘 WebSocket（无需登录，限速防 DoS）
@@ -252,6 +262,16 @@ func NewRouter(
 			protected.GET("/share-pages/:id", shareHandler.HandleGetSharePage)
 			protected.PUT("/share-pages/:id", shareHandler.HandleUpdateSharePage)
 			protected.DELETE("/share-pages/:id", shareHandler.HandleDeleteSharePage)
+
+			// 系统设置（站点信息 + 数据加载参数）
+			protected.GET("/settings", settingsHandler.HandleGetSettings)
+			protected.PUT("/settings", settingsHandler.HandleUpdateSettings)
+
+			// 数据库管理（统计/备份/清理/压缩）
+			protected.GET("/db/stats", settingsHandler.HandleDBStats)
+			protected.GET("/db/backup", settingsHandler.HandleDBBackup)
+			protected.POST("/db/cleanup", settingsHandler.HandleDBCleanup)
+			protected.POST("/db/compact", settingsHandler.HandleDBCompact)
 		}
 	}
 
@@ -273,6 +293,7 @@ func NewRouter(
 		prometheusHandler:     prometheusHandler,
 		shareHandler:          shareHandler,
 		tagHandler:            tagHandler,
+		settingsHandler:       settingsHandler,
 	}
 }
 

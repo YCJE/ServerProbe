@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState, useCallback, useRef } from 'react'
+﻿import { useEffect, useMemo, useState, useCallback, useRef } from 'react'
 import type { ReactNode } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useServerStore } from '@/store/useServerStore'
+import { useSiteSettings } from '@/store/useSiteSettingsStore'
 import { getServerHistory } from '@/lib/api'
 import type { TimeRange, HistoryData } from '@/types'
 import NetworkQualityChart, { type ChartSeries } from '@/components/NetworkQualityChart'
@@ -71,11 +72,22 @@ export default function ServerDetail() {
   const liveData = useServerStore((s) => s.dashboardData.get(serverId))
   // 延迟格子图数据源：卡片历史滚动窗口（Layout 挂载起累积，不随时间范围切换变化）
   const cardHistory = useServerStore((s) => s.cardHistory.get(serverId) ?? EMPTY_GRID_HISTORY)
+  // 默认历史范围（后台"站点设置"可配置）
+  const { defaultHistoryRange } = useSiteSettings()
 
   // 本地状态
   const [timeRange, setTimeRange] = useState<TimeRange>('1h')
   const [historyData, setHistoryData] = useState<HistoryData | null>(null)
   const [historyLoading, setHistoryLoading] = useState(false)
+
+  // 站点设置加载完成后同步默认历史范围（仅初始化时应用，用户手动切换后不再覆盖）
+  const rangeAppliedRef = useRef(false)
+  useEffect(() => {
+    if (!rangeAppliedRef.current && defaultHistoryRange) {
+      rangeAppliedRef.current = true
+      setTimeRange(defaultHistoryRange as TimeRange)
+    }
+  }, [defaultHistoryRange])
 
   // 资源环形图响应式尺寸：移动 112px / 桌面 124px
   const [ringSize, setRingSize] = useState(112)
@@ -769,7 +781,7 @@ export default function ServerDetail() {
             <div className="overflow-x-auto scrollbar-thin">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-y border-border bg-secondary/30">
+                  <tr className="border-y border-border">
                     <th className="px-5 py-2 text-left text-xs font-medium text-muted-foreground">PID</th>
                     <th className="px-5 py-2 text-left text-xs font-medium text-muted-foreground">名称</th>
                     <th className="px-5 py-2 text-right text-xs font-medium text-muted-foreground">CPU%</th>

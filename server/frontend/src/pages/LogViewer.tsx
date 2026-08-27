@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
+﻿import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import { getLogs } from '@/lib/api'
 import type { LogEntry } from '@/lib/api'
 
@@ -136,7 +136,7 @@ export default function LogViewer() {
       {/* 页面标题 */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold text-primary">系统日志</h1>
+          <h1 className="text-xl font-semibold tracking-tight text-foreground">系统日志</h1>
           <p className="mt-0.5 text-sm text-muted-foreground">
             服务端运行日志，用于调试和排查问题
           </p>
@@ -149,7 +149,7 @@ export default function LogViewer() {
           )}
           <button
             onClick={() => setAutoRefresh((v) => !v)}
-            className={`flex h-10 items-center gap-1.5 rounded-xl border px-3 text-sm font-semibold transition-colors ${
+            className={`flex h-10 items-center gap-1.5 rounded-md border px-3 text-sm font-semibold transition-colors ${
               autoRefresh
                 ? 'border-primary/30 bg-primary/10 text-primary'
                 : 'border-border bg-secondary text-muted-foreground hover:bg-accent'
@@ -166,7 +166,7 @@ export default function LogViewer() {
           <button
             onClick={loadLogs}
             disabled={loading}
-            className="flex h-10 items-center gap-1.5 rounded-xl border border-border bg-secondary px-3 text-sm font-semibold text-foreground transition-colors hover:bg-accent disabled:opacity-50"
+            className="flex h-10 items-center gap-1.5 rounded-md border border-border bg-card px-3 text-sm font-semibold text-foreground transition-colors hover:bg-accent disabled:opacity-50"
           >
             {loading ? (
               <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
@@ -183,7 +183,7 @@ export default function LogViewer() {
       {/* 统计卡片 + 过滤器 */}
       <div className="flex flex-wrap items-center gap-2">
         {/* 级别过滤 */}
-        <div className="flex items-center gap-1 rounded-xl border border-border bg-secondary p-1">
+        <div className="flex items-center gap-1 rounded-md border border-border bg-card p-1">
           {Object.entries(LEVEL_CONFIG).map(([key, cfg]) => {
             const isActive = activeLevel === key
             const count = key === 'ALL' ? logs.length : stats[key as keyof typeof stats] || 0
@@ -244,7 +244,7 @@ export default function LogViewer() {
         </div>
 
         {/* 总量 */}
-        <div className="flex items-center gap-1.5 rounded-xl border border-border bg-secondary px-3 py-1.5 text-xs font-semibold text-muted-foreground">
+        <div className="flex items-center gap-1.5 rounded-md border border-border bg-card px-3 py-1.5 text-xs font-semibold text-muted-foreground">
           <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
           </svg>
@@ -260,7 +260,7 @@ export default function LogViewer() {
       )}
 
       {/* 日志终端区域 */}
-      <div className="flex-1 min-h-0 flex flex-col overflow-hidden rounded-xl border border-border bg-[#1a1b26] shadow-lg">
+      <div className="flex-1 min-h-0 flex flex-col overflow-hidden rounded-md border border-border bg-[#1a1b26] shadow-lg">
         {/* 终端标题栏 */}
         <div className="flex items-center justify-between border-b border-white/5 bg-white/[0.02] px-4 py-2">
           <div className="flex items-center gap-2">

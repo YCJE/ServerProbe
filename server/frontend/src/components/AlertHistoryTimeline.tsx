@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+﻿import { useCallback, useEffect, useState } from 'react'
 import { getAlertHistory } from '@/lib/api'
 import type { AlertHistoryItem, AlertRule } from '@/types'
 
@@ -87,7 +87,7 @@ export default function AlertHistoryTimeline({ rules }: { rules: AlertRule[] }) 
       {/* 筛选栏 */}
       <div className="flex flex-wrap items-center gap-2">
         {/* 状态筛选 */}
-        <div className="flex items-center rounded-xl border border-border bg-muted p-1">
+        <div className="flex items-center rounded-md border border-border bg-muted p-1">
           {(
             [
               { value: '', label: '全部' },
@@ -114,7 +114,7 @@ export default function AlertHistoryTimeline({ rules }: { rules: AlertRule[] }) 
           <select
             value={ruleFilter === '' ? '' : String(ruleFilter)}
             onChange={(e) => setRuleFilter(e.target.value === '' ? '' : Number(e.target.value))}
-            className="h-10 cursor-pointer rounded-xl border border-border bg-secondary px-3 text-sm font-medium text-foreground transition-colors hover:bg-accent focus:border-primary focus:outline-none"
+            className="h-10 cursor-pointer rounded-md border border-border bg-card px-3 text-sm font-medium text-foreground transition-colors hover:bg-accent focus:border-primary focus:outline-none"
             aria-label="按规则筛选"
           >
             <option value="">全部规则</option>

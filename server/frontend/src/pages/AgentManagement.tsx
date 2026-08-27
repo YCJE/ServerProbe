@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from 'react'
+﻿import { useEffect, useState, useCallback, useRef } from 'react'
 import {
   generateRegisterCode,
   getRegisterCodes,
@@ -392,7 +392,7 @@ export default function AgentManagement() {
     <div className="space-y-6">
       {/* 页面标题 */}
       <div>
-        <h1 className="text-xl font-bold text-primary">Agent 管理</h1>
+        <h1 className="text-xl font-semibold tracking-tight text-foreground">Agent 管理</h1>
         <p className="mt-0.5 text-sm text-muted-foreground">
           先添加服务器信息，再复制一键安装命令到被监控服务器执行即可接入监控
         </p>
@@ -438,7 +438,7 @@ export default function AgentManagement() {
             <button
               onClick={handleCreateAgent}
               disabled={creating}
-              className="flex h-10 shrink-0 items-center gap-1.5 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+              className="flex h-10 shrink-0 items-center gap-1.5 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
             >
               {creating ? (
                 <>
@@ -458,7 +458,7 @@ export default function AgentManagement() {
               onClick={handleGenerateCode}
               disabled={generating}
               title="兼容旧流程：生成 15 分钟有效的一次性注册码"
-              className="flex h-10 shrink-0 items-center gap-1.5 rounded-xl border border-border px-4 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50"
+              className="flex h-10 shrink-0 items-center gap-1.5 rounded-md border border-border px-4 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50"
             >
               {generating ? '生成中...' : '生成注册码'}
             </button>
@@ -556,7 +556,7 @@ export default function AgentManagement() {
                       </div>
                       <button
                         onClick={() => handleCopy(installCmd, `cmd-${code.code}`)}
-                        className="flex h-9 shrink-0 items-center gap-1 rounded-xl bg-primary px-3 text-xs font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
+                        className="flex h-9 shrink-0 items-center gap-1 rounded-md bg-primary px-3 text-xs font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
                       >
                         {copied === `cmd-${code.code}` ? (
                           <>
@@ -605,7 +605,7 @@ export default function AgentManagement() {
           <div className="overflow-x-auto scrollbar-thin">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-border bg-secondary/30">
+                <tr className="border-b border-border">
                   <th className="h-10 px-3 text-left font-medium text-muted-foreground">ID</th>
                   <th className="h-10 px-3 text-left font-medium text-muted-foreground">显示名称</th>
                   <th className="h-10 px-3 text-left font-medium text-muted-foreground">主机名</th>
@@ -718,7 +718,7 @@ export default function AgentManagement() {
                 </div>
                 <button
                   onClick={() => handleCopy(getTokenInstallCommand((createdAgent || cmdAgent)!.token), 'token-cmd')}
-                  className="flex h-9 shrink-0 items-center gap-1 rounded-xl bg-primary px-3 text-xs font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
+                  className="flex h-9 shrink-0 items-center gap-1 rounded-md bg-primary px-3 text-xs font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
                 >
                   {copied === 'token-cmd' ? (
                     <>
@@ -740,7 +740,7 @@ export default function AgentManagement() {
             </div>
 
             {/* 提示信息 */}
-            <div className="mt-4 rounded-md border border-dashed border-border bg-secondary/30 p-3 text-xs text-muted-foreground">
+            <div className="mt-4 rounded-md border border-dashed border-border p-3 text-xs text-muted-foreground">
               <p>· 命令执行后 Agent 会自动连接主控并开始上报数据（首次连接自动记录主机信息）</p>
               <p>· 安装完成后可在下方"已安装 Agent"列表查看，离线状态会在连接成功后变为在线</p>
               <p>· Token 即该服务器的身份凭证，请勿泄露给他人</p>
@@ -750,7 +750,7 @@ export default function AgentManagement() {
             <div className="mt-4 flex justify-end">
               <button
                 onClick={handleCloseInstallCmd}
-                className="flex h-9 items-center rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
+                className="flex h-9 items-center rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
               >
                 完成
               </button>
@@ -809,7 +809,7 @@ export default function AgentManagement() {
               </div>
 
               {/* 只读信息 */}
-              <div className="rounded-md border border-dashed border-border bg-secondary/30 p-3 text-xs text-muted-foreground">
+              <div className="rounded-md border border-dashed border-border p-3 text-xs text-muted-foreground">
                 <div className="flex justify-between py-0.5">
                   <span>ID</span>
                   <span className="font-mono font-bold tabular-nums text-foreground">{editingAgent.id}</span>
@@ -963,7 +963,7 @@ export default function AgentManagement() {
                       </div>
                       <button
                         onClick={() => handleCopy(getInstallCommand(regeneratedCode), `regen-${regeneratedCode}`)}
-                        className="flex h-8 shrink-0 items-center gap-1 rounded-xl bg-primary px-2 text-xs font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
+                        className="flex h-8 shrink-0 items-center gap-1 rounded-md bg-primary px-2 text-xs font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
                       >
                         {copied === `regen-${regeneratedCode}` ? '已复制' : '复制'}
                       </button>
@@ -988,14 +988,14 @@ export default function AgentManagement() {
             <div className="mt-6 flex items-center justify-end gap-2">
               <button
                 onClick={handleCloseEdit}
-                className="flex h-10 items-center rounded-xl border border-border bg-secondary px-4 text-sm font-semibold text-foreground transition-colors hover:bg-accent"
+                className="flex h-10 items-center rounded-md border border-border bg-card px-4 text-sm font-semibold text-foreground transition-colors hover:bg-accent"
               >
                 取消
               </button>
               <button
                 onClick={handleSaveEdit}
                 disabled={editSaving}
-                className="flex h-10 items-center rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+                className="flex h-10 items-center rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
               >
                 {editSaving ? '保存中...' : '保存'}
               </button>

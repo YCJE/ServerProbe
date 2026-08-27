@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useMemo } from 'react'
+﻿import { useEffect, useState, useCallback, useMemo } from 'react'
 import { useServerStore } from '@/store/useServerStore'
 import { getTraffic } from '@/lib/api'
 import type { TrafficResponse, MonthlyTraffic, TrafficRecord } from '@/types'
@@ -85,7 +85,7 @@ export default function TrafficStats() {
     <div className="space-y-6">
       {/* 页面标题 */}
       <div>
-        <h1 className="text-xl font-bold text-primary">流量统计</h1>
+        <h1 className="text-xl font-semibold tracking-tight text-foreground">流量统计</h1>
         <p className="mt-0.5 text-sm text-muted-foreground">
           查看各 Agent 的当日和当月流量使用情况
         </p>
@@ -150,7 +150,7 @@ export default function TrafficStats() {
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             <div className="card-soft p-4">
               <div className="text-xs font-medium text-muted-foreground">当日接收 (RX)</div>
-              <div className="mt-2 text-2xl font-bold text-emerald-500 tabular-nums">
+              <div className="mt-2 text-2xl font-semibold text-success tabular-nums">
                 {formatBytes(todayTraffic?.traffic?.rx_bytes || 0)}
               </div>
               <div className="mt-1 text-xs text-muted-foreground">
@@ -159,7 +159,7 @@ export default function TrafficStats() {
             </div>
             <div className="card-soft p-4">
               <div className="text-xs font-medium text-muted-foreground">当日发送 (TX)</div>
-              <div className="mt-2 text-2xl font-bold text-amber-500 tabular-nums">
+              <div className="mt-2 text-2xl font-semibold text-warning tabular-nums">
                 {formatBytes(todayTraffic?.traffic?.tx_bytes || 0)}
               </div>
               <div className="mt-1 text-xs text-muted-foreground">
@@ -168,7 +168,7 @@ export default function TrafficStats() {
             </div>
             <div className="card-soft p-4">
               <div className="text-xs font-medium text-muted-foreground">当日合计</div>
-              <div className="mt-2 text-2xl font-bold text-primary tabular-nums">
+              <div className="mt-2 text-2xl font-semibold text-foreground tabular-nums">
                 {formatBytes((todayTraffic?.traffic?.rx_bytes || 0) + (todayTraffic?.traffic?.tx_bytes || 0))}
               </div>
               <div className="mt-1 text-xs text-muted-foreground">

@@ -1,4 +1,4 @@
-import { Component } from 'react'
+﻿import { Component } from 'react'
 import type { ErrorInfo, ReactNode } from 'react'
 
 interface ErrorBoundaryProps {
@@ -45,7 +45,7 @@ export default class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBo
     if (this.state.hasError) {
       return (
         <div className="flex min-h-screen items-center justify-center bg-background p-6">
-          <div className="w-full max-w-md rounded-xl border border-border bg-card p-6 text-center shadow-lg">
+          <div className="w-full max-w-md rounded-lg border border-border bg-card p-6 text-center">
             <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-destructive/10">
               <svg
                 className="h-6 w-6 text-destructive"

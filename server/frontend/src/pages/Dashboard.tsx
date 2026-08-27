@@ -1,4 +1,4 @@
-import { memo, useMemo, useState, useEffect, useCallback } from 'react'
+﻿import { memo, useMemo, useState, useEffect, useCallback } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useServerStore } from '@/store/useServerStore'
 import { useTagColors } from '@/store/useTagStore'
@@ -103,6 +103,44 @@ function getAvgLatency(server: ServerData): number {
 function getExpireDays(server: ServerData): number {
   if (server.expires_in_days == null) return Infinity
   return server.expires_in_days
+}
+
+/** 筛选下拉框（NodeGet 紧凑控件，input-base 风格） */
+function FilterSelect({
+  value,
+  onChange,
+  options,
+  ariaLabel,
+}: {
+  value: string
+  onChange: (v: string) => void
+  options: { value: string; label: string }[]
+  ariaLabel: string
+}) {
+  return (
+    <div className="relative">
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="input-base h-9 cursor-pointer appearance-none pr-8 font-medium"
+        aria-label={ariaLabel}
+      >
+        {options.map((opt) => (
+          <option key={opt.value} value={opt.value}>
+            {opt.label}
+          </option>
+        ))}
+      </select>
+      <svg
+        className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground"
+        fill="none"
+        stroke="currentColor"
+        viewBox="0 0 24 24"
+      >
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+      </svg>
+    </div>
+  )
 }
 
 /** 紧凑进度条单元格（NodeGet 资源环形图色） */
@@ -518,22 +556,21 @@ export default function Dashboard() {
       {/* 页面标题 */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-lg font-bold text-foreground sm:text-xl">仪表盘</h1>
+          <h1 className="text-xl font-semibold tracking-tight text-foreground">仪表盘</h1>
           <p className="mt-0.5 text-xs text-muted-foreground sm:text-sm">
             实时监控所有服务器状态
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => fetchServers().catch(() => {})}
-            className="flex h-11 items-center gap-1.5 rounded-xl border border-border bg-secondary px-3 text-sm font-medium text-foreground transition-colors hover:bg-accent"
-          >
-            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-            </svg>
-            刷新
-          </button>
-        </div>
+        <button
+          onClick={() => fetchServers().catch(() => {})}
+          className="btn-outline h-9"
+          title="重新拉取服务器列表"
+        >
+          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+          </svg>
+          刷新
+        </button>
       </div>
 
       {/* 统计卡片（card-soft） */}
@@ -547,7 +584,7 @@ export default function Dashboard() {
             </span>
           </div>
           <div className="mt-2 flex items-baseline gap-1">
-            <span className="text-2xl font-bold tabular-nums text-foreground">{stats.total}</span>
+            <span className="text-2xl font-semibold tabular-nums text-foreground">{stats.total}</span>
             <span className="text-sm text-muted-foreground">台</span>
             {stats.offline > 0 && (
               <span className="ml-auto text-xs text-destructive">{stats.offline} 离线</span>
@@ -561,7 +598,7 @@ export default function Dashboard() {
             <span className="text-xs text-muted-foreground">平均 CPU</span>
           </div>
           <div className="mt-2 flex items-baseline gap-1">
-            <span className="text-2xl font-bold tabular-nums text-foreground">
+            <span className="text-2xl font-semibold tabular-nums text-foreground">
               {stats.avgCpu.toFixed(1)}
             </span>
             <span className="text-sm text-muted-foreground">%</span>
@@ -574,7 +611,7 @@ export default function Dashboard() {
             <span className="text-xs text-muted-foreground">平均内存</span>
           </div>
           <div className="mt-2 flex items-baseline gap-1">
-            <span className="text-2xl font-bold tabular-nums text-foreground">
+            <span className="text-2xl font-semibold tabular-nums text-foreground">
               {stats.avgMem.toFixed(1)}
             </span>
             <span className="text-sm text-muted-foreground">%</span>
@@ -603,7 +640,7 @@ export default function Dashboard() {
             <span className="text-xs text-muted-foreground">本月总流量</span>
           </div>
           <div className="mt-2 flex items-baseline gap-1">
-            <span className="text-2xl font-bold tabular-nums text-foreground">
+            <span className="text-2xl font-semibold tabular-nums text-foreground">
               {formatTraffic(stats.monthlyTraffic)}
             </span>
           </div>
@@ -619,7 +656,7 @@ export default function Dashboard() {
               stats.monthlyCost.map(({ currency, amount }) => (
                 <span
                   key={currency}
-                  className="text-2xl font-bold tabular-nums text-foreground"
+                  className="text-2xl font-semibold tabular-nums text-foreground"
                   title={`${currency}（年付已折算为月）`}
                 >
                   {currency === 'CNY' ? '¥' : currency === 'USD' ? '$' : `${currency} `}
@@ -637,10 +674,10 @@ export default function Dashboard() {
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         {/* 左侧：搜索框 + 标签/地区筛选 + 排序 */}
         <div className="flex flex-wrap items-center gap-2">
-          {/* 搜索框 */}
+          {/* 搜索框（input-base 紧凑高度） */}
           <div className="relative">
             <svg
-              className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+              className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -652,7 +689,7 @@ export default function Dashboard() {
               value={searchInput}
               onChange={handleSearchChange}
               placeholder="搜索名称/标签/位置"
-              className="h-11 w-44 rounded-xl border border-border bg-secondary pl-9 pr-3 text-sm font-semibold text-foreground placeholder:text-muted-foreground/60 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary sm:w-56"
+              className="input-base h-9 w-44 pl-8 pr-8 sm:w-56"
             />
             {searchInput && (
               <button
@@ -669,110 +706,48 @@ export default function Dashboard() {
 
           {/* 标签筛选下拉 */}
           {allTags.length > 0 && (
-            <div className="relative">
-              <select
-                value={tagFilter}
-                onChange={(e) => setTagFilter(e.target.value)}
-                className="h-11 max-w-36 cursor-pointer appearance-none rounded-xl border border-border bg-secondary px-3 pr-8 text-sm font-medium text-foreground transition-colors hover:bg-accent focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-                aria-label="按标签筛选"
-              >
-                <option value="">全部标签</option>
-                {allTags.map((tag) => (
-                  <option key={tag} value={tag}>
-                    {tag}
-                  </option>
-                ))}
-              </select>
-              <svg
-                className="pointer-events-none absolute right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-              </svg>
-            </div>
+            <FilterSelect
+              value={tagFilter}
+              onChange={(v) => setTagFilter(v)}
+              ariaLabel="按标签筛选"
+              options={[{ value: '', label: '全部标签' }, ...allTags.map((t) => ({ value: t, label: t }))]}
+            />
           )}
 
           {/* 地区筛选下拉（含国旗） */}
           {allRegions.length > 0 && (
-            <div className="relative">
-              <select
-                value={regionFilter}
-                onChange={(e) => setRegionFilter(e.target.value)}
-                className="h-11 cursor-pointer appearance-none rounded-xl border border-border bg-secondary px-3 pr-8 text-sm font-medium text-foreground transition-colors hover:bg-accent focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-                aria-label="按地区筛选"
-              >
-                <option value="">全部地区</option>
-                {allRegions.map(({ code, count }) => (
-                  <option key={code} value={code}>
-                    {code} ({count})
-                  </option>
-                ))}
-              </select>
-              <svg
-                className="pointer-events-none absolute right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-              </svg>
-            </div>
+            <FilterSelect
+              value={regionFilter}
+              onChange={(v) => setRegionFilter(v)}
+              ariaLabel="按地区筛选"
+              options={[
+                { value: '', label: '全部地区' },
+                ...allRegions.map(({ code, count }) => ({ value: code, label: `${code} (${count})` })),
+              ]}
+            />
           )}
 
           {/* IP 栈筛选下拉 */}
-          <div className="relative">
-            <select
-              value={ipFilter}
-              onChange={(e) => setIpFilter(e.target.value as IPFilter)}
-              className="h-11 cursor-pointer appearance-none rounded-xl border border-border bg-secondary px-3 pr-8 text-sm font-medium text-foreground transition-colors hover:bg-accent focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-              aria-label="按 IP 栈筛选"
-            >
-              {IP_FILTER_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-            <svg
-              className="pointer-events-none absolute right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-            </svg>
-          </div>
+          <FilterSelect
+            value={ipFilter}
+            onChange={(v) => setIpFilter(v as IPFilter)}
+            ariaLabel="按 IP 栈筛选"
+            options={IP_FILTER_OPTIONS}
+          />
 
           {/* 排序下拉菜单 */}
-          <div className="relative">
-            <select
-              value={sortOption}
-              onChange={(e) => setSortOption(e.target.value as SortOption)}
-              className="h-11 cursor-pointer appearance-none rounded-xl border border-border bg-secondary px-3 pr-8 text-sm font-medium text-foreground transition-colors hover:bg-accent focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-            >
-              {SORT_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  排序: {opt.label}
-                </option>
-              ))}
-            </select>
-            <svg
-              className="pointer-events-none absolute right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-            </svg>
-          </div>
+          <FilterSelect
+            value={sortOption}
+            onChange={(v) => setSortOption(v as SortOption)}
+            ariaLabel="排序方式"
+            options={SORT_OPTIONS.map((o) => ({ value: o.value, label: `排序: ${o.label}` }))}
+          />
 
           {/* 激活的筛选标签徽章（可点击移除） */}
           {tagFilter && (
             <button
               onClick={() => setTagFilter('')}
-              className="flex h-8 items-center gap-1 rounded-lg px-2 text-xs font-semibold transition-transform hover:scale-105"
+              className="badge-pill font-semibold transition-transform hover:scale-105"
               style={tagColors[tagFilter] ? { background: tagColors[tagFilter], color: '#fff' } : getTagStyle(tagFilter)}
             >
               {tagFilter}
@@ -784,7 +759,7 @@ export default function Dashboard() {
           {regionFilter && (
             <button
               onClick={() => setRegionFilter('')}
-              className="flex h-8 items-center gap-1 rounded-lg bg-secondary px-2 text-xs font-semibold text-foreground transition-colors hover:bg-accent"
+              className="badge-pill border border-border bg-card text-foreground hover:bg-accent"
             >
               {getFlagEmoji(regionFilter)} {regionFilter}
               <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -795,7 +770,7 @@ export default function Dashboard() {
           {ipFilter && (
             <button
               onClick={() => setIpFilter('')}
-              className="flex h-8 items-center gap-1 rounded-lg bg-secondary px-2 text-xs font-semibold text-foreground transition-colors hover:bg-accent"
+              className="badge-pill border border-border bg-card text-foreground hover:bg-accent"
             >
               {ipFilter === 'dual' ? 'IPv4+IPv6' : `IPv${ipFilter === 'v4' ? 4 : 6}`}
               <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -805,13 +780,13 @@ export default function Dashboard() {
           )}
         </div>
 
-        {/* 右侧：视图切换 - 分段控制器 */}
-        <div className="flex items-center rounded-xl border border-border bg-muted p-1">
+        {/* 右侧：视图切换 - 分段控制器（NodeGet 紧凑） */}
+        <div className="flex items-center rounded-md border border-border bg-card p-0.5">
           <button
             onClick={() => setViewMode('card')}
-            className={`flex h-9 items-center gap-1.5 rounded-lg px-3 text-xs font-medium transition-all ${
+            className={`flex h-8 items-center gap-1.5 rounded px-3 text-xs font-medium transition-colors ${
               viewMode === 'card'
-                ? 'bg-background text-foreground shadow-sm'
+                ? 'bg-primary text-primary-foreground'
                 : 'text-muted-foreground hover:text-foreground'
             }`}
           >
@@ -822,9 +797,9 @@ export default function Dashboard() {
           </button>
           <button
             onClick={() => setViewMode('table')}
-            className={`flex h-9 items-center gap-1.5 rounded-lg px-3 text-xs font-medium transition-all ${
+            className={`flex h-8 items-center gap-1.5 rounded px-3 text-xs font-medium transition-colors ${
               viewMode === 'table'
-                ? 'bg-background text-foreground shadow-sm'
+                ? 'bg-primary text-primary-foreground'
                 : 'text-muted-foreground hover:text-foreground'
             }`}
           >
@@ -835,9 +810,9 @@ export default function Dashboard() {
           </button>
           <button
             onClick={() => setViewMode('map')}
-            className={`flex h-9 items-center gap-1.5 rounded-lg px-3 text-xs font-medium transition-all ${
+            className={`flex h-8 items-center gap-1.5 rounded px-3 text-xs font-medium transition-colors ${
               viewMode === 'map'
-                ? 'bg-background text-foreground shadow-sm'
+                ? 'bg-primary text-primary-foreground'
                 : 'text-muted-foreground hover:text-foreground'
             }`}
           >
@@ -851,7 +826,7 @@ export default function Dashboard() {
 
       {/* 服务器列表 */}
       {servers.length === 0 ? (
-        <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border py-16">
+        <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border py-16">
           <svg className="mb-3 h-12 w-12 text-muted-foreground/50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01" />
           </svg>
@@ -862,7 +837,7 @@ export default function Dashboard() {
         </div>
       ) : processedServers.length === 0 ? (
         // 搜索无结果
-        <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border py-16">
+        <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border py-16">
           <svg className="mb-3 h-10 w-10 text-muted-foreground/50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
           </svg>
@@ -914,7 +889,7 @@ export default function Dashboard() {
 
       {/* WebSocket 断线提示 */}
       {!wsConnected && servers.length > 0 && (
-        <div className="glass fixed bottom-4 right-4 rounded-xl border border-warning/30 px-4 py-2 text-sm text-warning shadow-lg">
+        <div className="glass fixed bottom-4 right-4 rounded-md border border-warning/30 px-4 py-2 text-sm text-warning shadow-lg">
           实时连接已断开，正在重连...
         </div>
       )}

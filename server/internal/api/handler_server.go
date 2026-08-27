@@ -48,6 +48,7 @@ type ServerHandler struct {
 	agentRepo  *repository.AgentRepository
 	monitor    *service.MonitorService
 	recordRepo *repository.RecordRepository
+	settings   *service.SettingsService // 可选：图表最大点数等运行时设置
 }
 
 // NewServerHandler 创建服务器处理器
@@ -57,6 +58,19 @@ func NewServerHandler(agentRepo *repository.AgentRepository, monitor *service.Mo
 		monitor:    monitor,
 		recordRepo: recordRepo,
 	}
+}
+
+// SetSettings 注入系统设置服务（图表降采样上限可后台调整）
+func (h *ServerHandler) SetSettings(s *service.SettingsService) {
+	h.settings = s
+}
+
+// maxChartPoints 读取图表最大点数（未注入设置服务时使用默认值）
+func (h *ServerHandler) maxChartPoints() int {
+	if h.settings != nil {
+		return h.settings.MaxChartPoints()
+	}
+	return 800
 }
 
 // HandleListServers 获取服务器列表
@@ -344,7 +358,7 @@ func (h *ServerHandler) HandleGetServerHistory(c *gin.Context) {
 
 	// 降采样保护：点数超过上限时均匀抽稀，防止大范围查询返回过多数据导致前端渲染卡顿
 	// （保留首尾点，确保时间边界准确；离线占位记录同样参与抽稀）
-	const maxHistoryPoints = 800
+	maxHistoryPoints := h.maxChartPoints()
 	if len(records) > maxHistoryPoints {
 		sampled := make([]model.MetricRecord, 0, maxHistoryPoints+2)
 		step := float64(len(records)-1) / float64(maxHistoryPoints-1)

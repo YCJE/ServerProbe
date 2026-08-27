@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useState } from 'react'
+﻿import { memo, useEffect, useMemo, useState } from 'react'
 import type { PingResult } from '@/types'
 import { parsePingData } from '@/lib/utils'
 
@@ -268,7 +268,7 @@ function LatencyQualityBar({
     <div className={`relative rounded-md border-dashed border border-border/80 p-4 ${className}`}>
       {/* 标题 + 图例 */}
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <span className="text-sm font-bold text-primary">延迟质量分布</span>
+        <span className="text-sm font-bold text-foreground">延迟质量分布</span>
         <div className="flex flex-wrap items-center gap-2 text-[10px] text-muted-foreground">
           <LegendItem color={BUCKET_COLORS.deepGreen} label="≤50ms" />
           <LegendItem color={BUCKET_COLORS.lightGreen} label="50-100" />

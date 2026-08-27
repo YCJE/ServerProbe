@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+﻿import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import ReactECharts from 'echarts-for-react'
 import * as echarts from 'echarts'
@@ -175,7 +175,7 @@ export default function MapView({ servers, basePath }: MapViewProps) {
                 <button
                   key={s.id}
                   onClick={() => navigate(`${basePath}/server/${s.id}`)}
-                  className="flex items-center gap-2 rounded-xl border border-border bg-secondary/50 px-3 py-2 text-left transition-colors hover:bg-accent"
+                  className="flex items-center gap-2 rounded-md border border-border bg-card/90 px-3 py-2 text-left transition-colors hover:bg-accent"
                 >
                   <span className="text-sm leading-none">{cc ? getFlagEmoji(cc) : ''}</span>
                   <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">

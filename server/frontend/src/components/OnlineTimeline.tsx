@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useState } from 'react'
+﻿import { memo, useEffect, useMemo, useState } from 'react'
 
 /** 单个时间点的在线状态 */
 export interface OnlineTimelinePoint {
@@ -155,7 +155,7 @@ function OnlineTimeline({
     <div className={`relative rounded-md border-dashed border border-border bg-secondary/35 p-4 ${className}`}>
       {/* 标题行: Activity 图标 + "在线状态" + 右侧可用率 */}
       <div className="mb-3 flex items-center justify-between">
-        <span className="flex items-center gap-1.5 text-sm font-bold text-primary">
+        <span className="flex items-center gap-1.5 text-sm font-bold text-foreground">
           <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path
               strokeLinecap="round"
@@ -168,7 +168,7 @@ function OnlineTimeline({
         </span>
         <span className="text-sm">
           <span className="text-muted-foreground">可用率 </span>
-          <span className="font-bold text-primary">{availability.toFixed(2)}%</span>
+          <span className="font-bold text-foreground">{availability.toFixed(2)}%</span>
         </span>
       </div>
 

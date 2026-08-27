@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+﻿import { useState, useRef, useEffect } from 'react'
 import { useServerStore } from '@/store/useServerStore'
 import type { Theme } from '@/types'
 
@@ -49,7 +49,7 @@ export default function ThemeToggle() {
     <div className="relative" ref={ref}>
       <button
         onClick={() => setOpen(!open)}
-        className="flex h-9 w-9 items-center justify-center rounded-xl border border-border bg-secondary text-foreground transition-colors hover:bg-accent"
+        className="flex h-9 w-9 items-center justify-center rounded-md border border-border bg-card text-foreground transition-colors hover:bg-accent"
         title="切换主题"
         aria-label="切换主题"
         aria-expanded={open}
@@ -58,7 +58,7 @@ export default function ThemeToggle() {
       </button>
 
       {open && (
-        <div className="animate-scale-in absolute right-0 top-full z-50 mt-2 w-36 rounded-xl border border-border bg-popover py-1 shadow-md">
+        <div className="animate-scale-in absolute right-0 top-full z-50 mt-2 w-36 rounded-lg border border-border bg-popover py-1 shadow-md">
           {options.map((option) => (
             <button
               key={option.value}

@@ -3,8 +3,9 @@
 @tailwind utilities;
 
 /* ──────────────────────────────────────────────────────────
-   NodeGet Theme (NIE-Theme)
-   青绿主色 + 毛玻璃浮动导航 + 虚线分隔 + 渐变卡片 + 网格背景
+   NodeGet 风格主题
+   Zinc 中性色板 + 指标专色（CPU 青 / 内存绿 / 磁盘橙 / 网络粉 / Ping 蓝）
+   扁平描边卡片，无重阴影，等宽数字
    ────────────────────────────────────────────────────────── */
 
 @layer base {
@@ -15,84 +16,90 @@
       BlinkMacSystemFont, "Segoe UI", sans-serif;
     --font-mono: "JetBrains Mono", "SFMono-Regular", "ui-monospace", "Menlo", "Consolas", monospace;
 
-    /* 圆角 */
-    --radius: 0.65rem; /* 10.4px */
+    /* 圆角：NodeGet 基础 10px */
+    --radius: 0.625rem;
 
-    /* ── 浅色主题 ── */
-    --background: 210 25% 97%;          /* #F2F5F8 */
-    --foreground: 216 33% 27%;          /* #2C3A4D */
+    /* ── 浅色主题（Zinc） ── */
+    --background: 240 5% 96%;            /* zinc-100 #F4F4F5 */
+    --foreground: 240 10% 10%;           /* zinc-950 深色文字 */
 
-    --card: 0 0% 100%;                   /* #FFFFFF */
-    --card-foreground: 216 33% 27%;
-    --card-elevated: 0 0% 98%;
+    --card: 0 0% 100%;                   /* 白色卡片 */
+    --card-foreground: 240 10% 10%;
+    --card-elevated: 240 5% 98%;
 
-    --primary: 153 51% 39%;             /* #36A585 */
+    --primary: 240 6% 12%;               /* 近黑主按钮（NodeGet 浅色主题） */
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 210 40% 94%;           /* #DDE6F0 */
-    --secondary-foreground: 214 24% 37%; /* #485C75 */
+    --secondary: 240 5% 92%;             /* zinc-200 */
+    --secondary-foreground: 240 4% 30%;
 
-    --muted: 210 40% 94%;
-    --muted-foreground: 215 18% 46%;    /* #6B7B8E */
+    --muted: 240 5% 94%;
+    --muted-foreground: 240 4% 46%;      /* zinc-500 */
 
-    --accent: 210 40% 94%;
-    --accent-foreground: 153 51% 35%;   /* #2E8E70 */
+    --accent: 240 5% 92%;
+    --accent-foreground: 240 6% 12%;
 
-    --destructive: 0 72% 51%;           /* #DC2424 */
+    --destructive: 350 84% 55%;          /* rose-500 */
     --destructive-foreground: 0 0% 100%;
 
-    --success: 142 69% 59%;             /* #34C759 */
+    --success: 152 69% 40%;              /* emerald-600 */
     --success-foreground: 0 0% 100%;
 
-    --warning: 37 100% 50%;             /* #FF9500 */
+    --warning: 25 95% 53%;               /* amber-500 */
     --warning-foreground: 0 0% 100%;
 
-    --border: 214 27% 83%;              /* #C5CFDD */
-    --input: 214 25% 84%;               /* #C8D2DE */
-    --ring: 153 51% 39%;
+    --border: 240 6% 88%;                /* zinc-300 */
+    --input: 240 6% 84%;
+    --ring: 240 6% 12%;
 
-    /* 背景配色调色板 [base, accent] */
-    --bg-base: 245 248 251;             /* #F5F8FB */
-    --bg-accent: 183 196 214;           /* #B7C4D6 */
+    /* 指标专色（跨主题） */
+    --metric-cpu: 190 95% 39%;           /* cyan-600 #0891B2 */
+    --metric-mem: 160 84% 39%;           /* emerald-600 #059669 */
+    --metric-disk: 25 95% 53%;           /* orange-500 #F97316 */
+    --metric-net: 330 81% 60%;           /* pink-500 #EC4899 */
+    --metric-ping: 203 92% 55%;          /* sky-500 #0EA5E9 */
   }
 
   .dark {
-    /* ── 深色主题（默认） ── */
-    --background: 220 24% 13%;          /* #19212E */
-    --foreground: 210 40% 94%;          /* #DDE6F0 */
+    /* ── 深色主题（Zinc，默认） ── */
+    --background: 240 6% 7%;             /* zinc-950-ish #111113 */
+    --foreground: 240 5% 92%;            /* zinc-200 */
 
-    --card: 220 22% 16%;                /* #202938 */
-    --card-foreground: 210 40% 94%;
-    --card-elevated: 220 20% 20%;       /* #2A3243 */
+    --card: 240 5% 10%;                  /* #18181B zinc-900 */
+    --card-foreground: 240 5% 92%;
+    --card-elevated: 240 4% 14%;         /* zinc-800 */
 
-    --primary: 142 58% 66%;             /* #5FD894 */
-    --primary-foreground: 220 26% 14%;  /* #1A2230 */
+    --primary: 0 0% 98%;                 /* 近白主按钮（NodeGet 深色主题主色偏灰白） */
+    --primary-foreground: 240 6% 10%;
 
-    --secondary: 218 21% 21%;           /* #2A3243 */
-    --secondary-foreground: 210 40% 94%;
+    --secondary: 240 4% 16%;             /* zinc-800 */
+    --secondary-foreground: 240 5% 85%;
 
-    --muted: 218 21% 21%;
-    --muted-foreground: 214 22% 70%;    /* #9CABC0 */
+    --muted: 240 4% 14%;
+    --muted-foreground: 240 5% 60%;      /* zinc-400 */
 
-    --accent: 218 21% 21%;
-    --accent-foreground: 142 51% 62%;   /* #52CC8A */
+    --accent: 240 4% 16%;
+    --accent-foreground: 240 5% 95%;
 
-    --destructive: 0 63% 44%;           /* #B53030 */
+    --destructive: 350 89% 60%;          /* rose-500 */
     --destructive-foreground: 0 0% 100%;
 
-    --success: 142 69% 59%;
+    --success: 152 69% 48%;              /* emerald-500 */
     --success-foreground: 0 0% 100%;
 
-    --warning: 37 100% 50%;
+    --warning: 25 95% 53%;
     --warning-foreground: 0 0% 100%;
 
-    --border: 218 17% 34%;              /* #48525F */
-    --input: 218 17% 36%;               /* #4E5969 */
-    --ring: 142 58% 66%;
+    --border: 240 4% 18%;                /* zinc-800 */
+    --input: 240 4% 22%;
+    --ring: 240 5% 90%;
 
-    /* 背景配色调色板 [base, accent] */
-    --bg-base: 17 24 39;                /* #111827 */
-    --bg-accent: 148 163 184;           /* #94A3B8 */
+    /* 指标专色（深色下提亮一档） */
+    --metric-cpu: 187 92% 53%;           /* cyan-400 #22D3EE */
+    --metric-mem: 158 79% 52%;           /* emerald-400 #34D399 */
+    --metric-disk: 27 96% 61%;           /* orange-400 #FB923C */
+    --metric-net: 330 82% 68%;           /* pink-400 #F472B6 */
+    --metric-ping: 199 89% 62%;          /* sky-400 #38BDF8 */
   }
 }
 
@@ -121,7 +128,7 @@
   /* 交互元素统一过渡 */
   button, a, [role="button"], input, select, textarea {
     transition-property: color, background-color, border-color, box-shadow, opacity, transform, filter;
-    transition-duration: 160ms;
+    transition-duration: 150ms;
     transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
   }
 
@@ -135,66 +142,38 @@
 }
 
 @layer components {
-  /* ── 渐变卡片（.card-soft） ── */
+  /* ── NodeGet 扁平描边卡片 ── */
   .card-soft {
-    border-radius: 0.72rem;
-    background: linear-gradient(180deg, hsl(var(--card)) 0%, hsl(var(--card) / 0.975) 100%);
-    box-shadow:
-      0 10px 28px rgba(15, 23, 42, 0.055),
-      0 2px 7px rgba(15, 23, 42, 0.035),
-      0 0 0 1px rgba(255, 255, 255, 0.84) inset;
+    border-radius: var(--radius);
+    background: hsl(var(--card));
+    border: 1px solid hsl(var(--border));
   }
 
-  .dark .card-soft {
-    box-shadow:
-      0 12px 30px rgba(0, 0, 0, 0.30),
-      0 2px 8px rgba(0, 0, 0, 0.18),
-      0 0 0 1px rgba(255, 255, 255, 0.04) inset;
-  }
-
-  /* ── 卡片 hover 效果（.node-card-hover） ── */
+  /* ── 卡片 hover 效果（描边微亮） ── */
   .node-card-hover {
-    transition: border-color 200ms, box-shadow 200ms, opacity 200ms, background-color 200ms;
+    transition: border-color 200ms, background-color 200ms, opacity 200ms;
   }
 
   .node-card-hover:hover {
-    border-color: hsl(var(--primary) / 0.9);
-    box-shadow:
-      0 0 0 1px hsl(var(--primary) / 0.26),
-      0 14px 32px rgba(15, 23, 42, 0.08),
-      0 0 24px hsl(var(--primary) / 0.055);
+    border-color: hsl(var(--muted-foreground) / 0.5);
   }
 
-  .dark .node-card-hover:hover {
-    border-color: hsl(var(--primary) / 0.9);
-    box-shadow:
-      0 0 0 1px hsl(var(--primary) / 0.30),
-      0 16px 36px rgba(0, 0, 0, 0.34),
-      0 0 24px hsl(var(--primary) / 0.08);
-  }
-
-  /* ── 网格背景（.bg-soft） ── */
+  /* ── 网格背景（极淡） ── */
   .bg-soft {
     background-image:
-      linear-gradient(hsl(var(--muted-foreground) / 0.045) 1px, transparent 1px),
-      linear-gradient(90deg, hsl(var(--muted-foreground) / 0.045) 1px, transparent 1px);
-    background-size: 22px 22px;
+      linear-gradient(hsl(var(--muted-foreground) / 0.05) 1px, transparent 1px),
+      linear-gradient(90deg, hsl(var(--muted-foreground) / 0.05) 1px, transparent 1px);
+    background-size: 24px 24px;
   }
 
-  .dark .bg-soft {
-    background-image:
-      linear-gradient(hsl(var(--muted-foreground) / 0.06) 1px, transparent 1px),
-      linear-gradient(90deg, hsl(var(--muted-foreground) / 0.06) 1px, transparent 1px);
-  }
-
-  /* ── 毛玻璃质感 ── */
+  /* ── 毛玻璃（仅移动端抽屉/顶栏使用） ── */
   .glass {
-    background: hsl(var(--card) / 0.92);
-    backdrop-filter: blur(16px) saturate(180%);
-    -webkit-backdrop-filter: blur(16px) saturate(180%);
+    background: hsl(var(--card) / 0.95);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
   }
 
-  /* ── 进度条 ── */
+  /* ── 进度条（NodeGet: h-1.5，颜色由 --primary 注入） ── */
   .progress-bar {
     height: 6px;
     border-radius: 9999px;
@@ -205,6 +184,7 @@
   .progress-bar-fill {
     height: 100%;
     border-radius: 9999px;
+    background: hsl(var(--primary));
     transition: width 0.3s cubic-bezier(0.2, 0, 0, 1);
   }
 
@@ -231,13 +211,45 @@
   }
 
   .badge-primary {
-    background: hsl(var(--primary) / 0.12);
+    background: hsl(var(--primary) / 0.1);
     color: hsl(var(--primary));
+  }
+
+  .dark .badge-primary {
+    background: hsl(var(--primary) / 0.12);
   }
 
   .badge-warning {
     background: hsl(var(--warning) / 0.12);
     color: hsl(var(--warning));
+  }
+
+  /* outline 徽章（NodeGet OS 徽章样式） */
+  .badge-outline {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 8px;
+    border-radius: 9999px;
+    border: 1px solid hsl(var(--border));
+    font-size: 11px;
+    font-weight: 400;
+    color: hsl(var(--muted-foreground));
+    white-space: nowrap;
+  }
+
+  /* secondary 徽章（NodeGet 虚拟化徽章样式） */
+  .badge-secondary {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 8px;
+    border-radius: 9999px;
+    background: hsl(var(--secondary));
+    font-size: 10px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.025em;
+    color: hsl(var(--secondary-foreground));
+    white-space: nowrap;
   }
 
   /* ── 筛选胶囊 ── */
@@ -246,7 +258,7 @@
     border-radius: 9999px;
     font-size: 13px;
     font-weight: 500;
-    transition: all 0.16s cubic-bezier(0.2, 0, 0, 1);
+    transition: all 0.15s cubic-bezier(0.2, 0, 0, 1);
     border: 1px solid transparent;
   }
 
@@ -256,7 +268,7 @@
   }
 
   .filter-pill-inactive {
-    background: hsl(var(--secondary));
+    background: hsl(var(--card));
     color: hsl(var(--muted-foreground));
     border-color: hsl(var(--border));
   }
@@ -265,9 +277,136 @@
     background: hsl(var(--accent));
     color: hsl(var(--foreground));
   }
+
+  /* ── 表格容器（NodeGet: border rounded-md bg-card） ── */
+  .table-shell {
+    border-radius: var(--radius);
+    border: 1px solid hsl(var(--border));
+    background: hsl(var(--card));
+    overflow: hidden;
+  }
+
+  .table-row-hover {
+    cursor: pointer;
+    transition: background-color 150ms;
+  }
+
+  .table-row-hover:hover {
+    background: hsl(var(--muted) / 0.5);
+  }
+
+  /* ── 输入框 ── */
+  .input-base {
+    width: 100%;
+    border-radius: calc(var(--radius) - 4px);
+    border: 1px solid hsl(var(--input));
+    background: hsl(var(--card));
+    padding: 8px 12px;
+    font-size: 13px;
+    color: hsl(var(--foreground));
+    outline: none;
+  }
+
+  .input-base:focus {
+    border-color: hsl(var(--ring) / 0.6);
+    box-shadow: 0 0 0 3px hsl(var(--ring) / 0.12);
+  }
+
+  .input-base::placeholder {
+    color: hsl(var(--muted-foreground) / 0.7);
+  }
+
+  /* ── 按钮 ── */
+  .btn-primary {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    border-radius: calc(var(--radius) - 4px);
+    background: hsl(var(--primary));
+    color: hsl(var(--primary-foreground));
+    padding: 8px 16px;
+    font-size: 13px;
+    font-weight: 500;
+    transition: opacity 150ms;
+  }
+
+  .btn-primary:hover {
+    opacity: 0.9;
+  }
+
+  .btn-primary:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .btn-outline {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    border-radius: calc(var(--radius) - 4px);
+    border: 1px solid hsl(var(--border));
+    background: hsl(var(--card));
+    color: hsl(var(--foreground));
+    padding: 8px 16px;
+    font-size: 13px;
+    font-weight: 500;
+  }
+
+  .btn-outline:hover {
+    background: hsl(var(--accent));
+  }
+
+  .btn-outline:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .btn-danger {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    border-radius: calc(var(--radius) - 4px);
+    border: 1px solid hsl(var(--destructive) / 0.4);
+    background: hsl(var(--destructive) / 0.08);
+    color: hsl(var(--destructive));
+    padding: 8px 16px;
+    font-size: 13px;
+    font-weight: 500;
+  }
+
+  .btn-danger:hover {
+    background: hsl(var(--destructive) / 0.14);
+  }
+
+  .btn-danger:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
 }
 
 @layer utilities {
+  /* ── 指标专色工具类 ── */
+  .text-cpu { color: hsl(var(--metric-cpu)); }
+  .text-mem { color: hsl(var(--metric-mem)); }
+  .text-disk { color: hsl(var(--metric-disk)); }
+  .text-net { color: hsl(var(--metric-net)); }
+  .text-ping { color: hsl(var(--metric-ping)); }
+
+  .bg-cpu { background-color: hsl(var(--metric-cpu)); }
+  .bg-mem { background-color: hsl(var(--metric-mem)); }
+  .bg-disk { background-color: hsl(var(--metric-disk)); }
+  .bg-net { background-color: hsl(var(--metric-net)); }
+  .bg-ping { background-color: hsl(var(--metric-ping)); }
+
+  /* 进度条颜色注入（NodeGet 风格：--primary 局部覆盖） */
+  .progress-cpu { --primary: var(--metric-cpu); }
+  .progress-mem { --primary: var(--metric-mem); }
+  .progress-disk { --primary: var(--metric-disk); }
+  .progress-net { --primary: var(--metric-net); }
+
   /* ── 滚动条 ── */
   .scrollbar-thin {
     scrollbar-width: thin;
@@ -294,13 +433,13 @@
     background-color: hsl(var(--muted-foreground) / 0.5);
   }
 
-  /* ── 动画 ── */
+  /* ── 动画（NodeGet: fade + translateY） ── */
   .animate-fade-in {
-    animation: fadeIn 0.2s ease-out;
+    animation: fadeIn 0.3s ease-out;
   }
 
   @keyframes fadeIn {
-    from { opacity: 0; transform: translateY(4px); }
+    from { opacity: 0; transform: translateY(10px); }
     to { opacity: 1; transform: translateY(0); }
   }
 
@@ -313,6 +452,16 @@
     to { opacity: 1; transform: scale(1); }
   }
 
+  /* 列表过渡（NodeGet: list-move） */
+  .animate-list-enter {
+    animation: listEnter 0.5s ease-out;
+  }
+
+  @keyframes listEnter {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
   /* ── 文字截断 ── */
   .text-truncate {
     overflow: hidden;
@@ -320,16 +469,12 @@
     white-space: nowrap;
   }
 
-  /* ── Tooltip 阴影 ── */
+  /* ── Tooltip 阴影（轻量） ── */
   .shadow-tooltip {
-    box-shadow:
-      0 4px 16px rgba(15, 23, 42, 0.12),
-      0 1px 4px rgba(15, 23, 42, 0.08);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
   }
 
   .dark .shadow-tooltip {
-    box-shadow:
-      0 4px 16px rgba(0, 0, 0, 0.28),
-      0 1px 4px rgba(0, 0, 0, 0.16);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
   }
 }

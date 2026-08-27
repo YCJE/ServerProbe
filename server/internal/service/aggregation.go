@@ -282,8 +282,8 @@ func (s *AggregationService) CleanupExpiredData(retentionDays int) {
 	}
 }
 
-// StartCleanupTask 启动定时清理任务
-func (s *AggregationService) StartCleanupTask(retentionDays int) {
+// StartCleanupTask 启动定时清理任务（保留天数通过 retentionFn 动态读取，支持后台设置修改）
+func (s *AggregationService) StartCleanupTask(retentionFn func() int) {
 	ticker := time.NewTicker(24 * time.Hour) // 每天清理一次
 
 	s.wg.Add(1)
@@ -292,7 +292,7 @@ func (s *AggregationService) StartCleanupTask(retentionDays int) {
 		for {
 			select {
 			case <-ticker.C:
-				s.CleanupExpiredData(retentionDays)
+				s.CleanupExpiredData(retentionFn())
 			case <-s.stopCh:
 				ticker.Stop()
 				return

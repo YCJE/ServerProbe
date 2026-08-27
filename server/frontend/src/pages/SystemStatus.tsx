@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from 'react'
+﻿import { useEffect, useState, useCallback, useRef } from 'react'
 import { getSystemStatus } from '@/lib/api'
 import { formatBytes, getUsageColor, getUsageTextColor } from '@/lib/utils'
 import type { SystemStatus } from '@/types'
@@ -52,7 +52,7 @@ function MetricCard({
         {icon && <span className="text-sm">{icon}</span>}
         <span>{label}</span>
       </div>
-      <div className={`mt-2 text-2xl font-bold tabular-nums ${color || 'text-foreground'}`}>
+      <div className={`mt-2 text-2xl font-semibold tabular-nums ${color || 'text-foreground'}`}>
         {value}
       </div>
       {subValue && (
@@ -138,7 +138,7 @@ export default function SystemStatus() {
       {/* 页面标题 */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold text-primary">系统状态</h1>
+          <h1 className="text-xl font-semibold tracking-tight text-foreground">系统状态</h1>
           <p className="mt-0.5 text-sm text-muted-foreground">
             服务端运行状态监控，每 5 秒自动刷新
           </p>
@@ -152,7 +152,7 @@ export default function SystemStatus() {
           <button
             onClick={loadStatus}
             disabled={loading}
-            className="flex h-10 items-center gap-1.5 rounded-xl border border-border bg-secondary px-3 text-sm font-semibold text-foreground transition-colors hover:bg-accent disabled:opacity-50"
+            className="flex h-10 items-center gap-1.5 rounded-md border border-border bg-card px-3 text-sm font-semibold text-foreground transition-colors hover:bg-accent disabled:opacity-50"
           >
             {loading ? (
               <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />

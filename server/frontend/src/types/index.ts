@@ -413,6 +413,42 @@ export interface TOTPSetupResponse {
   otpauth_url: string
 }
 
+// ==================== 系统设置相关类型 ====================
+
+/** 系统设置（站点信息 + 数据加载参数） */
+export interface SystemSettings {
+  site_title: string
+  site_description: string
+  announcement: string
+  custom_footer: string
+  default_history_range: string
+  offline_grace_seconds: number
+  retention_days: number
+  max_chart_points: number
+}
+
+/** 公开站点设置（非敏感字段） */
+export interface PublicSiteSettings {
+  site_title: string
+  site_description: string
+  announcement: string
+  custom_footer: string
+  default_history_range: string
+}
+
+/** 数据库统计信息 */
+export interface DBStats {
+  db_size_bytes: number
+  wal_size_bytes: number
+  metric_records: number
+  alert_history: number
+  agents: number
+  traffic_records: number
+  service_monitors: number
+  ssl_monitors: number
+  oldest_metric_time: number
+}
+
 // ==================== 通知渠道相关类型 ====================
 
 /** 通知渠道 */

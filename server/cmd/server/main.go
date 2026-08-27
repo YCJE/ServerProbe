@@ -85,6 +85,7 @@ func main() {
 	sslMonitorRepo := repository.NewSSLCertMonitorRepository(db.DB())
 	sharePageRepo := repository.NewSharePageRepository(db.DB())
 	tagRepo := repository.NewTagRepository(db.DB())
+	settingRepo := repository.NewSettingRepository(db.DB())
 
 	// 生成或加载 JWT 密钥
 	jwtSecretFile := filepath.Join(*dataDir, "jwt_secret")
@@ -123,16 +124,34 @@ func main() {
 	serviceMonitorEngine := service.NewServiceMonitorEngine(serviceMonitorRepo)
 	sslMonitorEngine := service.NewSSLMonitorEngine(sslMonitorRepo)
 
-	// 启动心跳检查
-	monitor.StartHeartbeatChecker(90 * time.Second)
+	// 加载系统设置（站点信息 + 数据加载参数），失败不阻断启动（使用默认值）
+	settingsSvc, err := service.NewSettingsService(settingRepo)
+	if err != nil {
+		log.Printf("警告: 系统设置加载失败，使用默认值: %v", err)
+		settingsSvc, _ = service.NewSettingsService(nil)
+	}
+
+	// 启动心跳检查（宽限期从设置服务动态读取，支持后台修改）
+	monitor.SetHeartbeatTimeout(time.Duration(settingsSvc.OfflineGraceSeconds()) * time.Second)
+	monitor.StartHeartbeatChecker(time.Duration(settingsSvc.OfflineGraceSeconds()) * time.Second)
+	// 设置变更时实时应用新的心跳宽限期
+	settingsSvc.OnChange(func(s *service.SettingsService) {
+		monitor.SetHeartbeatTimeout(time.Duration(s.OfflineGraceSeconds()) * time.Second)
+	})
 
 	// 启动数据聚合服务
 	aggregation.Start()
-	retentionDays := 4 // 默认保留 4 天，与 CleanupExpired 默认值一致
+	// 保留天数从设置服务动态读取（配置文件值作为默认兜底）
+	defaultRetention := 4
 	if cfg.Aggregation.RetentionDays > 0 {
-		retentionDays = cfg.Aggregation.RetentionDays
+		defaultRetention = cfg.Aggregation.RetentionDays
 	}
-	aggregation.StartCleanupTask(retentionDays)
+	aggregation.StartCleanupTask(func() int {
+		if d := settingsSvc.RetentionDays(); d > 0 {
+			return d
+		}
+		return defaultRetention
+	})
 
 	// 启动告警引擎
 	alertEngine.Start()
@@ -169,6 +188,10 @@ func main() {
 		serviceMonitorEngine,
 		sslMonitorEngine,
 		tagRepo,
+		settingRepo,
+		settingsSvc,
+		db.DB(),
+		*dataDir,
 	)
 
 	// 注册前端静态文件处理器

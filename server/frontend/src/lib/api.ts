@@ -25,6 +25,9 @@ import type {
   Tag,
   TOTPStatus,
   TOTPSetupResponse,
+  SystemSettings,
+  PublicSiteSettings,
+  DBStats,
 } from '@/types'
 
 /** API 基础路径 */
@@ -499,6 +502,47 @@ export async function getLogs(params?: {
 }
 
 // ==================== 服务监控 API (P0-3) ====================
+
+// ==================== 系统设置与数据库管理 API ====================
+
+/** 获取系统设置 */
+export async function getSettings(): Promise<SystemSettings> {
+  return request('/settings')
+}
+
+/** 更新系统设置 */
+export async function updateSettings(data: SystemSettings): Promise<{ message: string }> {
+  return request('/settings', { method: 'PUT', body: JSON.stringify(data) })
+}
+
+/** 获取公开站点设置（登录页/公开页标题公告） */
+export async function getPublicSettings(): Promise<PublicSiteSettings> {
+  return request('/public/settings')
+}
+
+/** 获取数据库统计 */
+export async function getDBStats(): Promise<DBStats> {
+  return request('/db/stats')
+}
+
+/** 下载数据库备份（浏览器直接下载） */
+export function downloadDBBackup(): void {
+  window.open(`${API_BASE}/db/backup`, '_blank')
+}
+
+/** 按天数清理历史数据 */
+export async function cleanupDBData(days: number): Promise<{
+  message: string
+  deleted_records: number
+  deleted_alerts: number
+}> {
+  return request('/db/cleanup', { method: 'POST', body: JSON.stringify({ days }) })
+}
+
+/** 压缩优化数据库 */
+export async function compactDB(): Promise<{ message: string; db_size_bytes: number }> {
+  return request('/db/compact', { method: 'POST' })
+}
 
 /** 获取服务监控列表 */
 export async function getServiceMonitors(): Promise<{ monitors: ServiceMonitor[] }> {

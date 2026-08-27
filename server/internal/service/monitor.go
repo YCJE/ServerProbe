@@ -55,6 +55,9 @@ type MonitorService struct {
 	trafficCacheAt   time.Time
 	trafficCacheDate string // "2006-01" 缓存所属月份，跨月时强制刷新
 
+	// 离线判定宽限期（后台可调，atomic 保证检查器无锁读取，存纳秒）
+	heartbeatTimeout atomic.Int64
+
 	// 批量写入缓冲器
 	batchWriter *repository.BatchWriter
 
@@ -645,8 +648,20 @@ func (m *MonitorService) GetAllAgents() []model.Agent {
 	return agents
 }
 
-// CheckHeartbeatTimeout 检查心跳超时
+// SetHeartbeatTimeout 更新离线判定宽限期（设置变更时由 SettingsService 回调触发）
+func (m *MonitorService) SetHeartbeatTimeout(d time.Duration) {
+	if d < 30*time.Second {
+		d = 30 * time.Second
+	}
+	m.heartbeatTimeout.Store(int64(d))
+	log.Printf("[Monitor] 心跳宽限期已更新: %v", d)
+}
+
+// CheckHeartbeatTimeout 检查心跳超时（宽限期从设置服务动态读取）
 func (m *MonitorService) CheckHeartbeatTimeout(timeout time.Duration) {
+	if v := m.heartbeatTimeout.Load(); v > 0 {
+		timeout = time.Duration(v)
+	}
 	m.mu.Lock()
 
 	now := time.Now()
