@@ -12,11 +12,13 @@ import OnlineTimeline, { type OnlineTimelinePoint } from '@/components/OnlineTim
 import ResourceRing from '@/components/ResourceRing'
 import DistroIcon from '@/components/DistroIcon'
 import LatencyGrid, { type LatencyGridPoint } from '@/components/LatencyGrid'
+import PingStatsTable, { type PingStatRow } from '@/components/PingStatsTable'
 import {
   formatBytes,
   formatSpeed,
   formatUptime,
   formatLoss,
+  formatRelativeTime,
   getUsageTextColor,
   getLossColor,
   parsePingData,
@@ -233,29 +235,37 @@ export default function ServerDetail() {
     return currentServer
   }, [currentServer, liveData])
 
-  // 从历史数据或实时数据中提取网络质量图表数据
+  // 统一提取 ping 数据源（实时/历史），网络质量图表与延迟统计表共用，避免重复 parsePingData
   // 拆分实时/历史分支依赖，避免历史模式下 realtimeHistory 变化触发无意义重计算
+  const pingSource = useMemo<{
+    timestamps: number[]
+    allPings: ReturnType<typeof parsePingData>[]
+  }>(() => {
+    if (isRealtimeRange(timeRange)) {
+      // 实时模式：从 realtimeHistory 提取
+      const points = realtimeHistory.slice(-120)
+      return {
+        timestamps: points.map((p) => p.timestamp),
+        allPings: points.map((p) => parsePingData(p.ping_data)),
+      }
+    }
+    // 历史模式：从 historyData 提取
+    if (!historyData || !historyData.points || historyData.points.length === 0) {
+      return { timestamps: [], allPings: [] }
+    }
+    return {
+      timestamps: historyData.points.map((p) => p.timestamp),
+      allPings: historyData.points.map((p) => parsePingData(p.ping_data)),
+    }
+    // 实时模式依赖 realtimeHistory，历史模式依赖 historyData，避免交叉触发
+  }, [timeRange, isRealtimeRange(timeRange) ? realtimeHistory : historyData])
+
+  // 从 pingSource 构建网络质量图表数据（按目标分组成时间序列）
   const networkChartData = useMemo<{
     timestamps: number[]
     series: ChartSeries[]
   }>(() => {
-    let timestamps: number[] = []
-    let allPings: ReturnType<typeof parsePingData>[] = []
-
-    if (isRealtimeRange(timeRange)) {
-      // 实时模式：从 realtimeHistory 提取
-      const points = realtimeHistory.slice(-120)
-      timestamps = points.map((p) => p.timestamp)
-      allPings = points.map((p) => parsePingData(p.ping_data))
-    } else {
-      // 历史模式：从 historyData 提取
-      if (!historyData || !historyData.points || historyData.points.length === 0) {
-        return { timestamps: [], series: [] }
-      }
-      timestamps = historyData.points.map((p) => p.timestamp)
-      allPings = historyData.points.map((p) => parsePingData(p.ping_data))
-    }
-
+    const { timestamps, allPings } = pingSource
     if (timestamps.length === 0) return { timestamps: [], series: [] }
 
     // 收集所有唯一的 ping 目标名称（保持出现顺序）
@@ -292,8 +302,50 @@ export default function ServerDetail() {
     })
 
     return { timestamps, series }
-    // 实时模式依赖 realtimeHistory，历史模式依赖 historyData，避免交叉触发
-  }, [timeRange, isRealtimeRange(timeRange) ? realtimeHistory : historyData])
+  }, [pingSource])
+
+  // 延迟统计表（NodeGet 风格）：每个探测目标在所选时间范围内的平均/最低/最高延迟、抖动、丢包率
+  const pingStats = useMemo<PingStatRow[]>(() => {
+    const { allPings } = pingSource
+    if (allPings.length === 0) return []
+
+    const targetNames: string[] = []
+    const seen = new Set<string>()
+    for (const pings of allPings) {
+      for (const ping of pings) {
+        if (!seen.has(ping.name)) {
+          seen.add(ping.name)
+          targetNames.push(ping.name)
+        }
+      }
+    }
+
+    return targetNames.map((name, i) => {
+      const samples = allPings
+        .map((pings) => pings.find((pp) => pp.name === name))
+        .filter((p): p is NonNullable<typeof p> => !!p)
+
+      const mean = (nums: number[]) =>
+        nums.length > 0 ? nums.reduce((s, v) => s + v, 0) / nums.length : null
+
+      const avgs = samples.map((p) => p.avg_latency).filter((v): v is number => v != null && v >= 0)
+      const mins = samples.map((p) => p.min_latency ?? p.avg_latency).filter((v): v is number => v != null && v >= 0)
+      const maxs = samples.map((p) => p.max_latency ?? p.avg_latency).filter((v): v is number => v != null && v >= 0)
+      const jitters = samples.map((p) => p.jitter).filter((v): v is number => v != null && v >= 0)
+      const losses = samples.map((p) => p.loss).filter((v): v is number => v != null && v >= 0)
+
+      return {
+        name,
+        color: PING_COLORS[i % PING_COLORS.length],
+        samples: samples.length,
+        avg: mean(avgs),
+        min: mins.length > 0 ? Math.min(...mins) : null,
+        max: maxs.length > 0 ? Math.max(...maxs) : null,
+        jitter: mean(jitters),
+        loss: mean(losses),
+      }
+    })
+  }, [pingSource])
 
   // Sparkline 数据：实时模式取 realtimeHistory，历史模式取 historyData
   const sparklineData = useMemo(() => {
@@ -425,6 +477,8 @@ export default function ServerDetail() {
       : displayServer.mem || 0
   const diskTotal =
     displayServer.disks?.reduce((sum, d) => sum + d.total, 0) || 0
+  const diskUsed =
+    displayServer.disks?.reduce((sum, d) => sum + d.used, 0) || 0
   const swapUsagePercent =
     displayServer.swap_total > 0
       ? ((displayServer.swap_used || 0) / displayServer.swap_total) * 100
@@ -643,11 +697,11 @@ export default function ServerDetail() {
         )}
       </aside>
 
-      {/* ============ 右侧主内容区 ============ */}
+      {/* ============ 右侧主内容区（NodeGet NodeDetail 结构） ============ */}
       <div className="min-w-0 flex-1 space-y-4">
         {/* 标题行 + 时间范围选择器（filter-pill） */}
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <h2 className="text-lg font-semibold text-foreground">网络质量</h2>
+          <h2 className="text-lg font-semibold text-foreground">监控详情</h2>
           <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-thin">
             {TIME_RANGES.map((range) => (
               <button
@@ -665,48 +719,58 @@ export default function ServerDetail() {
           </div>
         </div>
 
-        {/* 延迟格子图（置顶：VPS 用户最常看的数据，IPv4/IPv6 分组，每目标一行） */}
+        {/* 资源使用（NodeGet Resources：环形图 + 子标签，grid 横排） */}
         <div className="card-soft p-5">
-          <LatencyGrid points={cardHistory} ipVersion={4} maxCells={24} />
-          <div className="mt-3 border-t border-dashed border-border/60 pt-3">
-            <LatencyGrid points={cardHistory} ipVersion={6} maxCells={24} />
-          </div>
-        </div>
-
-        {/* 资源环形图（NodeGet 风格 grid） */}
-        <div className="card-soft p-5">
-          <h3 className="text-xs uppercase tracking-wide text-muted-foreground mb-3">资源使用</h3>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-6 sm:gap-8">
-            <ResourceRing label="CPU" value={displayServer.cpu || 0} size={ringSize} detail />
-            <ResourceRing label="内存" value={memUsagePercent} size={ringSize} detail />
-            <ResourceRing label="硬盘" value={displayServer.disk_usage || 0} size={ringSize} detail />
-            <ResourceRing label="Swap" value={swapUsagePercent} size={ringSize} detail />
-          </div>
-        </div>
-
-        {/* 网络质量图表 */}
-        <div className="card-soft p-5">
-          {historyLoading && networkChartData.timestamps.length === 0 ? (
-            <div
-              style={{ height: 360 }}
-              className="flex items-center justify-center"
-            >
-              <div className="flex flex-col items-center gap-2">
-                <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-                <span className="text-xs text-muted-foreground">加载中...</span>
-              </div>
-            </div>
-          ) : (
-            <NetworkQualityChart
-              timestamps={networkChartData.timestamps}
-              series={networkChartData.series}
-              height={360}
-              timeRange={isRealtimeRange(timeRange) ? '实时数据' : undefined}
+          <h3 className="text-xs uppercase tracking-wide text-muted-foreground mb-4">资源</h3>
+          <div className="grid grid-cols-2 gap-x-4 gap-y-6 sm:grid-cols-4 sm:gap-8">
+            <ResourceRing
+              label="CPU"
+              value={displayServer.cpu || 0}
+              size={ringSize}
+              detail
+              sub={
+                displayServer.load_1 != null
+                  ? `${(displayServer.load_1 || 0).toFixed(2)} / ${(displayServer.load_5 || 0).toFixed(2)} / ${(displayServer.load_15 || 0).toFixed(2)}`
+                  : undefined
+              }
             />
-          )}
+            <ResourceRing
+              label="内存"
+              value={memUsagePercent}
+              size={ringSize}
+              detail
+              sub={
+                displayServer.mem_total > 0
+                  ? `${formatBytes(displayServer.mem_used, 1)} / ${formatBytes(displayServer.mem_total, 1)}`
+                  : undefined
+              }
+            />
+            <ResourceRing
+              label="硬盘"
+              value={displayServer.disk_usage || 0}
+              size={ringSize}
+              detail
+              sub={
+                diskTotal > 0
+                  ? `${formatBytes(diskUsed, 1)} / ${formatBytes(diskTotal, 1)}`
+                  : undefined
+              }
+            />
+            <ResourceRing
+              label="Swap"
+              value={swapUsagePercent}
+              size={ringSize}
+              detail
+              sub={
+                displayServer.swap_total > 0
+                  ? `${formatBytes(displayServer.swap_used || 0, 1)} / ${formatBytes(displayServer.swap_total, 1)}`
+                  : '未启用'
+              }
+            />
+          </div>
         </div>
 
-        {/* 趋势图（Sparkline） */}
+        {/* 趋势（NodeGet N-Second Trend：4 张 Sparkline 卡片） */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <TrendCard
             label="CPU"
@@ -727,7 +791,7 @@ export default function ServerDetail() {
 
           <TrendCard
             label="下行"
-            value={displayServer.online ? formatSpeed(displayServer.net_rx) : '---'}
+            value={displayServer.net_rx != null ? formatSpeed(displayServer.net_rx) : '---'}
             color={SPARK_RX}
           >
             <Sparkline data={sparklineData.netRx} color={SPARK_RX} height={40} />
@@ -735,11 +799,42 @@ export default function ServerDetail() {
 
           <TrendCard
             label="上行"
-            value={displayServer.online ? formatSpeed(displayServer.net_tx) : '---'}
+            value={displayServer.net_tx != null ? formatSpeed(displayServer.net_tx) : '---'}
             color={SPARK_TX}
           >
             <Sparkline data={sparklineData.netTx} color={SPARK_TX} height={40} />
           </TrendCard>
+        </div>
+
+        {/* 延迟格子图（VPS 用户最常看的数据，IPv4/IPv6 分组，每目标一行） */}
+        <div className="card-soft p-5">
+          <LatencyGrid points={cardHistory} ipVersion={4} maxCells={24} />
+          <div className="mt-3 border-t border-dashed border-border/60 pt-3">
+            <LatencyGrid points={cardHistory} ipVersion={6} maxCells={24} />
+          </div>
+        </div>
+
+        {/* 延迟图表 + 延迟统计表（NodeGet Ping/TCP Ping：折线图 + 目标统计表格） */}
+        <div className="card-soft p-5">
+          {historyLoading && networkChartData.timestamps.length === 0 ? (
+            <div
+              style={{ height: 360 }}
+              className="flex items-center justify-center"
+            >
+              <div className="flex flex-col items-center gap-2">
+                <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                <span className="text-xs text-muted-foreground">加载中...</span>
+              </div>
+            </div>
+          ) : (
+            <NetworkQualityChart
+              timestamps={networkChartData.timestamps}
+              series={networkChartData.series}
+              height={360}
+              timeRange={isRealtimeRange(timeRange) ? '实时数据' : undefined}
+            />
+          )}
+          <PingStatsTable stats={pingStats} />
         </div>
 
         {/* 延迟质量分桶条形图（自包含虚线容器） */}
@@ -748,25 +843,63 @@ export default function ServerDetail() {
         {/* 在线状态时间线（自包含虚线容器） */}
         <OnlineTimeline points={onlineTimelinePoints} />
 
-        {/* 网络信息（KV 行） */}
+        {/* 网络与负载（NodeGet Network & Load：双列 KV） */}
         <div className="card-soft p-5">
-          <h3 className="text-xs uppercase tracking-wide text-muted-foreground mb-3">网络信息</h3>
-          <div>
-            <InfoRow
-              label="下行速率"
-              value={displayServer.online ? formatSpeed(displayServer.net_rx) : '---'}
-            />
-            <InfoRow
-              label="上行速率"
-              value={displayServer.online ? formatSpeed(displayServer.net_tx) : '---'}
-            />
-            <InfoRow label="累计下行" value={formatBytes(displayServer.total_rx || 0)} />
-            <InfoRow label="累计上行" value={formatBytes(displayServer.total_tx || 0)} />
-            <InfoRow
-              label="平均丢包"
-              value={formatLoss(avgLoss)}
-              valueClassName={getLossColor(avgLoss)}
-            />
+          <h3 className="text-xs uppercase tracking-wide text-muted-foreground mb-3">网络与负载</h3>
+          <div className="grid gap-x-10 sm:grid-cols-2">
+            <div>
+              <InfoRow
+                label="累计下行"
+                value={formatBytes(displayServer.total_rx || 0)}
+              />
+              <InfoRow
+                label="累计上行"
+                value={formatBytes(displayServer.total_tx || 0)}
+              />
+              <InfoRow
+                label="下行速率"
+                value={displayServer.net_rx != null ? formatSpeed(displayServer.net_rx) : '---'}
+              />
+              <InfoRow
+                label="上行速率"
+                value={displayServer.net_tx != null ? formatSpeed(displayServer.net_tx) : '---'}
+              />
+              <InfoRow
+                label="平均丢包"
+                value={formatLoss(avgLoss)}
+                valueClassName={getLossColor(avgLoss)}
+              />
+            </div>
+            <div>
+              <InfoRow
+                label="运行时间"
+                value={displayServer.uptime != null ? formatUptime(displayServer.uptime) : '---'}
+              />
+              <InfoRow
+                label="进程数"
+                value={displayServer.process_count != null ? String(displayServer.process_count || 0) : '---'}
+              />
+              <InfoRow
+                label="TCP / UDP 连接"
+                value={
+                  displayServer.tcp_connections != null
+                    ? `${displayServer.tcp_connections || 0} / ${displayServer.udp_connections || 0}`
+                    : '---'
+                }
+              />
+              <InfoRow
+                label="负载 (1/5/15分)"
+                value={
+                  displayServer.load_1 != null
+                    ? `${(displayServer.load_1 || 0).toFixed(2)} / ${(displayServer.load_5 || 0).toFixed(2)} / ${(displayServer.load_15 || 0).toFixed(2)}`
+                    : '---'
+                }
+              />
+              <InfoRow
+                label="数据更新"
+                value={formatRelativeTime(displayServer.last_seen || 0)}
+              />
+            </div>
           </div>
         </div>
 

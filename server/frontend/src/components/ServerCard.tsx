@@ -212,7 +212,7 @@ function ServerCard({ server, basePath = '/admin' }: ServerCardProps) {
               className="font-medium tabular-nums"
               style={{ color: rxRising ? 'hsl(var(--primary))' : '#FF9500' }}
             >
-              {server.online ? formatSpeed(animatedRx) : '---'}
+              {server.net_rx != null ? formatSpeed(animatedRx) : '---'}
             </span>
           </span>
           <span className="flex items-center gap-1 text-[10px] text-muted-foreground">

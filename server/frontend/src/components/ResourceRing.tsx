@@ -6,6 +6,8 @@ interface ResourceRingProps {
   value: number | null
   /** 标签（如 "CPU"、"内存"、"硬盘"） */
   label: string
+  /** 子标签（环形图下方的小字说明，如负载均值或 used/total） */
+  sub?: string
   /** 自定义尺寸（px），默认 80 */
   size?: number
   /** 自定义描边宽度（px），默认 6 */
@@ -49,6 +51,7 @@ function getMetricStyle(value: number | null): MetricStyle {
 function ResourceRing({
   value,
   label,
+  sub,
   size = 80,
   strokeWidth = 6,
   detail = false,
@@ -141,6 +144,10 @@ function ResourceRing({
       <span className="mt-1 text-[10px] font-semibold tracking-wide text-muted-foreground">
         {label}
       </span>
+      {/* 子标签（负载均值 / used/total） */}
+      {sub && (
+        <span className="text-[10px] tabular-nums text-muted-foreground/70">{sub}</span>
+      )}
     </div>
   )
 }

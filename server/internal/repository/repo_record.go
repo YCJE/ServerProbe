@@ -128,6 +128,19 @@ func (r *RecordRepository) GetByAgentAndTimeRange(agentID int64, startTime, endT
 	return records, nil
 }
 
+// GetLatestOnlineByAgent 获取 Agent 最新一条在线记录（Agent 离线后详情页回退数据源）
+// 过滤 offline=1 的占位记录（其指标为零值，无展示意义）
+func (r *RecordRepository) GetLatestOnlineByAgent(agentID int64) (*model.MetricRecord, error) {
+	var record model.MetricRecord
+	err := r.db.Where("agent_id = ? AND offline = 0", agentID).
+		Order("timestamp DESC").
+		First(&record).Error
+	if err != nil {
+		return nil, err
+	}
+	return &record, nil
+}
+
 // DeleteOlderThan 删除指定时间之前的数据
 func (r *RecordRepository) DeleteOlderThan(before int64) (int64, error) {
 	result := r.db.Where("timestamp < ?", before).Delete(&model.MetricRecord{})

@@ -508,6 +508,16 @@ export const useServerStore = create<ServerStoreState>((set, get) => ({
     }
 
     // 一次性更新所有状态：合并新服务器并更新已有服务器的实时数据
+    // WS 推送为全量在线列表（后端仅推送持有环形缓冲的在线 Agent）
+    // 未出现在本次推送中的 Agent 已断开：标记离线并冻结最后已知指标，
+    // 与 NodeGet 离线卡片行为一致（在线状态实时翻转，指标保留展示）
+    const pushedIds = new Set(data.map((item) => item.agent_id))
+    for (const [key, item] of newMap) {
+      if (!pushedIds.has(key) && item.online) {
+        newMap.set(key, { ...item, online: false })
+      }
+    }
+
     const allServers = [...state.servers, ...newServersToAdd]
     const updatedServers = allServers.map((server) => {
       const live = newMap.get(server.id)
@@ -616,6 +626,10 @@ export const useServerStore = create<ServerStoreState>((set, get) => ({
           ipv4: live.ipv4 ?? server.ipv4,
           ipv6: live.ipv6 ?? server.ipv6,
         }
+      }
+      // 不在本次推送且不在快照中，但列表仍标记在线 → Agent 已断开，置为离线（保留指标）
+      if (!pushedIds.has(server.id) && server.online) {
+        return { ...server, online: false }
       }
       return server
     })

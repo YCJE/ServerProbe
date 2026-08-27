@@ -283,7 +283,8 @@ func (h *ServerHandler) HandleGetServer(c *gin.Context) {
 		resp["monthly_tx"] = 0
 	}
 
-	// 获取实时数据，补充监控字段
+	// 获取实时数据，补充监控字段；Agent 离线后环形缓冲已被删除，
+	// 回退到数据库最新在线记录，保证详情页仍可展示最后已知指标（网络速率/负载等）
 	if rb := h.monitor.GetRingBuffer(id); rb != nil {
 		points := rb.Latest(1)
 		if len(points) > 0 {
@@ -311,10 +312,57 @@ func (h *ServerHandler) HandleGetServer(c *gin.Context) {
 			resp["process_count"] = p.ProcessCount
 			resp["ping_data"] = p.PingData
 			resp["timestamp"] = p.Timestamp
+		} else if rec, err := h.recordRepo.GetLatestOnlineByAgent(id); err == nil {
+			h.fillRespFromRecord(resp, rec)
 		}
+	} else if rec, err := h.recordRepo.GetLatestOnlineByAgent(id); err == nil {
+		h.fillRespFromRecord(resp, rec)
 	}
 
 	c.JSON(http.StatusOK, resp)
+}
+
+// fillRespFromRecord 用最新聚合记录回填详情响应字段（离线 Agent 的最后已知指标）
+func (h *ServerHandler) fillRespFromRecord(resp gin.H, r *model.MetricRecord) {
+	resp["cpu"] = float64(r.CPUUsage) / 10.0
+	resp["mem"] = r.MemUsage
+	resp["mem_total"] = r.MemTotal
+	resp["mem_used"] = r.MemUsed
+	resp["swap_total"] = r.SwapTotal
+	resp["swap_used"] = r.SwapUsed
+	resp["net_rx"] = uint64(max64(r.NetRx, 0))
+	resp["net_tx"] = uint64(max64(r.NetTx, 0))
+	resp["load_1"] = float64(r.Load1) / 10.0
+	resp["load_5"] = float64(r.Load5) / 10.0
+	resp["load_15"] = float64(r.Load15) / 10.0
+	resp["uptime"] = r.Uptime
+	resp["tcp_connections"] = r.TCPConns
+	resp["udp_connections"] = r.UDPConns
+	resp["process_count"] = r.ProcessCount
+	resp["timestamp"] = r.Timestamp
+
+	// 磁盘与 Ping 数据以 JSON 字符串存储，解析后回填
+	if r.DiskUsage != "" {
+		var disks []sharedmodel.DiskInfo
+		if err := json.Unmarshal([]byte(r.DiskUsage), &disks); err == nil && len(disks) > 0 {
+			resp["disk_usage"] = calcDiskUsage(disks)
+			resp["disks"] = disks
+		}
+	}
+	if r.PingData != "" {
+		var pings []sharedmodel.PingResult
+		if err := json.Unmarshal([]byte(r.PingData), &pings); err == nil {
+			resp["ping_data"] = pings
+		}
+	}
+}
+
+// max64 取两个 int64 的较大值（历史记录中速率字段为 int64，可能为 0）
+func max64(a, b int64) int64 {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 // HandleGetServerHistory 获取历史数据
@@ -649,6 +697,57 @@ func (h *ServerHandler) HandlePublicServers(c *gin.Context) {
 	monthlyTraffic := h.monitor.GetMonthlyTraffic()
 	now := time.Now()
 
+	// fillFromRecord 用最新聚合记录回填公开条目（离线 Agent 的最后已知指标，过滤敏感字段）
+	fillFromRecord := func(item *PublicServerItem, r *model.MetricRecord) {
+		item.CPU = float64(r.CPUUsage) / 10.0
+		item.Mem = r.MemUsage
+		item.MemTotal = r.MemTotal
+		item.MemUsed = r.MemUsed
+		item.SwapTotal = r.SwapTotal
+		item.SwapUsed = r.SwapUsed
+		item.NetRx = uint64(max64(r.NetRx, 0))
+		item.NetTx = uint64(max64(r.NetTx, 0))
+		item.Uptime = r.Uptime
+		item.Load1 = float64(r.Load1) / 10.0
+		item.Load5 = float64(r.Load5) / 10.0
+		item.Load15 = float64(r.Load15) / 10.0
+		item.Timestamp = r.Timestamp
+
+		if r.DiskUsage != "" {
+			var disks []sharedmodel.DiskInfo
+			if err := json.Unmarshal([]byte(r.DiskUsage), &disks); err == nil && len(disks) > 0 {
+				item.DiskUsage = calcDiskUsage(disks)
+				safeDisks := make([]PublicDiskInfo, 0, len(disks))
+				for _, d := range disks {
+					safeDisks = append(safeDisks, PublicDiskInfo{Total: d.Total, Used: d.Used})
+				}
+				item.Disks = safeDisks
+			}
+		}
+		if r.PingData != "" {
+			var pings []sharedmodel.PingResult
+			if err := json.Unmarshal([]byte(r.PingData), &pings); err == nil {
+				safePingData := make([]sharedmodel.PingResult, 0, len(pings))
+				for _, ping := range pings {
+					safePingData = append(safePingData, sharedmodel.PingResult{
+						Name:        ping.Name,
+						Method:      ping.Method,
+						AvgLatency:  ping.AvgLatency,
+						MinLatency:  ping.MinLatency,
+						MaxLatency:  ping.MaxLatency,
+						Jitter:      ping.Jitter,
+						Loss:        ping.Loss,
+						PacketsSent: ping.PacketsSent,
+						PacketsRecv: ping.PacketsRecv,
+						IPVersion:   ping.IPVersion,
+						// Target 字段不包含，防止泄露探测目标地址
+					})
+				}
+				item.PingData = safePingData
+			}
+		}
+	}
+
 	items := make([]PublicServerItem, 0, len(agents))
 	for _, agent := range agents {
 		item := PublicServerItem{
@@ -728,7 +827,11 @@ func (h *ServerHandler) HandlePublicServers(c *gin.Context) {
 					})
 				}
 				item.PingData = safePingData
+			} else if rec, err := h.recordRepo.GetLatestOnlineByAgent(agent.ID); err == nil {
+				fillFromRecord(&item, rec)
 			}
+		} else if rec, err := h.recordRepo.GetLatestOnlineByAgent(agent.ID); err == nil {
+			fillFromRecord(&item, rec)
 		}
 
 		items = append(items, item)

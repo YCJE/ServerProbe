@@ -9,7 +9,7 @@ export interface ChartSeries {
   data: (number | null)[]
   /** 当前丢包率（0-100），可选（用于图例显示最新值） */
   loss?: number
-  /** 每个时间点的丢包率（0-100），可选（用于绘制丢包率趋势图） */
+  /** 每个时间点的丢包率（0-100），可选（用于 Tooltip 展示） */
   lossData?: (number | null)[]
 }
 
@@ -22,7 +22,7 @@ interface NetworkQualityChartProps {
   timeRange?: string
 }
 
-/** Catmull-Rom 转 Bezier 平滑路径 */
+/** Catmull-Rom 转 Bezier 平滑路径（monotone 风格，同 NodeGet/Recharts 曲线） */
 function createSmoothPath(points: { x: number; y: number }[]): string {
   if (points.length < 2) return points.length === 1 ? `M ${points[0].x} ${points[0].y}` : ''
   let path = `M ${points[0].x} ${points[0].y}`
@@ -35,7 +35,7 @@ function createSmoothPath(points: { x: number; y: number }[]): string {
   return path
 }
 
-/** 将带 null 的序列切分为连续段 */
+/** 将带 null 的序列切分为连续段（离线/丢包导致的空档断开绘制） */
 function toSegments(values: (number | null)[], xFor: (i: number) => number, yFor: (v: number) => number) {
   const segs: { x: number; y: number }[][] = []
   let cur: { x: number; y: number }[] = []
@@ -57,8 +57,9 @@ function niceCeil(v: number): number {
 const fmtTime = (ts: number) => new Date(ts * 1000).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
 
 /**
- * 纯 SVG 面积折线图：延迟趋势 + 丢包率趋势（双区域布局）
- * 所有颜色使用 CSS 变量，自动跟随 Apple HIG 深色/浅色主题
+ * 延迟趋势折线图（NodeGet NodeDetail 风格）
+ * 单区平滑折线 + 悬浮十字线 Tooltip + 图例切换；丢包率在 Tooltip 与统计表中展示
+ * 所有颜色使用 CSS 变量，自动跟随深色/浅色主题
  */
 export default function NetworkQualityChart({ timestamps, series, height = 280, showGrid = true, showLegend = true, timeRange }: NetworkQualityChartProps) {
   const uid = useId()
@@ -69,9 +70,6 @@ export default function NetworkQualityChart({ timestamps, series, height = 280, 
   const [hoverIdx, setHoverIdx] = useState<number | null>(null)
   const [hoverX, setHoverX] = useState(0)
   const [hiddenSeries, setHiddenSeries] = useState<Set<string>>(() => new Set())
-
-  // 检查是否有丢包率数据（只要有 lossData 字段就显示丢包率区域，即使全为 0）
-  const hasLossData = series.some((s) => s.lossData !== undefined)
 
   // 监听容器宽度以实现响应式
   useLayoutEffect(() => {
@@ -85,16 +83,12 @@ export default function NetworkQualityChart({ timestamps, series, height = 280, 
   }, [])
 
   const n = timestamps.length
-  // 上半部分延迟图 + 下半部分丢包率图的布局
-  const lossChartH = hasLossData ? 80 : 0
-  const padL = 52, padR = 16, padT = 16, padB = 38, pointSpacing = 10
-  const gapBetween = hasLossData ? 28 : 0
-  const latencyH = Math.max(0, height - lossChartH - gapBetween)
+  const padL = 46, padR = 16, padT = 14, padB = 24, pointSpacing = 10
   const chartWidth = Math.max(containerW, (n > 1 ? (n - 1) * pointSpacing : 0) + padL + padR)
   const innerW = Math.max(0, chartWidth - padL - padR)
-  const innerH = Math.max(0, latencyH - padT - padB)
+  const innerH = Math.max(0, height - padT - padB)
 
-  // 延迟图 Y 轴
+  // Y 轴（仅统计未隐藏系列，隐藏后自动缩放）
   const yMax = useMemo(() => {
     let m = 0
     for (const s of series) {
@@ -110,30 +104,11 @@ export default function NetworkQualityChart({ timestamps, series, height = 280, 
   const yTicks = [0, 0.25, 0.5, 0.75, 1].map((t) => ({ v: t * yMax, y: yFor(t * yMax) }))
   const xStep = Math.max(1, Math.ceil(n / Math.max(2, Math.floor(innerW / 70))))
 
-  // 丢包率图区域坐标
-  const lossTop = bottomY + gapBetween
-  const lossBottom = lossTop + lossChartH - padB
-  const lossInnerH = Math.max(0, lossChartH - padB)
-  const lossYFor = (v: number) => lossTop + lossInnerH - (v / 100) * lossInnerH
-  const lossYTicks = hasLossData ? [0, 50, 100].map((t) => ({ v: t, y: lossYFor(t) })) : []
-
   const seriesRender = useMemo(() => series.map((s, idx) => {
     const segs = toSegments(s.data, xFor, yFor)
     const lines = segs.map(createSmoothPath)
-    const areas = segs.map((seg) => seg.length < 2 ? '' : `${createSmoothPath(seg)} L ${seg[seg.length - 1].x} ${bottomY} L ${seg[0].x} ${bottomY} Z`)
-    return { name: s.name, color: s.color, data: s.data, lines, areas, gradId: `nqc-grad-${uid.replace(/[^a-zA-Z0-9]/g, '')}-${idx}` }
+    return { name: s.name, color: s.color, data: s.data, lines, key: `nqc-${uid.replace(/[^a-zA-Z0-9]/g, '')}-${idx}` }
   }), [series, yMax, chartWidth, n, innerW, innerH, uid])
-
-  // 丢包率图渲染数据
-  // 注意：lossTop 和 lossBottom 必须在依赖列表中，
-  // 否则 innerH 变化时 lossYFor 闭包捕获了过期的 lossTop 值
-  const lossRender = useMemo(() => series.map((s, idx) => {
-    if (!s.lossData) return null
-    const segs = toSegments(s.lossData, xFor, lossYFor)
-    const lines = segs.map(createSmoothPath)
-    const areas = segs.map((seg) => seg.length < 2 ? '' : `${createSmoothPath(seg)} L ${seg[seg.length - 1].x} ${lossBottom} L ${seg[0].x} ${lossBottom} Z`)
-    return { name: s.name, color: s.color, data: s.lossData, lines, areas, gradId: `nqc-loss-${uid.replace(/[^a-zA-Z0-9]/g, '')}-${idx}` }
-  }), [series, chartWidth, n, innerW, lossInnerH, lossTop, lossBottom, uid])
 
   const handleMove = (e: MouseEvent<SVGRectElement>) => {
     const svg = svgRef.current
@@ -142,11 +117,9 @@ export default function NetworkQualityChart({ timestamps, series, height = 280, 
     if (rafRef.current) cancelAnimationFrame(rafRef.current)
     rafRef.current = requestAnimationFrame(() => {
       const rect = svg.getBoundingClientRect()
-      // SVG 坐标：鼠标视口坐标 → SVG 内容坐标
       const sx = (clientX - rect.left) * (chartWidth / rect.width)
       const idx = n <= 1 ? 0 : Math.round(((sx - padL) / innerW) * (n - 1))
       setHoverIdx(Math.max(0, Math.min(n - 1, idx)))
-      // Tooltip 定位：需要加上 scrollLeft，因为 tooltip 是 absolute 定位在滚动容器内部
       if (wrapRef.current) {
         const wrapRect = wrapRef.current.getBoundingClientRect()
         setHoverX(clientX - wrapRect.left + wrapRef.current.scrollLeft)
@@ -178,7 +151,7 @@ export default function NetworkQualityChart({ timestamps, series, height = 280, 
   // Tooltip clamp：考虑滚动位置，确保 tooltip 始终在可见区域内
   const scrollLeft = wrapRef.current?.scrollLeft || 0
   const tipLeft = Math.min(Math.max(hoverX, scrollLeft + 70), Math.max(scrollLeft + 70, scrollLeft + containerW - 70))
-  const visibleLossBottom = hasLossData ? lossBottom : bottomY
+  const visibleSeries = series.filter((s) => !hiddenSeries.has(s.name))
 
   // 空数据占位
   if (n === 0) {
@@ -204,7 +177,7 @@ export default function NetworkQualityChart({ timestamps, series, height = 280, 
 
   return (
     <div className="w-full">
-      {/* 图例 + 时间范围 */}
+      {/* 图例（可点击切换显隐）+ 时间范围 */}
       {(showLegend || timeRange) && (
         <div className="mb-2 flex flex-wrap items-center gap-3">
           {showLegend && series.map((s) => {
@@ -236,91 +209,47 @@ export default function NetworkQualityChart({ timestamps, series, height = 280, 
 
       <div ref={wrapRef} className="relative w-full overflow-x-auto">
         <svg ref={svgRef} width={chartWidth} height={height} viewBox={`0 0 ${chartWidth} ${height}`} preserveAspectRatio="xMidYMid meet">
-          <defs>
-            {seriesRender.map((s) => (
-              <linearGradient key={s.gradId} id={s.gradId} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor={s.color} stopOpacity={0.3} />
-                <stop offset="100%" stopColor={s.color} stopOpacity={0} />
-              </linearGradient>
-            ))}
-            {hasLossData && lossRender.map((s) => s && (
-              <linearGradient key={s.gradId} id={s.gradId} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor={s.color} stopOpacity={0.25} />
-                <stop offset="100%" stopColor={s.color} stopOpacity={0} />
-              </linearGradient>
-            ))}
-          </defs>
-
-          {/* ====== 上半部分：延迟图 ====== */}
+          {/* Y 轴网格线与刻度（Recharts 风格：纯数字刻度，无轴标题） */}
           {showGrid && yTicks.map((t, i) => (
             <line key={`g${i}`} x1={padL} y1={t.y} x2={chartWidth - padR} y2={t.y} stroke="hsl(var(--border))" strokeWidth={1} strokeDasharray="3 3" />
           ))}
-          <text x={12} y={padT + innerH / 2} fontSize={11} fill="hsl(var(--muted-foreground))" textAnchor="middle" transform={`rotate(-90 12 ${padT + innerH / 2})`}>延迟 (ms)</text>
           {yTicks.map((t, i) => (
             <text key={`y${i}`} x={padL - 6} y={t.y + 3} textAnchor="end" fontSize={10} fill="hsl(var(--muted-foreground))">{Math.round(t.v)}</text>
           ))}
+
+          {/* 平滑折线（NodeGet LineChart 风格：纯线条，数据空档处断开） */}
           {seriesRender.filter((s) => !hiddenSeries.has(s.name)).map((s) => (
-            <g key={s.name}>
-              {s.areas.map((d, i) => (d ? <path key={`a${i}`} d={d} fill={`url(#${s.gradId})`} /> : null))}
-              {s.lines.map((d, i) => (d ? <path key={`l${i}`} d={d} fill="none" stroke={s.color} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" /> : null))}
+            <g key={s.key}>
+              {s.lines.map((d, i) => (d ? <path key={`l${i}`} d={d} fill="none" stroke={s.color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" /> : null))}
             </g>
           ))}
 
-          {/* ====== 下半部分：丢包率图 ====== */}
-          {hasLossData && (
-            <>
-              <line x1={padL} y1={lossTop - gapBetween / 2} x2={chartWidth - padR} y2={lossTop - gapBetween / 2} stroke="hsl(var(--border))" strokeWidth={1} />
-              {showGrid && lossYTicks.map((t, i) => (
-                <line key={`lg${i}`} x1={padL} y1={t.y} x2={chartWidth - padR} y2={t.y} stroke="hsl(var(--border))" strokeWidth={1} strokeDasharray="3 3" />
-              ))}
-              <text x={12} y={lossTop + lossInnerH / 2} fontSize={11} fill="hsl(var(--muted-foreground))" textAnchor="middle" transform={`rotate(-90 12 ${lossTop + lossInnerH / 2})`}>丢包率 (%)</text>
-              {lossYTicks.map((t, i) => (
-                <text key={`ly${i}`} x={padL - 6} y={t.y + 3} textAnchor="end" fontSize={10} fill="hsl(var(--muted-foreground))">{t.v}%</text>
-              ))}
-              {lossRender.filter((s) => s && !hiddenSeries.has(s.name)).map((s) => s && (
-                <g key={`loss-${s.name}`}>
-                  {s.areas.map((d, i) => (d ? <path key={`la${i}`} d={d} fill={`url(#${s.gradId})`} /> : null))}
-                  {s.lines.map((d, i) => (d ? <path key={`ll${i}`} d={d} fill="none" stroke={s.color} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" /> : null))}
-                </g>
-              ))}
-            </>
-          )}
-
           {/* X 轴时间标签 */}
           {timestamps.map((ts, i) => i % xStep === 0 ? (
-            <text key={`x${i}`} x={xFor(i)} y={visibleLossBottom + 14} textAnchor="middle" fontSize={10} fill="hsl(var(--muted-foreground))">{fmtTime(ts)}</text>
+            <text key={`x${i}`} x={xFor(i)} y={bottomY + 14} textAnchor="middle" fontSize={10} fill="hsl(var(--muted-foreground))">{fmtTime(ts)}</text>
           ) : null)}
-          <text x={padL + innerW / 2} y={height - 4} textAnchor="middle" fontSize={11} fill="hsl(var(--muted-foreground))">时间</text>
 
-          {/* 悬停垂直辅助线 + 数据点 */}
+          {/* 悬浮十字线 + 数据点 */}
           {hoverIdx !== null && (
             <>
-              <line x1={xFor(hoverIdx)} y1={padT} x2={xFor(hoverIdx)} y2={visibleLossBottom} stroke="hsl(var(--muted-foreground) / 0.3)" strokeWidth={1} strokeDasharray="3 3" />
-              {/* 延迟图数据点 */}
+              <line x1={xFor(hoverIdx)} y1={padT} x2={xFor(hoverIdx)} y2={bottomY} stroke="hsl(var(--muted-foreground) / 0.3)" strokeWidth={1} strokeDasharray="3 3" />
               {seriesRender.filter((s) => !hiddenSeries.has(s.name)).map((s) => {
                 const v = s.data[hoverIdx]
                 if (v === null || v === undefined || Number.isNaN(v)) return null
-                return <circle key={`hp-${s.name}`} cx={xFor(hoverIdx)} cy={yFor(v)} r={3} fill={s.color} stroke="hsl(var(--card))" strokeWidth={1} />
-              })}
-              {/* 丢包率图数据点 */}
-              {hasLossData && lossRender.filter((s) => s && !hiddenSeries.has(s.name)).map((s) => {
-                if (!s) return null
-                const v = s.data[hoverIdx]
-                if (v === null || v === undefined || Number.isNaN(v)) return null
-                return <circle key={`hl-${s.name}`} cx={xFor(hoverIdx)} cy={lossYFor(v)} r={3} fill={s.color} stroke="hsl(var(--card))" strokeWidth={1} />
+                return <circle key={`hp-${s.key}`} cx={xFor(hoverIdx)} cy={yFor(v)} r={3.5} fill={s.color} stroke="hsl(var(--card))" strokeWidth={1.5} />
               })}
             </>
           )}
 
           {/* 鼠标交互区域 */}
-          <rect x={padL} y={padT} width={Math.max(0, innerW)} height={Math.max(0, visibleLossBottom - padT)} fill="transparent" onMouseMove={handleMove} onMouseLeave={() => { if (rafRef.current) cancelAnimationFrame(rafRef.current); setHoverIdx(null) }} />
+          <rect x={padL} y={padT} width={Math.max(0, innerW)} height={Math.max(0, bottomY - padT)} fill="transparent" onMouseMove={handleMove} onMouseLeave={() => { if (rafRef.current) cancelAnimationFrame(rafRef.current); setHoverIdx(null) }} />
         </svg>
 
-        {/* Tooltip — 使用 Tailwind CSS 类自动跟随主题 */}
+        {/* Tooltip — 时间 + 各目标延迟/丢包（Tailwind CSS 类自动跟随主题） */}
         {hoverIdx !== null && hoverTs != null && (
           <div className="pointer-events-none absolute top-1 z-10 rounded-md border border-border bg-card px-2.5 py-1.5 text-xs shadow-lg" style={{ left: tipLeft, transform: 'translateX(-50%)' }}>
             <div className="mb-1 font-medium text-foreground">{fmtTime(hoverTs)}</div>
-            {series.filter((s) => !hiddenSeries.has(s.name)).map((s) => {
+            {visibleSeries.map((s) => {
               const v = s.data[hoverIdx]
               const lossV = s.lossData ? s.lossData[hoverIdx] : s.loss
               const hasLoss = lossV !== undefined && lossV !== null && lossV > 0

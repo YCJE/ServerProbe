@@ -71,7 +71,7 @@ export default function Layout() {
   const disconnectWebSocket = useServerStore((s) => s.disconnectWebSocket)
   const isAuthenticated = useServerStore((s) => s.isAuthenticated)
   const servers = useServerStore((s) => s.servers)
-  const { siteTitle } = useSiteSettings()
+  const { siteTitle, announcement, customFooter } = useSiteSettings()
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
   const hasDisconnectedRef = useRef(false)
@@ -263,6 +263,18 @@ export default function Layout() {
           </div>
         </header>
 
+        {/* 公告横幅（后台"站点设置"中配置，与公开页同步） */}
+        {announcement && (
+          <div className="border-b border-border bg-primary/5">
+            <div className="mx-auto flex max-w-[1400px] items-start gap-2 px-4 py-2 text-xs text-foreground/80 sm:px-6">
+              <svg className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5.9h.01M4.5 3h15a1.5 1.5 0 011.5 1.5v12A1.5 1.5 0 0119.5 18h-15A1.5 1.5 0 013 16.5v-12A1.5 1.5 0 014.5 3zM11 9v5" />
+              </svg>
+              <p className="whitespace-pre-wrap leading-relaxed">{announcement}</p>
+            </div>
+          </div>
+        )}
+
         {/* 主内容 */}
         <main className="flex-1 p-4 sm:p-6">
           <div className="mx-auto max-w-[1400px] animate-fade-in">
@@ -270,9 +282,9 @@ export default function Layout() {
           </div>
         </main>
 
-        {/* 页脚 */}
+        {/* 页脚（后台"站点设置"自定义页脚，未配置时显示默认） */}
         <footer className="border-t border-border px-6 py-4 text-center text-xs text-muted-foreground">
-          纯只读安全探针 v1.0.0
+          {customFooter || '纯只读安全探针 v1.0.0'}
         </footer>
       </div>
 
