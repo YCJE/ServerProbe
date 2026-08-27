@@ -10,7 +10,7 @@ import {
 import { useSiteSettingsStore } from '@/store/useSiteSettingsStore'
 import type { SystemSettings, DBStats } from '@/types'
 
-/** 历史范围选项 */
+/** 历史范围选项（≥7d 长范围走小时聚合层数据） */
 const HISTORY_RANGE_OPTIONS = [
   { value: '1h', label: '1 小时' },
   { value: '6h', label: '6 小时' },
@@ -18,6 +18,10 @@ const HISTORY_RANGE_OPTIONS = [
   { value: '1d', label: '1 天' },
   { value: '2d', label: '2 天' },
   { value: '3d', label: '3 天' },
+  { value: '7d', label: '7 天（小时粒度）' },
+  { value: '30d', label: '30 天（小时粒度）' },
+  { value: '90d', label: '90 天（小时粒度）' },
+  { value: '1y', label: '1 年（小时粒度）' },
 ]
 
 const DEFAULT_SETTINGS: SystemSettings = {
@@ -28,6 +32,7 @@ const DEFAULT_SETTINGS: SystemSettings = {
   default_history_range: '1h',
   offline_grace_seconds: 90,
   retention_days: 4,
+  retention_days_hourly: 730,
   max_chart_points: 800,
 }
 
@@ -138,7 +143,7 @@ export default function SettingsPage() {
     setDbError('')
     try {
       const res = await cleanupDBData(cleanupDays)
-      setDbMsg(`${res.message}：删除 ${formatNumber(res.deleted_records)} 条指标记录、${formatNumber(res.deleted_alerts)} 条告警历史`)
+      setDbMsg(`${res.message}：删除 ${formatNumber(res.deleted_records)} 条 5 分钟记录、${formatNumber(res.deleted_hourly)} 条小时聚合记录、${formatNumber(res.deleted_alerts)} 条告警历史`)
       await loadDBStats()
     } catch (err) {
       setDbError(err instanceof Error ? err.message : '清理失败')
@@ -264,7 +269,7 @@ export default function SettingsPage() {
               onChange={(e) => setSettings({ ...settings, offline_grace_seconds: Number(e.target.value) || 90 })}
             />
           </Field>
-          <Field label="数据保留天数" hint="历史指标自动清理周期（1-3650 天）">
+          <Field label="数据保留天数（5 分钟层）" hint="短范围（≤3d）图表数据的自动清理周期（1-3650 天）">
             <input
               type="number"
               className="input-base font-mono"
@@ -272,6 +277,16 @@ export default function SettingsPage() {
               max={3650}
               value={settings.retention_days}
               onChange={(e) => setSettings({ ...settings, retention_days: Number(e.target.value) || 4 })}
+            />
+          </Field>
+          <Field label="数据保留天数（小时层）" hint="7d/30d/90d/1y 长范围查询的小时聚合数据保留期（30-3650 天）">
+            <input
+              type="number"
+              className="input-base font-mono"
+              min={30}
+              max={3650}
+              value={settings.retention_days_hourly}
+              onChange={(e) => setSettings({ ...settings, retention_days_hourly: Number(e.target.value) || 730 })}
             />
           </Field>
           <Field label="图表最大点数" hint="单次加载的数据点上限，超出自动抽稀（100-2000）">
@@ -297,12 +312,12 @@ export default function SettingsPage() {
           {[
             { label: '数据库大小', value: dbLoading ? '…' : formatBytes(dbStats?.db_size_bytes || 0) },
             { label: 'WAL 大小', value: dbLoading ? '…' : formatBytes(dbStats?.wal_size_bytes || 0) },
-            { label: '指标记录', value: dbLoading ? '…' : formatNumber(dbStats?.metric_records || 0) },
+            { label: '指标记录（5 分钟）', value: dbLoading ? '…' : formatNumber(dbStats?.metric_records || 0) },
+            { label: '指标记录（小时聚合）', value: dbLoading ? '…' : formatNumber(dbStats?.metric_records_hourly || 0) },
             { label: '告警历史', value: dbLoading ? '…' : formatNumber(dbStats?.alert_history || 0) },
             { label: 'Agent 数', value: dbLoading ? '…' : formatNumber(dbStats?.agents || 0) },
             { label: '流量记录', value: dbLoading ? '…' : formatNumber(dbStats?.traffic_records || 0) },
             { label: '服务监控', value: dbLoading ? '…' : formatNumber(dbStats?.service_monitors || 0) },
-            { label: 'SSL 监控', value: dbLoading ? '…' : formatNumber(dbStats?.ssl_monitors || 0) },
           ].map((item) => (
             <div key={item.label} className="rounded-md border border-border bg-muted/40 p-3">
               <p className="text-[11px] text-muted-foreground">{item.label}</p>

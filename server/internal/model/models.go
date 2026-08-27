@@ -220,6 +220,51 @@ type MetricRecord struct {
 // TableName 指定表名
 func (MetricRecord) TableName() string { return "metric_records" }
 
+// MetricRecordHourly 小时级聚合记录
+// 由聚合服务从 metric_records（5 分钟层）滚动聚合生成，用于 7d/30d/90d/1y 长范围查询。
+// timestamp 对齐整点；upsert 冲突键 (agent_id, timestamp)，整小时由 12 条 5 分钟行
+// 全量重算后覆盖写入，任意时刻重跑幂等。
+// ×10 整数缩放规则与 metric_records 一致（写入 ×10，读取 /10.0）。
+type MetricRecordHourly struct {
+	ID        int64  `gorm:"primaryKey;autoIncrement" json:"id"`
+	AgentID   int64  `gorm:"uniqueIndex:idx_hourly_agent_time,priority:1;not null" json:"agent_id"`
+	Timestamp int64  `gorm:"uniqueIndex:idx_hourly_agent_time,priority:2;not null" json:"timestamp"`
+	// 均值列
+	CPUUsage int     `gorm:"type:integer" json:"cpu_usage"` // ×10
+	MemUsage float64 `json:"mem_usage"`
+	Load1    int     `gorm:"column:load_1;type:integer" json:"load_1"` // ×10
+	Load5    int     `gorm:"column:load_5;type:integer" json:"load_5"` // ×10
+	Load15   int     `gorm:"column:load_15;type:integer" json:"load_15"` // ×10
+	NetRx    int64   `json:"net_rx"`
+	NetTx    int64   `json:"net_tx"`
+	// 极值列（小时内 5 分钟记录的最小/最大值，捕获被均值抹平的尖峰）
+	CPUMin   int     `gorm:"column:cpu_min;type:integer" json:"cpu_min"` // ×10
+	CPUMax   int     `gorm:"column:cpu_max;type:integer" json:"cpu_max"` // ×10
+	MemMin   float64 `gorm:"column:mem_min" json:"mem_min"`
+	MemMax   float64 `gorm:"column:mem_max" json:"mem_max"`
+	Load1Max int     `gorm:"column:load_1_max;type:integer" json:"load_1_max"` // ×10
+	NetRxMax int64   `gorm:"column:net_rx_max" json:"net_rx_max"`
+	NetTxMax int64   `gorm:"column:net_tx_max" json:"net_tx_max"`
+	// 固定值列（取小时内最后一条在线记录，与 5 分钟层口径一致）
+	MemTotal     uint64 `json:"mem_total"`
+	MemUsed      uint64 `json:"mem_used"`
+	SwapTotal    uint64 `json:"swap_total"`
+	SwapUsed     uint64 `json:"swap_used"`
+	DiskUsage    string `json:"disk_usage"`
+	Uptime       uint64 `json:"uptime"`
+	ProcessCount int    `json:"process_count"`
+	TCPConns     int    `gorm:"column:tcp_connections" json:"tcp_connections"`
+	UDPConns     int    `gorm:"column:udp_connections" json:"udp_connections"`
+	PingData     string `json:"ping_data"`
+	// 在线状态与样本统计
+	Offline        int `gorm:"default:0" json:"offline"` // 多数规则：offline_samples >= 总样本/2 → 1
+	SampleCount    int `json:"sample_count"`             // 该小时实际存在的 5 分钟记录总数
+	OfflineSamples int `json:"offline_samples"`         // 其中离线占位行数
+}
+
+// TableName 指定表名
+func (MetricRecordHourly) TableName() string { return "metric_records_hourly" }
+
 // Admin 管理员账户（GORM 模型）
 type Admin struct {
 	ID           int64     `gorm:"primaryKey;autoIncrement" json:"id"`

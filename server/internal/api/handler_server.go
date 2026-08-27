@@ -17,7 +17,7 @@ import (
 
 var startTime = time.Now()
 
-// historyPoint 历史数据点（统一响应格式，字段名与 model.MetricRecord 的 JSON tag 一致）
+// historyPoint 历史数据点（统一响应格式，短范围来自 5 分钟层、长范围来自小时聚合层）
 type historyPoint struct {
 	Timestamp    int64                    `json:"timestamp"`
 	CPUUsage     float64                  `json:"cpu_usage"`
@@ -41,6 +41,147 @@ type historyPoint struct {
 	PingData     []sharedmodel.PingResult `json:"ping_data"`
 	// Online 在线状态（1=在线, 0=离线占位记录），用于在线率时间线
 	Online int `json:"online"`
+	// 极值字段：小时聚合层返回该小时真实 min/max；5 分钟层无极值语义，填充均值本身
+	// （min == max 时区间带退化为折线，前端无需区分数据源）
+	CPUMin   float64 `json:"cpu_min"`
+	CPUMax   float64 `json:"cpu_max"`
+	MemMin   float64 `json:"mem_min"`
+	MemMax   float64 `json:"mem_max"`
+	Load1Max float64 `json:"load_1_max"`
+	NetRxMax uint64  `json:"net_rx_max"`
+	NetTxMax uint64  `json:"net_tx_max"`
+}
+
+// historyRangeSpec 历史范围解析结果
+type historyRangeSpec struct {
+	start    int64  // 查询起始时间戳
+	hourly   bool   // 是否路由到小时聚合表（≥7d 长范围）
+	interval string // 数据粒度标识（"5m"/"1h"），响应中透传给前端
+}
+
+// parseHistoryRange 解析 range 参数为查询起始时间与数据源路由
+// 显式映射不做动态推断；未知值回退 1h（与前端默认一致）
+func parseHistoryRange(rangeStr string, now int64) historyRangeSpec {
+	switch rangeStr {
+	case "6h":
+		return historyRangeSpec{now - 6*3600, false, "5m"}
+	case "12h":
+		return historyRangeSpec{now - 12*3600, false, "5m"}
+	case "1d":
+		return historyRangeSpec{now - 24*3600, false, "5m"}
+	case "2d":
+		return historyRangeSpec{now - 2*24*3600, false, "5m"}
+	case "3d":
+		return historyRangeSpec{now - 3*24*3600, false, "5m"}
+	case "7d":
+		return historyRangeSpec{now - 7*24*3600, true, "1h"}
+	case "30d":
+		return historyRangeSpec{now - 30*24*3600, true, "1h"}
+	case "90d":
+		return historyRangeSpec{now - 90*24*3600, true, "1h"}
+	case "1y":
+		return historyRangeSpec{now - 365*24*3600, true, "1h"}
+	default: // "1h" 及未知值
+		return historyRangeSpec{now - 3600, false, "5m"}
+	}
+}
+
+// downsampleHistory 均匀抽稀（保留首尾点），防止大范围查询返回过多数据导致前端渲染卡顿
+func downsampleHistory[T any](records []T, maxPoints int) []T {
+	if len(records) <= maxPoints {
+		return records
+	}
+	sampled := make([]T, 0, maxPoints+2)
+	step := float64(len(records)-1) / float64(maxPoints-1)
+	lastIdx := -1
+	for i := 0; i < maxPoints; i++ {
+		idx := int(math.Round(float64(i) * step))
+		if idx > lastIdx {
+			sampled = append(sampled, records[idx])
+			lastIdx = idx
+		}
+	}
+	if lastIdx < len(records)-1 {
+		sampled = append(sampled, records[len(records)-1])
+	}
+	return sampled
+}
+
+// metricRecordToHistoryPoint 将 5 分钟层记录转换为统一历史点
+// P3: CPUUsage / Load 字段以 ×10 整数存储，查询时除以 10.0 还原为浮点数
+func metricRecordToHistoryPoint(r *model.MetricRecord) historyPoint {
+	hp := historyPoint{
+		Timestamp:    r.Timestamp,
+		CPUUsage:     float64(r.CPUUsage) / 10.0,
+		CPUMin:       float64(r.CPUUsage) / 10.0,
+		CPUMax:       float64(r.CPUUsage) / 10.0,
+		MemUsage:     r.MemUsage,
+		MemMin:       r.MemUsage,
+		MemMax:       r.MemUsage,
+		MemTotal:     r.MemTotal,
+		MemUsed:      r.MemUsed,
+		SwapTotal:    r.SwapTotal,
+		SwapUsed:     r.SwapUsed,
+		DiskUsage:    r.DiskUsage,
+		NetRx:        uint64(r.NetRx),
+		NetTx:        uint64(r.NetTx),
+		NetRxMax:     uint64(r.NetRx),
+		NetTxMax:     uint64(r.NetTx),
+		TCPConns:     r.TCPConns,
+		UDPConns:     r.UDPConns,
+		Load1:        float64(r.Load1) / 10.0,
+		Load5:        float64(r.Load5) / 10.0,
+		Load15:       float64(r.Load15) / 10.0,
+		Load1Max:     float64(r.Load1) / 10.0,
+		Uptime:       r.Uptime,
+		ProcessCount: r.ProcessCount,
+		Online:       1 - r.Offline,
+	}
+	if r.PingData != "" {
+		var pings []sharedmodel.PingResult
+		if err := json.Unmarshal([]byte(r.PingData), &pings); err == nil {
+			hp.PingData = pings
+		}
+	}
+	return hp
+}
+
+// hourlyRecordToHistoryPoint 将小时聚合记录转换为统一历史点（含真实极值）
+func hourlyRecordToHistoryPoint(r *model.MetricRecordHourly) historyPoint {
+	hp := historyPoint{
+		Timestamp:    r.Timestamp,
+		CPUUsage:     float64(r.CPUUsage) / 10.0,
+		CPUMin:       float64(r.CPUMin) / 10.0,
+		CPUMax:       float64(r.CPUMax) / 10.0,
+		MemUsage:     r.MemUsage,
+		MemMin:       r.MemMin,
+		MemMax:       r.MemMax,
+		MemTotal:     r.MemTotal,
+		MemUsed:      r.MemUsed,
+		SwapTotal:    r.SwapTotal,
+		SwapUsed:     r.SwapUsed,
+		DiskUsage:    r.DiskUsage,
+		NetRx:        uint64(max64(r.NetRx, 0)),
+		NetTx:        uint64(max64(r.NetTx, 0)),
+		NetRxMax:     uint64(max64(r.NetRxMax, 0)),
+		NetTxMax:     uint64(max64(r.NetTxMax, 0)),
+		TCPConns:     r.TCPConns,
+		UDPConns:     r.UDPConns,
+		Load1:        float64(r.Load1) / 10.0,
+		Load5:        float64(r.Load5) / 10.0,
+		Load15:       float64(r.Load15) / 10.0,
+		Load1Max:     float64(r.Load1Max) / 10.0,
+		Uptime:       r.Uptime,
+		ProcessCount: r.ProcessCount,
+		Online:       1 - r.Offline,
+	}
+	if r.PingData != "" {
+		var pings []sharedmodel.PingResult
+		if err := json.Unmarshal([]byte(r.PingData), &pings); err == nil {
+			hp.PingData = pings
+		}
+	}
+	return hp
 }
 
 // ServerHandler 服务器信息处理器
@@ -48,15 +189,17 @@ type ServerHandler struct {
 	agentRepo  *repository.AgentRepository
 	monitor    *service.MonitorService
 	recordRepo *repository.RecordRepository
-	settings   *service.SettingsService // 可选：图表最大点数等运行时设置
+	hourlyRepo *repository.HourlyRepository // 小时聚合层（≥7d 长范围查询）
+	settings   *service.SettingsService     // 可选：图表最大点数等运行时设置
 }
 
 // NewServerHandler 创建服务器处理器
-func NewServerHandler(agentRepo *repository.AgentRepository, monitor *service.MonitorService, recordRepo *repository.RecordRepository) *ServerHandler {
+func NewServerHandler(agentRepo *repository.AgentRepository, monitor *service.MonitorService, recordRepo *repository.RecordRepository, hourlyRepo *repository.HourlyRepository) *ServerHandler {
 	return &ServerHandler{
 		agentRepo:  agentRepo,
 		monitor:    monitor,
 		recordRepo: recordRepo,
+		hourlyRepo: hourlyRepo,
 	}
 }
 
@@ -366,7 +509,8 @@ func max64(a, b int64) int64 {
 }
 
 // HandleGetServerHistory 获取历史数据
-// 路由: GET /api/v1/servers/:id/history?range=1h|6h|12h|1d|2d
+// 路由: GET /api/v1/servers/:id/history?range=1h|6h|12h|1d|2d|3d|7d|30d|90d|1y
+// 短范围（≤3d）读 5 分钟层 metric_records；长范围（≥7d）读小时聚合层 metric_records_hourly
 func (h *ServerHandler) HandleGetServerHistory(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -374,94 +518,50 @@ func (h *ServerHandler) HandleGetServerHistory(c *gin.Context) {
 		return
 	}
 
-	rangeStr := c.DefaultQuery("range", "1h")
-
-	var startTime int64
-	now := time.Now().Unix()
-
-	switch rangeStr {
-	case "1h":
-		startTime = now - 3600
-	case "6h":
-		startTime = now - 6*3600
-	case "12h":
-		startTime = now - 12*3600
-	case "1d":
-		startTime = now - 24*3600
-	case "2d":
-		startTime = now - 2*24*3600
-	case "3d":
-		startTime = now - 3*24*3600
-	default:
-		startTime = now - 3600
-	}
-
-	// 所有历史范围均从 SQLite 读取（聚合数据，每5分钟一条，数据稳定可靠）
-	// RingBuffer 仅用于实时模式（前端 WebSocket 推送）
-	records, err := h.recordRepo.GetByAgentAndTimeRange(id, startTime, now)
+	spec := parseHistoryRange(c.DefaultQuery("range", "1h"), time.Now().Unix())
+	points, err := h.loadHistoryPoints(id, spec)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取历史数据失败"})
 		return
 	}
 
-	// 降采样保护：点数超过上限时均匀抽稀，防止大范围查询返回过多数据导致前端渲染卡顿
-	// （保留首尾点，确保时间边界准确；离线占位记录同样参与抽稀）
-	maxHistoryPoints := h.maxChartPoints()
-	if len(records) > maxHistoryPoints {
-		sampled := make([]model.MetricRecord, 0, maxHistoryPoints+2)
-		step := float64(len(records)-1) / float64(maxHistoryPoints-1)
-		lastIdx := -1
-		for i := 0; i < maxHistoryPoints; i++ {
-			idx := int(math.Round(float64(i) * step))
-			if idx > lastIdx {
-				sampled = append(sampled, records[idx])
-				lastIdx = idx
-			}
-		}
-		if lastIdx < len(records)-1 {
-			sampled = append(sampled, records[len(records)-1])
-		}
-		records = sampled
-	}
-
-	// 将 MetricRecord 转换为统一格式 (ping_data 从 string 解析为数组)
-	// P3: CPUUsage / Load 字段以 ×10 整数存储，查询时除以 10.0 还原为浮点数
-	historyPoints := make([]historyPoint, 0, len(records))
-	for _, r := range records {
-		hp := historyPoint{
-			Timestamp:    r.Timestamp,
-			CPUUsage:     float64(r.CPUUsage) / 10.0,
-			MemUsage:     r.MemUsage,
-			MemTotal:     r.MemTotal,
-			MemUsed:      r.MemUsed,
-			SwapTotal:    r.SwapTotal,
-			SwapUsed:     r.SwapUsed,
-			DiskUsage:    r.DiskUsage,
-			NetRx:        uint64(r.NetRx),
-			NetTx:        uint64(r.NetTx),
-			TCPConns:     r.TCPConns,
-			UDPConns:     r.UDPConns,
-			Load1:        float64(r.Load1) / 10.0,
-			Load5:        float64(r.Load5) / 10.0,
-			Load15:       float64(r.Load15) / 10.0,
-			Uptime:       r.Uptime,
-			ProcessCount: r.ProcessCount,
-			Online:       1 - r.Offline,
-		}
-		// 解析 ping_data JSON 字符串为数组
-		if r.PingData != "" {
-			var pings []sharedmodel.PingResult
-			if err := json.Unmarshal([]byte(r.PingData), &pings); err == nil {
-				hp.PingData = pings
-			}
-		}
-		historyPoints = append(historyPoints, hp)
-	}
-
 	c.JSON(http.StatusOK, gin.H{
-		"source": "sqlite",
-		"points": historyPoints,
+		"source":   "sqlite",
+		"interval": spec.interval,
+		"points":   points,
 	})
+}
+
+// loadHistoryPoints 按范围路由查询两层存储，统一转换为历史点格式（含降采样）
+func (h *ServerHandler) loadHistoryPoints(id int64, spec historyRangeSpec) ([]historyPoint, error) {
+	now := time.Now().Unix()
+
+	if spec.hourly {
+		if h.hourlyRepo == nil {
+			return []historyPoint{}, nil
+		}
+		records, err := h.hourlyRepo.GetByAgentAndTimeRange(id, spec.start, now)
+		if err != nil {
+			return nil, err
+		}
+		records = downsampleHistory(records, h.maxChartPoints())
+		points := make([]historyPoint, 0, len(records))
+		for i := range records {
+			points = append(points, hourlyRecordToHistoryPoint(&records[i]))
+		}
+		return points, nil
+	}
+
+	records, err := h.recordRepo.GetByAgentAndTimeRange(id, spec.start, now)
+	if err != nil {
+		return nil, err
+	}
+	records = downsampleHistory(records, h.maxChartPoints())
+	points := make([]historyPoint, 0, len(records))
+	for i := range records {
+		points = append(points, metricRecordToHistoryPoint(&records[i]))
+	}
+	return points, nil
 }
 
 // publicHistoryPoint 公开历史数据点（过滤敏感字段）
@@ -482,6 +582,14 @@ type publicHistoryPoint struct {
 	Uptime    uint64                   `json:"uptime"`
 	PingData  []sharedmodel.PingResult `json:"ping_data"`
 	Online    int                      `json:"online"`
+	// 极值字段（非敏感，长范围小时聚合层展示峰值用）
+	CPUMin   float64 `json:"cpu_min"`
+	CPUMax   float64 `json:"cpu_max"`
+	MemMin   float64 `json:"mem_min"`
+	MemMax   float64 `json:"mem_max"`
+	Load1Max float64 `json:"load_1_max"`
+	NetRxMax uint64  `json:"net_rx_max"`
+	NetTxMax uint64  `json:"net_tx_max"`
 }
 
 // toPublicHistoryPoint 将 historyPoint 转换为公开版本，过滤敏感字段
@@ -490,7 +598,11 @@ func toPublicHistoryPoint(hp historyPoint) publicHistoryPoint {
 	php := publicHistoryPoint{
 		Timestamp: hp.Timestamp,
 		CPUUsage:  hp.CPUUsage,
+		CPUMin:    hp.CPUMin,
+		CPUMax:    hp.CPUMax,
 		MemUsage:  hp.MemUsage,
+		MemMin:    hp.MemMin,
+		MemMax:    hp.MemMax,
 		MemTotal:  hp.MemTotal,
 		MemUsed:   hp.MemUsed,
 		SwapTotal: hp.SwapTotal,
@@ -501,6 +613,9 @@ func toPublicHistoryPoint(hp historyPoint) publicHistoryPoint {
 		Load1:     hp.Load1,
 		Load5:     hp.Load5,
 		Load15:    hp.Load15,
+		Load1Max:  hp.Load1Max,
+		NetRxMax:  hp.NetRxMax,
+		NetTxMax:  hp.NetTxMax,
 		Uptime:    hp.Uptime,
 		Online:    hp.Online,
 	}
@@ -537,7 +652,8 @@ func toPublicHistoryPoint(hp historyPoint) publicHistoryPoint {
 }
 
 // HandlePublicServerHistory 公开历史数据 (无需登录，过滤敏感字段)
-// 路由: GET /api/v1/public/servers/:id/history?range=1h|6h|12h|1d|2d
+// 路由: GET /api/v1/public/servers/:id/history?range=1h|6h|12h|1d|2d|3d|7d|30d|90d|1y
+// 与管理端相同的双表路由（≥7d 走小时聚合层），仅过滤敏感字段
 func (h *ServerHandler) HandlePublicServerHistory(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -545,87 +661,22 @@ func (h *ServerHandler) HandlePublicServerHistory(c *gin.Context) {
 		return
 	}
 
-	rangeStr := c.DefaultQuery("range", "1h")
-
-	var startTime int64
-	now := time.Now().Unix()
-
-	switch rangeStr {
-	case "1h":
-		startTime = now - 3600
-	case "6h":
-		startTime = now - 6*3600
-	case "12h":
-		startTime = now - 12*3600
-	case "1d":
-		startTime = now - 24*3600
-	case "2d":
-		startTime = now - 2*24*3600
-	case "3d":
-		startTime = now - 3*24*3600
-	default:
-		startTime = now - 3600
-	}
-
-	// 所有历史范围均从 SQLite 读取（聚合数据，每5分钟一条，数据稳定可靠）
-	records, err := h.recordRepo.GetByAgentAndTimeRange(id, startTime, now)
+	spec := parseHistoryRange(c.DefaultQuery("range", "1h"), time.Now().Unix())
+	points, err := h.loadHistoryPoints(id, spec)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取历史数据失败"})
 		return
 	}
 
-	// 降采样保护：与管理端一致，防止点数过多导致公开页渲染卡顿
-	const maxHistoryPoints = 800
-	if len(records) > maxHistoryPoints {
-		sampled := make([]model.MetricRecord, 0, maxHistoryPoints+2)
-		step := float64(len(records)-1) / float64(maxHistoryPoints-1)
-		lastIdx := -1
-		for i := 0; i < maxHistoryPoints; i++ {
-			idx := int(math.Round(float64(i) * step))
-			if idx > lastIdx {
-				sampled = append(sampled, records[idx])
-				lastIdx = idx
-			}
-		}
-		if lastIdx < len(records)-1 {
-			sampled = append(sampled, records[len(records)-1])
-		}
-		records = sampled
-	}
-
-	publicPoints := make([]publicHistoryPoint, 0, len(records))
-	for _, r := range records {
-		// P3: CPUUsage / Load 字段以 ×10 整数存储，查询时除以 10.0 还原为浮点数
-		hp := historyPoint{
-			Timestamp: r.Timestamp,
-			CPUUsage:  float64(r.CPUUsage) / 10.0,
-			MemUsage:  r.MemUsage,
-			MemTotal:  r.MemTotal,
-			MemUsed:   r.MemUsed,
-			SwapTotal: r.SwapTotal,
-			SwapUsed:  r.SwapUsed,
-			DiskUsage: r.DiskUsage,
-			NetRx:     uint64(r.NetRx),
-			NetTx:     uint64(r.NetTx),
-			Load1:     float64(r.Load1) / 10.0,
-			Load5:     float64(r.Load5) / 10.0,
-			Load15:    float64(r.Load15) / 10.0,
-			Uptime:    r.Uptime,
-			Online:    1 - r.Offline,
-		}
-		// 解析 ping_data JSON 字符串为数组
-		if r.PingData != "" {
-			var pings []sharedmodel.PingResult
-			if err := json.Unmarshal([]byte(r.PingData), &pings); err == nil {
-				hp.PingData = pings
-			}
-		}
-		publicPoints = append(publicPoints, toPublicHistoryPoint(hp))
+	publicPoints := make([]publicHistoryPoint, 0, len(points))
+	for i := range points {
+		publicPoints = append(publicPoints, toPublicHistoryPoint(points[i]))
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"source": "sqlite",
-		"points": publicPoints,
+		"source":   "sqlite",
+		"interval": spec.interval,
+		"points":   publicPoints,
 	})
 }
 

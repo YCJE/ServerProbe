@@ -3,8 +3,19 @@
 /** 主题类型 */
 export type Theme = 'light' | 'dark' | 'system'
 
-/** 时间范围 */
-export type TimeRange = 'realtime' | '1h' | '6h' | '12h' | '1d' | '2d' | '3d'
+/** 时间范围（≥7d 长范围走小时聚合层数据） */
+export type TimeRange =
+  | 'realtime'
+  | '1h'
+  | '6h'
+  | '12h'
+  | '1d'
+  | '2d'
+  | '3d'
+  | '7d'
+  | '30d'
+  | '90d'
+  | '1y'
 
 // ==================== 服务器相关类型 ====================
 
@@ -244,11 +255,28 @@ export interface HistoryPoint {
   ping_data: PingResult[]
   /** 在线状态（1=在线，0=离线），用于在线状态时间线渲染 */
   online?: number
+  // ---- 极值字段（小时聚合层返回真实 min/max；5 分钟层等于均值本身） ----
+  /** CPU 使用率最小值（%） */
+  cpu_min?: number
+  /** CPU 使用率最大值（%） */
+  cpu_max?: number
+  /** 内存使用率最小值（%） */
+  mem_min?: number
+  /** 内存使用率最大值（%） */
+  mem_max?: number
+  /** load_1 最大值 */
+  load_1_max?: number
+  /** 下行峰值速率（字节/秒） */
+  net_rx_max?: number
+  /** 上行峰值速率（字节/秒） */
+  net_tx_max?: number
 }
 
 /** 历史数据响应 */
 export interface HistoryData {
   source: 'ringbuffer' | 'sqlite'
+  /** 数据粒度：'5m'（5 分钟层）或 '1h'（小时聚合层） */
+  interval?: string
   points: HistoryPoint[]
 }
 
@@ -424,6 +452,8 @@ export interface SystemSettings {
   default_history_range: string
   offline_grace_seconds: number
   retention_days: number
+  /** 小时聚合层（≥7d 长范围查询）数据保留天数 */
+  retention_days_hourly: number
   max_chart_points: number
 }
 
@@ -441,6 +471,7 @@ export interface DBStats {
   db_size_bytes: number
   wal_size_bytes: number
   metric_records: number
+  metric_records_hourly: number
   alert_history: number
   agents: number
   traffic_records: number

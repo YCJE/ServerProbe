@@ -56,6 +56,11 @@ function niceCeil(v: number): number {
 
 const fmtTime = (ts: number) => new Date(ts * 1000).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
 
+/** 长范围（跨度 > 48h）时 X 轴与 Tooltip 改用月-日标签，小时:分钟无区分度 */
+const fmtDate = (ts: number) => new Date(ts * 1000).toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' })
+const fmtDateTime = (ts: number) =>
+  `${fmtDate(ts)} ${new Date(ts * 1000).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}`
+
 /**
  * 延迟趋势折线图（NodeGet NodeDetail 风格）
  * 单区平滑折线 + 悬浮十字线 Tooltip + 图例切换；丢包率在 Tooltip 与统计表中展示
@@ -83,6 +88,10 @@ export default function NetworkQualityChart({ timestamps, series, height = 280, 
   }, [])
 
   const n = timestamps.length
+  // 长范围（≥7d 小时聚合数据）切换为月-日标签
+  const longSpan = n > 1 && timestamps[n - 1] - timestamps[0] > 48 * 3600
+  const labelFor = (ts: number) => (longSpan ? fmtDate(ts) : fmtTime(ts))
+  const tipLabelFor = (ts: number) => (longSpan ? fmtDateTime(ts) : fmtTime(ts))
   const padL = 46, padR = 16, padT = 14, padB = 24, pointSpacing = 10
   const chartWidth = Math.max(containerW, (n > 1 ? (n - 1) * pointSpacing : 0) + padL + padR)
   const innerW = Math.max(0, chartWidth - padL - padR)
@@ -226,7 +235,7 @@ export default function NetworkQualityChart({ timestamps, series, height = 280, 
 
           {/* X 轴时间标签 */}
           {timestamps.map((ts, i) => i % xStep === 0 ? (
-            <text key={`x${i}`} x={xFor(i)} y={bottomY + 14} textAnchor="middle" fontSize={10} fill="hsl(var(--muted-foreground))">{fmtTime(ts)}</text>
+            <text key={`x${i}`} x={xFor(i)} y={bottomY + 14} textAnchor="middle" fontSize={10} fill="hsl(var(--muted-foreground))">{labelFor(ts)}</text>
           ) : null)}
 
           {/* 悬浮十字线 + 数据点 */}
@@ -248,7 +257,7 @@ export default function NetworkQualityChart({ timestamps, series, height = 280, 
         {/* Tooltip — 时间 + 各目标延迟/丢包（Tailwind CSS 类自动跟随主题） */}
         {hoverIdx !== null && hoverTs != null && (
           <div className="pointer-events-none absolute top-1 z-10 rounded-md border border-border bg-card px-2.5 py-1.5 text-xs shadow-lg" style={{ left: tipLeft, transform: 'translateX(-50%)' }}>
-            <div className="mb-1 font-medium text-foreground">{fmtTime(hoverTs)}</div>
+            <div className="mb-1 font-medium text-foreground">{tipLabelFor(hoverTs)}</div>
             {visibleSeries.map((s) => {
               const v = s.data[hoverIdx]
               const lossV = s.lossData ? s.lossData[hoverIdx] : s.loss

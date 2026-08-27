@@ -72,6 +72,7 @@ func NewSQLiteDB(dataDir string) (*SQLiteDB, error) {
 		&model.NotifyChannel{},
 		&model.PingTarget{},
 		&model.MetricRecord{},
+		&model.MetricRecordHourly{},
 		&model.Admin{},
 		&model.SharePage{},
 		&model.SystemSetting{},

@@ -534,6 +534,7 @@ export function downloadDBBackup(): void {
 export async function cleanupDBData(days: number): Promise<{
   message: string
   deleted_records: number
+  deleted_hourly: number
   deleted_alerts: number
 }> {
   return request('/db/cleanup', { method: 'POST', body: JSON.stringify({ days }) })

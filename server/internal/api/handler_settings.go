@@ -19,6 +19,7 @@ import (
 type SettingsHandler struct {
 	settings   *service.SettingsService
 	recordRepo *repository.RecordRepository
+	hourlyRepo *repository.HourlyRepository
 	alertRepo  *repository.AlertRepository
 	db         *gorm.DB
 	dataDir    string
@@ -27,10 +28,11 @@ type SettingsHandler struct {
 }
 
 // NewSettingsHandler 创建设置处理器
-func NewSettingsHandler(settings *service.SettingsService, recordRepo *repository.RecordRepository, alertRepo *repository.AlertRepository, db *gorm.DB, dataDir string) *SettingsHandler {
+func NewSettingsHandler(settings *service.SettingsService, recordRepo *repository.RecordRepository, hourlyRepo *repository.HourlyRepository, alertRepo *repository.AlertRepository, db *gorm.DB, dataDir string) *SettingsHandler {
 	return &SettingsHandler{
 		settings:   settings,
 		recordRepo: recordRepo,
+		hourlyRepo: hourlyRepo,
 		alertRepo:  alertRepo,
 		db:         db,
 		dataDir:    dataDir,
@@ -39,14 +41,15 @@ func NewSettingsHandler(settings *service.SettingsService, recordRepo *repositor
 
 // settingsResponse 管理端设置响应（带默认值兜底）
 type settingsResponse struct {
-	SiteTitle           string `json:"site_title"`
-	SiteDescription     string `json:"site_description"`
-	Announcement        string `json:"announcement"`
-	CustomFooter        string `json:"custom_footer"`
-	DefaultHistoryRange string `json:"default_history_range"`
-	OfflineGraceSeconds int    `json:"offline_grace_seconds"`
-	RetentionDays       int    `json:"retention_days"`
-	MaxChartPoints      int    `json:"max_chart_points"`
+	SiteTitle            string `json:"site_title"`
+	SiteDescription      string `json:"site_description"`
+	Announcement         string `json:"announcement"`
+	CustomFooter         string `json:"custom_footer"`
+	DefaultHistoryRange  string `json:"default_history_range"`
+	OfflineGraceSeconds  int    `json:"offline_grace_seconds"`
+	RetentionDays        int    `json:"retention_days"`
+	RetentionDaysHourly  int    `json:"retention_days_hourly"`
+	MaxChartPoints       int    `json:"max_chart_points"`
 }
 
 // HandleGetSettings 获取全部系统设置
@@ -60,6 +63,7 @@ func (h *SettingsHandler) HandleGetSettings(c *gin.Context) {
 		DefaultHistoryRange: h.settings.DefaultHistoryRange(),
 		OfflineGraceSeconds: h.settings.OfflineGraceSeconds(),
 		RetentionDays:       h.settings.RetentionDays(),
+		RetentionDaysHourly: h.settings.RetentionDaysHourly(),
 		MaxChartPoints:      h.settings.MaxChartPoints(),
 	})
 }
@@ -86,6 +90,12 @@ func (h *SettingsHandler) HandleUpdateSettings(c *gin.Context) {
 	} else if retention > 3650 {
 		retention = 3650
 	}
+	retentionHourly := req.RetentionDaysHourly
+	if retentionHourly < 30 {
+		retentionHourly = 30
+	} else if retentionHourly > 3650 {
+		retentionHourly = 3650
+	}
 	points := req.MaxChartPoints
 	if points < 100 {
 		points = 100
@@ -93,9 +103,8 @@ func (h *SettingsHandler) HandleUpdateSettings(c *gin.Context) {
 		points = 2000
 	}
 	historyRange := req.DefaultHistoryRange
-	validRange := map[string]bool{"1h": true, "6h": true, "12h": true, "1d": true, "2d": true, "3d": true}
-	if !validRange[historyRange] {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "默认历史范围无效，支持: 1h/6h/12h/1d/2d/3d"})
+	if !service.IsValidHistoryRange(historyRange) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "默认历史范围无效，支持: 1h/6h/12h/1d/2d/3d/7d/30d/90d/1y"})
 		return
 	}
 	// 长度限制防止滥用存储
@@ -112,6 +121,7 @@ func (h *SettingsHandler) HandleUpdateSettings(c *gin.Context) {
 		service.SettingDefaultHistoryRange: historyRange,
 		service.SettingOfflineGraceSeconds: strconv.Itoa(grace),
 		service.SettingRetentionDays:       strconv.Itoa(retention),
+		service.SettingRetentionDaysHourly: strconv.Itoa(retentionHourly),
 		service.SettingMaxChartPoints:      strconv.Itoa(points),
 	}
 	if err := h.settings.Update(kv); err != nil {
@@ -138,6 +148,7 @@ type dbStatsResponse struct {
 	DBSizeBytes      int64 `json:"db_size_bytes"`
 	WALSizeBytes     int64 `json:"wal_size_bytes"`
 	MetricRecords    int64 `json:"metric_records"`
+	MetricHourly     int64 `json:"metric_records_hourly"`
 	AlertHistory     int64 `json:"alert_history"`
 	Agents           int64 `json:"agents"`
 	TrafficRecords   int64 `json:"traffic_records"`
@@ -158,6 +169,7 @@ func (h *SettingsHandler) HandleDBStats(c *gin.Context) {
 	}
 
 	h.db.Table("metric_records").Count(&stats.MetricRecords)
+	h.db.Table("metric_records_hourly").Count(&stats.MetricHourly)
 	h.db.Table("alert_history").Count(&stats.AlertHistory)
 	h.db.Table("agents").Count(&stats.Agents)
 	h.db.Table("traffic_records").Count(&stats.TrafficRecords)
@@ -254,6 +266,11 @@ func (h *SettingsHandler) HandleDBCleanup(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "清理指标记录失败"})
 		return
 	}
+	deletedHourly, err := h.hourlyRepo.DeleteOlderThan(before.Unix())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "清理小时聚合记录失败"})
+		return
+	}
 	deletedAlerts, err := h.alertRepo.CleanupHistoryBefore(before)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "清理告警历史失败"})
@@ -263,6 +280,7 @@ func (h *SettingsHandler) HandleDBCleanup(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"message":           fmt.Sprintf("已清理 %d 天前的数据", req.Days),
 		"deleted_records":   deletedRecords,
+		"deleted_hourly":    deletedHourly,
 		"deleted_alerts":    deletedAlerts,
 	})
 }

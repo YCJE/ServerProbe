@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"database/sql"
 	"errors"
 	"fmt"
 	"log"
@@ -139,6 +140,21 @@ func (r *RecordRepository) GetLatestOnlineByAgent(agentID int64) (*model.MetricR
 		return nil, err
 	}
 	return &record, nil
+}
+
+// GetFirstTimestamp 获取 Agent 最早一条 5 分钟记录的时间戳
+// 用于小时 rollup 首次回填起点；无记录时返回 (0, false)
+func (r *RecordRepository) GetFirstTimestamp(agentID int64) (int64, bool, error) {
+	// MIN() 在无记录时返回 NULL，必须用 NullInt64 承接，否则 Scan 报错
+	var ts sql.NullInt64
+	err := r.db.Model(&model.MetricRecord{}).
+		Where("agent_id = ?", agentID).
+		Select("MIN(timestamp)").
+		Scan(&ts).Error
+	if err != nil {
+		return 0, false, err
+	}
+	return ts.Int64, ts.Valid && ts.Int64 > 0, nil
 }
 
 // DeleteOlderThan 删除指定时间之前的数据

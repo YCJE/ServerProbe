@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math/rand"
 	"net/http"
 	"net/url"
 	"runtime"
@@ -519,7 +520,7 @@ func (c *WSClient) reconnect() error {
 	return c.Connect()
 }
 
-// getReconnectInterval 获取重连间隔（指数退避）
+// getReconnectInterval 获取重连间隔（指数退避 + ±20% 随机抖动，封顶 60s）
 func (c *WSClient) getReconnectInterval() time.Duration {
 	c.mu.Lock()
 	c.reconnectAttempts++
@@ -531,7 +532,10 @@ func (c *WSClient) getReconnectInterval() time.Duration {
 		attempts = 10
 	}
 
-	interval := time.Duration(5*(1<<(attempts-1))) * time.Second
+	base := time.Duration(5*(1<<(attempts-1))) * time.Second
+	// 抖动：退避基础上乘 [0.8, 1.2] 的随机系数，
+	// 避免 Server 重启后全体 Agent 按相同节拍同步重试形成脉冲（惊群）
+	interval := time.Duration(float64(base) * (0.8 + 0.4*rand.Float64()))
 	if interval > c.maxReconnectInterval {
 		interval = c.maxReconnectInterval
 	}

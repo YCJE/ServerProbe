@@ -37,7 +37,7 @@ type ServerDataExt = ServerData & {
   country_code?: string
 }
 
-/** 时间范围选项（含实时模式 + 多种历史范围） */
+/** 时间范围选项（含实时模式；≥7d 走小时聚合层） */
 const TIME_RANGES: { value: TimeRange; label: string }[] = [
   { value: 'realtime', label: '实时' },
   { value: '1h', label: '1小时' },
@@ -46,6 +46,10 @@ const TIME_RANGES: { value: TimeRange; label: string }[] = [
   { value: '1d', label: '24小时' },
   { value: '2d', label: '2天' },
   { value: '3d', label: '3天' },
+  { value: '7d', label: '7天' },
+  { value: '30d', label: '30天' },
+  { value: '90d', label: '90天' },
+  { value: '1y', label: '1年' },
 ]
 
 /** ping 目标线条颜色池 */
@@ -506,18 +510,21 @@ export default function PublicServerDetail() {
 
   // Sparkline 数据：实时模式取 realtimeHistory，历史模式取 historyData（与 ServerDetail 对齐）
   const sparklineData = useMemo(() => {
+    const maxOf = (arr: number[]) => (arr.length ? Math.max(...arr) : 0)
     if (timeRange === 'realtime') {
       const recent = realtimeHistory.slice(-MAX_SPARK_POINTS)
+      const cpu = recent.map((p) => p.cpu)
+      const mem = recent.map((p) => p.mem)
+      const netRx = recent.map((p) => p.net_rx)
+      const netTx = recent.map((p) => p.net_tx)
       return {
-        cpu: recent.map((p) => p.cpu),
-        mem: recent.map((p) => p.mem),
-        netRx: recent.map((p) => p.net_rx),
-        netTx: recent.map((p) => p.net_tx),
+        cpu, mem, netRx, netTx,
+        cpuPeak: maxOf(cpu), memPeak: maxOf(mem), netRxPeak: maxOf(netRx), netTxPeak: maxOf(netTx),
       }
     }
     // 历史模式：从 historyData 提取，均匀采样到最多 MAX_SPARK_POINTS 个点
     if (!historyData || !historyData.points || historyData.points.length === 0) {
-      return { cpu: [], mem: [], netRx: [], netTx: [] }
+      return { cpu: [], mem: [], netRx: [], netTx: [], cpuPeak: 0, memPeak: 0, netRxPeak: 0, netTxPeak: 0 }
     }
     const points = historyData.points
     const step = Math.max(1, Math.ceil(points.length / MAX_SPARK_POINTS))
@@ -527,6 +534,10 @@ export default function PublicServerDetail() {
       mem: sampled.map((p) => p.mem_usage),
       netRx: sampled.map((p) => p.net_rx),
       netTx: sampled.map((p) => p.net_tx),
+      cpuPeak: sampled.reduce((m, p) => Math.max(m, p.cpu_max ?? p.cpu_usage), 0),
+      memPeak: sampled.reduce((m, p) => Math.max(m, p.mem_max ?? p.mem_usage), 0),
+      netRxPeak: sampled.reduce((m, p) => Math.max(m, p.net_rx_max ?? p.net_rx), 0),
+      netTxPeak: sampled.reduce((m, p) => Math.max(m, p.net_tx_max ?? p.net_tx), 0),
     }
   }, [timeRange, timeRange === 'realtime' ? realtimeHistory : historyData])
 
@@ -909,11 +920,12 @@ export default function PublicServerDetail() {
           </div>
         </div>
 
-        {/* 趋势（NodeGet N-Second Trend：4 张 Sparkline 卡片） */}
+        {/* 趋势（NodeGet N-Second Trend：4 张 Sparkline 卡片，历史模式附带峰值） */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <TrendCard
             label="CPU"
             value={`${(displayServer.cpu || 0).toFixed(1)}%`}
+            peak={sparklineData.cpu.length > 0 ? `${sparklineData.cpuPeak.toFixed(1)}%` : undefined}
             color={SPARK_CPU}
           >
             <Sparkline data={sparklineData.cpu} color={SPARK_CPU} height={40} />
@@ -923,6 +935,7 @@ export default function PublicServerDetail() {
             label="内存"
             value={`${memUsagePercent.toFixed(1)}%`}
             subValue={`${formatBytes(displayServer.mem_used)}`}
+            peak={sparklineData.mem.length > 0 ? `${sparklineData.memPeak.toFixed(1)}%` : undefined}
             color={SPARK_MEM}
           >
             <Sparkline data={sparklineData.mem} color={SPARK_MEM} height={40} />
@@ -931,6 +944,7 @@ export default function PublicServerDetail() {
           <TrendCard
             label="下行"
             value={displayServer.net_rx != null ? formatSpeed(displayServer.net_rx) : '---'}
+            peak={sparklineData.netRx.length > 0 ? formatSpeed(sparklineData.netRxPeak) : undefined}
             color={SPARK_RX}
           >
             <Sparkline data={sparklineData.netRx} color={SPARK_RX} height={40} />
@@ -939,6 +953,7 @@ export default function PublicServerDetail() {
           <TrendCard
             label="上行"
             value={displayServer.net_tx != null ? formatSpeed(displayServer.net_tx) : '---'}
+            peak={sparklineData.netTx.length > 0 ? formatSpeed(sparklineData.netTxPeak) : undefined}
             color={SPARK_TX}
           >
             <Sparkline data={sparklineData.netTx} color={SPARK_TX} height={40} />
@@ -1073,12 +1088,15 @@ function TrendCard({
   label,
   value,
   subValue,
+  peak,
   color,
   children,
 }: {
   label: string
   value: string
   subValue?: string
+  /** 所选范围内的峰值（小时聚合层为真实极值） */
+  peak?: string
   color: string
   children?: ReactNode
 }) {
@@ -1086,10 +1104,15 @@ function TrendCard({
     <div className="rounded-md border bg-card/50 p-3">
       <div className="mb-1 flex items-center justify-between">
         <span className="text-[10px] font-semibold text-muted-foreground">{label}</span>
-        <span
-          className="h-1.5 w-1.5 rounded-full"
-          style={{ backgroundColor: color }}
-        />
+        <span className="flex items-center gap-1.5">
+          {peak && (
+            <span className="text-[10px] text-muted-foreground/70">峰值 {peak}</span>
+          )}
+          <span
+            className="h-1.5 w-1.5 rounded-full"
+            style={{ backgroundColor: color }}
+          />
+        </span>
       </div>
       <div className="mb-1">
         <span className="text-sm font-bold text-foreground tabular-nums">{value}</span>

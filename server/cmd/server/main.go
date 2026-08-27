@@ -70,6 +70,7 @@ func main() {
 	registerCodeRepo := repository.NewRegisterCodeRepository(db.DB())
 	adminRepo := repository.NewAdminRepository(db.DB())
 	recordRepo := repository.NewRecordRepository(db.DB())
+	hourlyRepo := repository.NewHourlyRepository(db.DB())
 	pingTargetRepo := repository.NewPingTargetRepository(db.DB())
 	alertRepo := repository.NewAlertRepository(db.DB())
 	notifyRepo := repository.NewNotifyRepository(db.DB())
@@ -110,7 +111,7 @@ func main() {
 	registry := service.NewAgentRegistryService(agentRepo, registerCodeRepo, db.DB())
 	configSync := service.NewConfigSyncService(pingTargetRepo, db.DB())
 	validator := service.NewDataValidator()
-	aggregation := service.NewAggregationService(monitor, recordRepo, agentRepo, trafficRepo)
+	aggregation := service.NewAggregationService(monitor, recordRepo, hourlyRepo, agentRepo, trafficRepo)
 	notifySvc := service.NewNotifyService(notifyRepo, ssrfProtector)
 	alertEngine := service.NewAlertEngine(alertRepo, monitor, notifySvc)
 	alertEngine.SetMonitorRepos(serviceMonitorRepo, sslMonitorRepo) // 注入全局指标 repo
@@ -132,10 +133,10 @@ func main() {
 		monitor.SetHeartbeatTimeout(time.Duration(s.OfflineGraceSeconds()) * time.Second)
 	})
 
-	// 启动数据聚合服务（聚合周期固定 5 分钟）
+	// 启动数据聚合服务（聚合周期固定 5 分钟；小时 rollup 挂载于聚合周期内）
 	aggregation.Start()
-	// 保留天数从系统设置动态读取（后台 系统设置 页面可改，默认 4 天，范围 1-3650）
-	aggregation.StartCleanupTask(settingsSvc.RetentionDays)
+	// 保留天数从系统设置动态读取（后台 系统设置 页面可改，默认 5 分钟层 4 天 / 小时层 730 天）
+	aggregation.StartCleanupTask(settingsSvc.RetentionDays, settingsSvc.RetentionDaysHourly)
 
 	// 启动告警引擎
 	alertEngine.Start()
@@ -155,6 +156,7 @@ func main() {
 		adminRepo,
 		agentRepo,
 		recordRepo,
+		hourlyRepo,
 		monitor,
 		registry,
 		configSync,

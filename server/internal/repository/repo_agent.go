@@ -222,15 +222,19 @@ func (r *AgentRepository) Delete(id int64) error {
 // DeleteWithRecordsTx 在事务内同时删除 Agent 的历史聚合数据和 Agent 记录
 // 确保删除操作的原子性，避免部分失败导致数据不一致
 func (r *AgentRepository) DeleteWithRecordsTx(agentID int64) error {
-	return r.db.Transaction(func(tx *gorm.DB) error {
-		// 先删除关联的历史聚合数据 (metric_records)
-		if err := tx.Where("agent_id = ?", agentID).Delete(&model.MetricRecord{}).Error; err != nil {
-			return err
-		}
-		// 删除关联的流量统计记录 (traffic_records)
-		if err := tx.Where("agent_id = ?", agentID).Delete(&model.TrafficRecord{}).Error; err != nil {
-			return err
-		}
+    return r.db.Transaction(func(tx *gorm.DB) error {
+            // 先删除关联的历史聚合数据 (metric_records)
+            if err := tx.Where("agent_id = ?", agentID).Delete(&model.MetricRecord{}).Error; err != nil {
+                    return err
+            }
+            // 删除关联的小时聚合数据 (metric_records_hourly)
+            if err := tx.Where("agent_id = ?", agentID).Delete(&model.MetricRecordHourly{}).Error; err != nil {
+                    return err
+            }
+            // 删除关联的流量统计记录 (traffic_records)
+            if err := tx.Where("agent_id = ?", agentID).Delete(&model.TrafficRecord{}).Error; err != nil {
+                    return err
+            }
 		// 清理 register_codes 表中 used_by_agent_id 的悬空引用，避免外键悬空
 		if err := tx.Model(&model.RegisterCode{}).
 			Where("used_by_agent_id = ?", agentID).

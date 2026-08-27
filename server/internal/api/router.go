@@ -42,6 +42,7 @@ func NewRouter(
 	adminRepo *repository.AdminRepository,
 	agentRepo *repository.AgentRepository,
 	recordRepo *repository.RecordRepository,
+	hourlyRepo *repository.HourlyRepository,
 	monitor *service.MonitorService,
 	registry *service.AgentRegistryService,
 	configSync *service.ConfigSyncService,
@@ -97,7 +98,7 @@ func NewRouter(
 
 	// 创建处理器
 	authHandler := NewAuthHandler(adminRepo, jwtManager)
-	serverHandler := NewServerHandler(agentRepo, monitor, recordRepo)
+	serverHandler := NewServerHandler(agentRepo, monitor, recordRepo, hourlyRepo)
 	serverHandler.SetSettings(settingsSvc)
 	agentHandler := NewAgentHandler(registry, monitor, configSync, validator)
 	agentAPIHandler := NewAgentAPIHandler(registry, agentRepo, recordRepo, monitor, alertEngine)
@@ -112,7 +113,7 @@ func NewRouter(
 	prometheusHandler := NewPrometheusHandler(monitor)
 	shareHandler := NewShareHandler(sharePageRepo)
 	tagHandler := NewTagHandler(tagRepo)
-	settingsHandler := NewSettingsHandler(settingsSvc, recordRepo, alertRepo, db, dataDir)
+	settingsHandler := NewSettingsHandler(settingsSvc, recordRepo, hourlyRepo, alertRepo, db, dataDir)
 
 	// 健康检查
 	r.GET("/api/v1/health", func(c *gin.Context) {

@@ -14,9 +14,10 @@ const (
 	SettingSiteDescription      = "site_description"       // 站点描述
 	SettingAnnouncement         = "announcement"           // 公告（支持换行，公开页与管理端展示）
 	SettingCustomFooter         = "custom_footer"          // 自定义页脚文本
-	SettingDefaultHistoryRange  = "default_history_range"  // 详情页默认历史范围: 1h/6h/12h/1d/2d/3d
+	SettingDefaultHistoryRange  = "default_history_range"  // 详情页默认历史范围
 	SettingOfflineGraceSeconds  = "offline_grace_seconds"  // 离线判定宽限期（秒）
-	SettingRetentionDays        = "retention_days"         // 历史数据保留天数
+	SettingRetentionDays        = "retention_days"         // 历史数据保留天数（5 分钟层）
+	SettingRetentionDaysHourly  = "retention_days_hourly"  // 历史数据保留天数（小时聚合层）
 	SettingMaxChartPoints       = "max_chart_points"       // 图表单次加载最大数据点数
 )
 
@@ -27,18 +28,27 @@ const (
 	DefaultHistoryRange        = "1h"
 	DefaultOfflineGraceSeconds = 90
 	DefaultRetentionDays       = 4
+	DefaultRetentionDaysHourly = 730
 	DefaultMaxChartPoints      = 800
 
 	minOfflineGraceSeconds = 30
 	maxOfflineGraceSeconds = 86400
 	minRetentionDays       = 1
 	maxRetentionDays       = 3650
+	minRetentionDaysHourly = 30
+	maxRetentionDaysHourly = 3650
 	minMaxChartPoints      = 100
 	maxMaxChartPoints      = 2000
 )
 
 // validHistoryRanges 详情页支持的历史范围
-var validHistoryRanges = map[string]bool{"1h": true, "6h": true, "12h": true, "1d": true, "2d": true, "3d": true}
+var validHistoryRanges = map[string]bool{
+	"1h": true, "6h": true, "12h": true, "1d": true, "2d": true, "3d": true,
+	"7d": true, "30d": true, "90d": true, "1y": true,
+}
+
+// IsValidHistoryRange 判断历史范围值是否有效
+func IsValidHistoryRange(v string) bool { return validHistoryRanges[v] }
 
 // SettingsChangeCallback 设置变更回调（运行时应用：心跳宽限期等）
 type SettingsChangeCallback func(s *SettingsService)
@@ -142,9 +152,14 @@ func (s *SettingsService) OfflineGraceSeconds() int {
 	return s.GetInt(SettingOfflineGraceSeconds, DefaultOfflineGraceSeconds, minOfflineGraceSeconds, maxOfflineGraceSeconds)
 }
 
-// RetentionDays 历史数据保留天数
+// RetentionDays 历史数据保留天数（5 分钟层）
 func (s *SettingsService) RetentionDays() int {
 	return s.GetInt(SettingRetentionDays, DefaultRetentionDays, minRetentionDays, maxRetentionDays)
+}
+
+// RetentionDaysHourly 历史数据保留天数（小时聚合层）
+func (s *SettingsService) RetentionDaysHourly() int {
+	return s.GetInt(SettingRetentionDaysHourly, DefaultRetentionDaysHourly, minRetentionDaysHourly, maxRetentionDaysHourly)
 }
 
 // MaxChartPoints 图表单次加载最大数据点数
