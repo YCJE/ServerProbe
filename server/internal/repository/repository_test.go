@@ -42,7 +42,7 @@ func TestNewSQLiteDB(t *testing.T) {
 
 	// 验证表已创建
 	tables := []string{"agents", "register_codes", "alert_rules", "notify_channels",
-		"ping_targets", "metric_records", "admin", "share_pages"}
+		"ping_targets", "metric_records", "metric_records_hourly", "admin", "audit_logs", "share_pages"}
 
 	for _, table := range tables {
 		var count int64

@@ -27,8 +27,8 @@ const (
 	DefaultSiteDescription     = "安全优先、只读架构的服务器监控探针系统"
 	DefaultHistoryRange        = "1h"
 	DefaultOfflineGraceSeconds = 90
-	DefaultRetentionDays       = 4
-	DefaultRetentionDaysHourly = 730
+	DefaultRetentionDays       = 30
+    DefaultRetentionDaysHourly = 730
 	DefaultMaxChartPoints      = 800
 
 	minOfflineGraceSeconds = 30

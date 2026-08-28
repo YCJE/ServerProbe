@@ -278,6 +278,24 @@ type Admin struct {
 // TableName 指定表名
 func (Admin) TableName() string { return "admin" }
 
+// AuditLog 管理员操作审计日志（P1：安全闭环）
+// 记录登录事件与管理端的全部变更操作（POST/PUT/DELETE），
+// 不记录请求体（可能含密码/TOTP 密钥等敏感字段），仅记录路由与目标标识
+type AuditLog struct {
+	ID        int64     `gorm:"primaryKey;autoIncrement" json:"id"`
+	AdminID   int64     `gorm:"index" json:"admin_id"`
+	Username  string    `json:"username"`           // 冗余存储用户名，管理员删除后日志仍可读
+	Action    string    `gorm:"index;not null" json:"action"` // 如 "DELETE /api/v1/agents/:id"、"auth.login"
+	Target    string    `json:"target"`             // 实际请求路径（含具体 ID），如 "/api/v1/agents/42"
+	Success   bool      `json:"success"`            // HTTP 状态码 < 400 视为成功
+	IP        string    `json:"ip"`
+	UserAgent string    `json:"user_agent"`
+	CreatedAt time.Time `gorm:"autoCreateTime;index" json:"created_at"`
+}
+
+// TableName 指定表名
+func (AuditLog) TableName() string { return "audit_logs" }
+
 // SharePage 公开分享页配置（GORM 模型）
 type SharePage struct {
 	ID          int64     `gorm:"primaryKey;autoIncrement" json:"id"`

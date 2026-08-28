@@ -12,6 +12,7 @@ import {
 import { useServerStore } from '@/store/useServerStore'
 import type { RegisterCode, AgentInfo } from '@/types'
 import { getFlagEmoji } from '@/lib/utils'
+import { useTotpConfirm, TotpCancelledError } from '@/hooks/useTotpConfirm'
 
 /** 币种选项 */
 const CURRENCY_OPTIONS = ['CNY', 'USD', 'EUR', 'JPY', 'GBP', 'HKD', 'TWD', 'KRW', 'SGD']
@@ -73,6 +74,9 @@ export default function AgentManagement() {
   // 从 store 获取 fetchServers 和 deleteAgent，用于删除后刷新仪表盘
   const fetchServers = useServerStore((s) => s.fetchServers)
   const deleteAgentFromStore = useServerStore((s) => s.deleteAgent)
+
+  // 敏感操作两步验证（删 Agent / 查看 Token）
+  const totp = useTotpConfirm()
 
   // 跟踪复制按钮的定时器，卸载时清理
   const timeoutRefs = useRef<ReturnType<typeof setTimeout>[]>([])
@@ -174,13 +178,20 @@ export default function AgentManagement() {
     setCmdAgent(null)
   }
 
-  // Agent 列表：获取 Token 并展示该 Agent 的安装命令（重装/换机场景）
+  // Agent 列表：获取 Token 并展示该 Agent 的安装命令（重装/换机场景，敏感操作需 2FA）
   const handleShowInstallCmd = async (agent: AgentInfo) => {
     setCmdLoading(true)
     try {
-      const result = await getAgentToken(agent.id)
+      const result = await totp.runWithTotp(
+        {
+          title: '查看安装命令',
+          description: `Token 是 Agent 接入的唯一凭证，查看 "${agent.display_name || agent.hostname}" 的安装命令需要两步验证确认。`,
+        },
+        (code) => getAgentToken(agent.id, code),
+      )
       setCmdAgent(result)
     } catch (err) {
+      if (err instanceof TotpCancelledError) return
       alert(err instanceof Error ? err.message : '获取安装命令失败')
     } finally {
       setCmdLoading(false)
@@ -198,14 +209,21 @@ export default function AgentManagement() {
     }
   }
 
-  // 删除 Agent
+  // 删除 Agent（敏感操作需 2FA）
   const handleDeleteAgent = async (id: number, name: string) => {
     if (!confirm(`确定删除 Agent "${name}"？此操作不可恢复。`)) return
     try {
       // 使用 store 的 deleteAgent action，删除后会自动刷新仪表盘数据
-      await deleteAgentFromStore(id)
+      await totp.runWithTotp(
+        {
+          title: '删除 Agent',
+          description: `删除 "${name}" 及其全部历史数据，此操作不可恢复。`,
+        },
+        (code) => deleteAgentFromStore(id, code),
+      )
       await loadData()
     } catch (err) {
+      if (err instanceof TotpCancelledError) return
       alert(err instanceof Error ? err.message : '删除 Agent 失败')
     }
   }
@@ -1003,6 +1021,9 @@ export default function AgentManagement() {
           </div>
         </div>
       )}
+
+      {/* 敏感操作两步验证弹窗（删 Agent / 查看 Token） */}
+      {totp.dialog}
     </div>
   )
 }

@@ -34,6 +34,7 @@ type Router struct {
 	shareHandler         *ShareHandler
 	tagHandler           *TagHandler
 	settingsHandler      *SettingsHandler
+	auditHandler         *AuditHandler
 }
 
 // NewRouter 创建路由
@@ -62,6 +63,8 @@ func NewRouter(
 	tagRepo *repository.TagRepository,
 	settingRepo *repository.SettingRepository,
 	settingsSvc *service.SettingsService,
+	auditRepo *repository.AuditLogRepository,
+	auditSvc *service.AuditService,
 	db *gorm.DB,
 	dataDir string,
 ) *Router {
@@ -97,7 +100,7 @@ func NewRouter(
 	})
 
 	// 创建处理器
-	authHandler := NewAuthHandler(adminRepo, jwtManager)
+	authHandler := NewAuthHandler(adminRepo, jwtManager, auditSvc)
 	serverHandler := NewServerHandler(agentRepo, monitor, recordRepo, hourlyRepo)
 	serverHandler.SetSettings(settingsSvc)
 	agentHandler := NewAgentHandler(registry, monitor, configSync, validator)
@@ -114,6 +117,7 @@ func NewRouter(
 	shareHandler := NewShareHandler(sharePageRepo)
 	tagHandler := NewTagHandler(tagRepo)
 	settingsHandler := NewSettingsHandler(settingsSvc, recordRepo, hourlyRepo, alertRepo, db, dataDir)
+	auditHandler := NewAuditHandler(auditRepo)
 
 	// 健康检查
 	r.GET("/api/v1/health", func(c *gin.Context) {
@@ -170,6 +174,8 @@ func NewRouter(
 		// 需要认证的 API
 		protected := api.Group("")
 		protected.Use(middleware.AuthRequired())
+		// 变更操作审计（POST/PUT/DELETE 及敏感 GET 自动落库）
+		protected.Use(middleware.AuditMutations(auditSvc, adminRepo))
 		{
 			// 服务器
 			protected.GET("/servers", serverHandler.HandleListServers)
@@ -187,8 +193,10 @@ func NewRouter(
 			protected.POST("/agents", agentAPIHandler.HandleCreateAgent)
 			protected.PUT("/agents/:id", agentAPIHandler.HandleUpdateAgent)
 			protected.PUT("/agents/:id/meta", agentAPIHandler.HandleUpdateAgentMeta)
-			protected.GET("/agents/:id/token", agentAPIHandler.HandleGetAgentToken)
-			protected.DELETE("/agents/:id", agentAPIHandler.HandleDeleteAgent)
+			// Token 是 Agent 接入的唯一凭证，查看属敏感操作（2FA 再验证 + 审计）
+			protected.GET("/agents/:id/token", middleware.RequireSensitive2FA(adminRepo), agentAPIHandler.HandleGetAgentToken)
+			// 删除 Agent 会连带删除全部历史数据，属敏感操作（2FA 再验证 + 审计）
+			protected.DELETE("/agents/:id", middleware.RequireSensitive2FA(adminRepo), agentAPIHandler.HandleDeleteAgent)
 
 			// 探测目标管理
 			protected.GET("/ping-targets", pingTargetHandler.HandleListPingTargets)
@@ -271,8 +279,12 @@ func NewRouter(
 			// 数据库管理（统计/备份/清理/压缩）
 			protected.GET("/db/stats", settingsHandler.HandleDBStats)
 			protected.GET("/db/backup", settingsHandler.HandleDBBackup)
-			protected.POST("/db/cleanup", settingsHandler.HandleDBCleanup)
+			// 按天清理历史数据不可恢复，属敏感操作（2FA 再验证 + 审计）
+			protected.POST("/db/cleanup", middleware.RequireSensitive2FA(adminRepo), settingsHandler.HandleDBCleanup)
 			protected.POST("/db/compact", settingsHandler.HandleDBCompact)
+
+			// 审计日志查询（P1：安全闭环）
+			protected.GET("/audit-logs", auditHandler.HandleListAuditLogs)
 		}
 	}
 
@@ -292,9 +304,10 @@ func NewRouter(
 		sslMonitorHandler:     sslMonitorHandler,
 		trafficHandler:        trafficHandler,
 		prometheusHandler:     prometheusHandler,
-		shareHandler:          shareHandler,
-		tagHandler:            tagHandler,
-		settingsHandler:       settingsHandler,
+		shareHandler:         shareHandler,
+		tagHandler:           tagHandler,
+		settingsHandler:      settingsHandler,
+		auditHandler:         auditHandler,
 	}
 }
 

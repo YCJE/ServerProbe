@@ -1,8 +1,23 @@
 # P0 实施计划：小时级 Rollup + 极值列 / 重连 Jitter
 
 > **依据**: `COMPETITOR_ANALYSIS.md` §6 P0 优先级（方案 A）
-> **状态**: 计划文档，未实施
+> **状态**: **已实施并合入**（commit `1831bd0`，2026-08-28）。A1-A8 / B1-B2 全部完成，含计划外的三个缺陷修复（MIN/MAX 空表 NULL Scan 崩溃、首次回填 off-by-one 丢首小时、jitter 封顶顺序）
 > **原则**: 全部改动不触碰 Agent-Server 协议与控制通道（S1/S4/S10 合规）；数据库变更为"新增表 + 新增设置"，不修改现有表结构，无破坏性迁移
+
+## 实施结果对照
+
+| 任务 | 状态 | 落点 |
+|------|------|------|
+| A1 小时表模型 + AutoMigrate | ✅ | `model/models.go:228`、`repository/sqlite.go:75` |
+| A2 Hourly repository | ✅ | `repository/repo_hourly.go`（含 upsert 幂等单测） |
+| A3 小时 rollup（回填 + 离线占位） | ✅ | `service/aggregation.go` rollupHourly/computeHourly |
+| A4 保留策略拆分 | ✅ | `service/settings.go`（默认 30d/730d）+ 设置页 |
+| A5 历史 API 双表路由 | ✅ | `api/handler_server.go`（管理端 + 公开端） |
+| A6 删除 Agent 联动 | ✅ | `repository/repo_agent.go` DeleteWithRecordsTx 事务 |
+| A7 前端范围/类型/设置项 | ✅ | types/ServerDetail/PublicServerDetail/Settings |
+| A8 测试 | ✅ | repo_hourly_test / aggregation_hourly_test / history_range_test |
+| B1 重连 jitter | ✅ | `agent/internal/reporter/ws.go` getReconnectInterval |
+| B2 jitter 测试 | ✅ | `agent/internal/reporter/ws_test.go` |
 
 ---
 

@@ -80,6 +80,7 @@ func main() {
 	sharePageRepo := repository.NewSharePageRepository(db.DB())
 	tagRepo := repository.NewTagRepository(db.DB())
 	settingRepo := repository.NewSettingRepository(db.DB())
+	auditRepo := repository.NewAuditLogRepository(db.DB())
 
 	// 生成或加载 JWT 密钥
 	jwtSecretFile := filepath.Join(*dataDir, "jwt_secret")
@@ -117,6 +118,10 @@ func main() {
 	alertEngine.SetMonitorRepos(serviceMonitorRepo, sslMonitorRepo) // 注入全局指标 repo
 	serviceMonitorEngine := service.NewServiceMonitorEngine(serviceMonitorRepo)
 	sslMonitorEngine := service.NewSSLMonitorEngine(sslMonitorRepo)
+
+	// 创建并启动审计服务（异步写入 + 每日清理，保留 180 天）
+	auditSvc := service.NewAuditService(auditRepo)
+	auditSvc.Start()
 
 	// 加载系统设置（站点信息 + 数据加载参数），失败不阻断启动（使用默认值）
 	settingsSvc, err := service.NewSettingsService(settingRepo)
@@ -176,6 +181,8 @@ func main() {
 		tagRepo,
 		settingRepo,
 		settingsSvc,
+		auditRepo,
+		auditSvc,
 		db.DB(),
 		*dataDir,
 	)
@@ -253,6 +260,7 @@ func main() {
 	serviceMonitorEngine.Stop()
 	sslMonitorEngine.Stop()
 	validator.Stop()
+	auditSvc.Stop()
 
 	log.Println("正在关闭数据库连接...")
 	if err := db.Close(); err != nil {

@@ -22,6 +22,8 @@ import SSLMonitorManagement from '@/pages/SSLMonitorManagement'
 import TrafficStats from '@/pages/TrafficStats'
 import SharePageManagement from '@/pages/SharePageManagement'
 import SharePageView from '@/pages/SharePageView'
+import Settings from '@/pages/Settings'
+import AuditLogs from '@/pages/AuditLogs'
 
 function App() {
   const initTheme = useServerStore((s) => s.initTheme)
@@ -88,8 +90,10 @@ function App() {
         <Route path="ssl-monitors" element={<SSLMonitorManagement />} />
         <Route path="traffic" element={<TrafficStats />} />
         <Route path="share-pages" element={<SharePageManagement />} />
+        <Route path="settings" element={<Settings />} />
         <Route path="system" element={<SystemStatus />} />
         <Route path="logs" element={<LogViewer />} />
+        <Route path="audit-logs" element={<AuditLogs />} />
         <Route path="server/:id" element={<ServerDetail />} />
       </Route>
 

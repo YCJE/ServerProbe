@@ -9,6 +9,7 @@ import {
 } from '@/lib/api'
 import { useSiteSettingsStore } from '@/store/useSiteSettingsStore'
 import type { SystemSettings, DBStats } from '@/types'
+import { useTotpConfirm, TotpCancelledError } from '@/hooks/useTotpConfirm'
 
 /** 历史范围选项（≥7d 长范围走小时聚合层数据） */
 const HISTORY_RANGE_OPTIONS = [
@@ -31,7 +32,7 @@ const DEFAULT_SETTINGS: SystemSettings = {
   custom_footer: '',
   default_history_range: '1h',
   offline_grace_seconds: 90,
-  retention_days: 4,
+  retention_days: 30,
   retention_days_hourly: 730,
   max_chart_points: 800,
 }
@@ -93,6 +94,9 @@ export default function SettingsPage() {
   const [dbError, setDbError] = useState('')
   const [cleanupDays, setCleanupDays] = useState(30)
 
+  // 数据清理属敏感操作，需两步验证再确认
+  const totp = useTotpConfirm()
+
   const loadSettings = useCallback(async () => {
     try {
       const data = await getSettings()
@@ -138,14 +142,22 @@ export default function SettingsPage() {
   }
 
   const handleCleanup = async () => {
+    if (!confirm(`确定清理 ${cleanupDays} 天之前的历史数据？此操作不可恢复。`)) return
     setDbBusy('cleanup')
     setDbMsg('')
     setDbError('')
     try {
-      const res = await cleanupDBData(cleanupDays)
+      const res = await totp.runWithTotp(
+        {
+          title: '清理历史数据',
+          description: `将删除 ${cleanupDays} 天之前的全部指标记录与告警历史，此操作不可恢复。`,
+        },
+        (code) => cleanupDBData(cleanupDays, code),
+      )
       setDbMsg(`${res.message}：删除 ${formatNumber(res.deleted_records)} 条 5 分钟记录、${formatNumber(res.deleted_hourly)} 条小时聚合记录、${formatNumber(res.deleted_alerts)} 条告警历史`)
       await loadDBStats()
     } catch (err) {
+      if (err instanceof TotpCancelledError) return
       setDbError(err instanceof Error ? err.message : '清理失败')
     } finally {
       setDbBusy(null)
@@ -269,14 +281,14 @@ export default function SettingsPage() {
               onChange={(e) => setSettings({ ...settings, offline_grace_seconds: Number(e.target.value) || 90 })}
             />
           </Field>
-          <Field label="数据保留天数（5 分钟层）" hint="短范围（≤3d）图表数据的自动清理周期（1-3650 天）">
+          <Field label="数据保留天数（5 分钟层）" hint="短范围（≤3d）图表数据的自动清理周期（1-3650 天）。建议 ≥30 天，以保证 7d/30d 长范围图表中间不出现空洞">
             <input
               type="number"
               className="input-base font-mono"
               min={1}
               max={3650}
               value={settings.retention_days}
-              onChange={(e) => setSettings({ ...settings, retention_days: Number(e.target.value) || 4 })}
+              onChange={(e) => setSettings({ ...settings, retention_days: Number(e.target.value) || 30 })}
             />
           </Field>
           <Field label="数据保留天数（小时层）" hint="7d/30d/90d/1y 长范围查询的小时聚合数据保留期（30-3650 天）">
@@ -391,6 +403,9 @@ export default function SettingsPage() {
           </div>
         </div>
       </Section>
+
+      {/* 敏感操作两步验证弹窗（数据清理） */}
+      {totp.dialog}
     </div>
   )
 }

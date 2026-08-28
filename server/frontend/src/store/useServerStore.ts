@@ -86,7 +86,7 @@ interface ServerStoreState {
   fetchServers: () => Promise<void>
   fetchServerDetail: (id: number) => Promise<void>
   abortCurrentFetch: () => void
-  deleteAgent: (id: number) => Promise<void>
+  deleteAgent: (id: number, totpCode?: string) => Promise<void>
   connectWebSocket: () => void
   disconnectWebSocket: () => void
   connectPublicDashboardWS: () => void
@@ -317,8 +317,8 @@ export const useServerStore = create<ServerStoreState>((set, get) => ({
   },
 
   // 删除 Agent，并刷新服务器列表（从仪表盘移除已删除的 Agent）
-  deleteAgent: async (id: number) => {
-    await deleteAgentAPI(id)
+  deleteAgent: async (id: number, totpCode?: string) => {
+    await deleteAgentAPI(id, totpCode)
     // 原子化删除：先从 servers 和 dashboardData 中同时移除
     const state = get()
     const newMap = new Map(state.dashboardData)

@@ -7,7 +7,10 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/server-probe/server/internal/model"
 	"github.com/server-probe/server/internal/pkg"
+	"github.com/server-probe/server/internal/repository"
+	"github.com/server-probe/server/internal/service"
 )
 
 // Middleware 中间件管理
@@ -295,6 +298,81 @@ func (m *Middleware) SecurityHeaders() gin.HandlerFunc {
 		// HSTS: 仅 HTTPS 请求设置（开发环境 HTTP 不设置，避免浏览器锁定）
 		if c.Request.TLS != nil || c.GetHeader("X-Forwarded-Proto") == "https" {
 			c.Header("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+		}
+		c.Next()
+	}
+}
+
+// AuditMutations 管理端变更操作审计中间件（P1：安全闭环）
+// 记录 protected 组内所有 POST/PUT/DELETE 请求，以及被 RequireSensitive2FA
+// 标记的敏感 GET 请求（如 Token 查看）。仅记录方法/路由/目标路径/状态码，
+// 绝不记录请求体（可能含密码、TOTP 密钥等敏感字段）
+func (m *Middleware) AuditMutations(auditSvc *service.AuditService, adminRepo *repository.AdminRepository) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Next()
+
+		mutating := c.Request.Method == http.MethodPost ||
+			c.Request.Method == http.MethodPut ||
+			c.Request.Method == http.MethodDelete
+		sensitive := c.GetBool("sensitive_2fa")
+		if !mutating && !sensitive {
+			return
+		}
+
+		adminID := c.GetInt64("admin_id")
+		username := ""
+		if adminID > 0 && adminRepo != nil {
+			if admin, err := adminRepo.GetByID(adminID); err == nil {
+				username = admin.Username
+			}
+		}
+
+		action := c.Request.Method + " " + c.FullPath()
+		if c.FullPath() == "" {
+			action = c.Request.Method + " " + c.Request.URL.Path
+		}
+
+		auditSvc.Record(model.AuditLog{
+			AdminID:   adminID,
+			Username:  username,
+			Action:    action,
+			Target:    c.Request.URL.Path,
+			Success:   c.Writer.Status() < 400,
+			IP:        c.ClientIP(),
+			UserAgent: c.Request.UserAgent(),
+		})
+	}
+}
+
+// RequireSensitive2FA 敏感操作两步验证再确认中间件（P1，借鉴 Komari RequireSensitive2FA）
+// 会话 Cookie 被劫持（XSS/物理接触）后，攻击者仍无法执行破坏性操作：
+// 已启用 TOTP 的账户必须随请求携带有效动态码（X-TOTP-Code 头）。
+// 未启用 TOTP 的账户无从校验，直接放行（审计中间件仍会记录该操作）
+func (m *Middleware) RequireSensitive2FA(adminRepo *repository.AdminRepository) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// 标记敏感操作，供 AuditMutations 记录（GET 类敏感请求也需要审计）
+		c.Set("sensitive_2fa", true)
+
+		admin, err := adminRepo.GetByID(c.GetInt64("admin_id"))
+		if err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "账户不存在"})
+			c.Abort()
+			return
+		}
+
+		if !admin.TOTPEnabled {
+			c.Next()
+			return
+		}
+
+		code := c.GetHeader("X-TOTP-Code")
+		if code == "" || !consumeTOTPStep(admin.ID, admin.TOTPSecret, code) {
+			c.JSON(http.StatusForbidden, gin.H{
+				"error": "敏感操作需要两步验证码确认",
+				"code":  "totp_required",
+			})
+			c.Abort()
+			return
 		}
 		c.Next()
 	}

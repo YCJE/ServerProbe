@@ -33,12 +33,22 @@ import type {
 /** API 基础路径 */
 const API_BASE = '/api/v1'
 
-/** 自定义 API 错误类，携带 HTTP 状态码 */
+/** 自定义 API 错误类，携带 HTTP 状态码与后端业务错误码 */
 export class ApiError extends Error {
-  constructor(public status: number, message: string) {
+  constructor(
+    public status: number,
+    message: string,
+    /** 后端业务错误码（如敏感操作被 2FA 拦截时的 totp_required） */
+    public code?: string,
+  ) {
     super(message)
     this.name = 'ApiError'
   }
+}
+
+/** 判断错误是否为"敏感操作需要 2FA 验证码"（触发动态码输入弹窗） */
+export function isTotpRequired(err: unknown): boolean {
+  return err instanceof ApiError && err.status === 403 && err.code === 'totp_required'
 }
 
 /** 防止 401 时多次触发重定向 */
@@ -93,13 +103,15 @@ async function request<T>(
 
   if (!response.ok) {
     let message = `请求失败 (${response.status})`
+    let code: string | undefined
     try {
       const error = await response.json()
       message = error.message || error.error || message
+      code = error.code
     } catch {
       // 忽略 JSON 解析错误
     }
-    throw new ApiError(response.status, message)
+    throw new ApiError(response.status, message, code)
   }
 
   // 处理空响应
@@ -167,9 +179,50 @@ export async function enableTOTP(code: string): Promise<{ success: boolean; mess
   return request('/auth/totp/enable', { method: 'POST', body: JSON.stringify({ code }) })
 }
 
-/** 停用两步验证（需密码确认） */
-export async function disableTOTP(password: string): Promise<{ success: boolean; message?: string }> {
-  return request('/auth/totp/disable', { method: 'POST', body: JSON.stringify({ password }) })
+/** 停用两步验证（密码 + 动态码双重确认） */
+export async function disableTOTP(password: string, totpCode?: string): Promise<{ success: boolean; message?: string }> {
+  return request('/auth/totp/disable', { method: 'POST', body: JSON.stringify({ password, totp_code: totpCode }) })
+}
+
+// ==================== 审计日志 API (P1: 安全闭环) ====================
+
+/** 审计日志条目 */
+export interface AuditLogEntry {
+  id: number
+  admin_id: number
+  username: string
+  action: string
+  target: string
+  success: boolean
+  ip: string
+  user_agent: string
+  created_at: string
+}
+
+/** 审计日志列表响应 */
+export interface AuditLogListResponse {
+  logs: AuditLogEntry[]
+  total: number
+  page: number
+  page_size: number
+}
+
+/** 分页查询审计日志 */
+export async function getAuditLogs(params?: {
+  username?: string
+  action?: string
+  success?: boolean
+  page?: number
+  page_size?: number
+}): Promise<AuditLogListResponse> {
+  const query = new URLSearchParams()
+  if (params?.username) query.set('username', params.username)
+  if (params?.action) query.set('action', params.action)
+  if (params?.success !== undefined) query.set('success', String(params.success))
+  if (params?.page) query.set('page', String(params.page))
+  if (params?.page_size) query.set('page_size', String(params.page_size))
+  const qs = query.toString()
+  return request(`/audit-logs${qs ? `?${qs}` : ''}`)
 }
 
 // ==================== 服务器相关 API ====================
@@ -232,18 +285,23 @@ export async function createAgent(
   })
 }
 
-/** 获取 Agent Token（用于为已存在的 Agent 生成重装命令） */
+/** 获取 Agent Token（用于为已存在的 Agent 生成重装命令，敏感操作需 2FA 确认） */
 export async function getAgentToken(
   id: number,
+  totpCode?: string,
 ): Promise<{ agent_id: number; display_name: string; token: string }> {
   return request<{ agent_id: number; display_name: string; token: string }>(
     `/agents/${id}/token`,
+    totpCode ? { headers: { 'X-TOTP-Code': totpCode } } : {},
   )
 }
 
-/** 删除 Agent */
-export async function deleteAgent(id: number): Promise<void> {
-  await request(`/agents/${id}`, { method: 'DELETE' })
+/** 删除 Agent（敏感操作需 2FA 确认） */
+export async function deleteAgent(id: number, totpCode?: string): Promise<void> {
+  await request(`/agents/${id}`, {
+    method: 'DELETE',
+    ...(totpCode ? { headers: { 'X-TOTP-Code': totpCode } } : {}),
+  })
 }
 
 /** 更新 Agent 信息（显示名称 + 标签） */
@@ -530,14 +588,18 @@ export function downloadDBBackup(): void {
   window.open(`${API_BASE}/db/backup`, '_blank')
 }
 
-/** 按天数清理历史数据 */
-export async function cleanupDBData(days: number): Promise<{
+/** 按天数清理历史数据（敏感操作需 2FA 确认） */
+export async function cleanupDBData(days: number, totpCode?: string): Promise<{
   message: string
   deleted_records: number
   deleted_hourly: number
   deleted_alerts: number
 }> {
-  return request('/db/cleanup', { method: 'POST', body: JSON.stringify({ days }) })
+  return request('/db/cleanup', {
+    method: 'POST',
+    body: JSON.stringify({ days }),
+    ...(totpCode ? { headers: { 'X-TOTP-Code': totpCode } } : {}),
+  })
 }
 
 /** 压缩优化数据库 */

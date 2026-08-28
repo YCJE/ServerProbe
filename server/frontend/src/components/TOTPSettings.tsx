@@ -14,6 +14,7 @@ export default function TOTPSettings() {
   const [qrReady, setQrReady] = useState(false)
   const [code, setCode] = useState('')
   const [password, setPassword] = useState('')
+  const [disableCode, setDisableCode] = useState('')
   const [showDisable, setShowDisable] = useState(false)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
@@ -94,11 +95,17 @@ export default function TOTPSettings() {
       setError('请输入密码确认')
       return
     }
+    const trimmedCode = disableCode.trim()
+    if (!/^\d{6}$/.test(trimmedCode)) {
+      setError('请输入认证器当前的 6 位动态码')
+      return
+    }
     setLoading(true)
     try {
-      await disableTOTP(password)
+      await disableTOTP(password, trimmedCode)
       setEnabled(false)
       setPassword('')
+      setDisableCode('')
       setShowDisable(false)
       setMessage('两步验证已停用')
     } catch (err) {
@@ -240,31 +247,49 @@ export default function TOTPSettings() {
               停用两步验证
             </button>
           ) : (
-            <div className="flex gap-2">
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="输入登录密码确认"
-                className="h-10 flex-1 rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none transition-colors focus:border-primary focus:ring-1 focus:ring-primary"
-                autoComplete="current-password"
-              />
-              <button
-                onClick={handleDisable}
-                disabled={loading}
-                className="rounded-lg bg-destructive px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-destructive/90 disabled:opacity-50"
-              >
-                {loading ? '停用中...' : '确认停用'}
-              </button>
-              <button
-                onClick={() => {
-                  setShowDisable(false)
-                  setPassword('')
-                }}
-                className="rounded-lg border border-input px-4 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-              >
-                取消
-              </button>
+            <div className="space-y-2">
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="输入登录密码确认"
+                  className="h-10 flex-1 rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none transition-colors focus:border-primary focus:ring-1 focus:ring-primary"
+                  autoComplete="current-password"
+                />
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={6}
+                  value={disableCode}
+                  onChange={(e) => setDisableCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                  placeholder="6 位动态码"
+                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-center font-mono tracking-widest text-sm text-foreground outline-none transition-colors focus:border-primary focus:ring-1 focus:ring-primary sm:w-40"
+                  autoComplete="one-time-code"
+                />
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={handleDisable}
+                  disabled={loading}
+                  className="rounded-lg bg-destructive px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-destructive/90 disabled:opacity-50"
+                >
+                  {loading ? '停用中...' : '确认停用'}
+                </button>
+                <button
+                  onClick={() => {
+                    setShowDisable(false)
+                    setPassword('')
+                    setDisableCode('')
+                  }}
+                  className="rounded-lg border border-input px-4 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                >
+                  取消
+                </button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                停用两步验证为敏感降级操作，需同时输入登录密码与认证器当前动态码
+              </p>
             </div>
           )}
         </div>

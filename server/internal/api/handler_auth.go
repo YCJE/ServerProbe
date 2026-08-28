@@ -13,21 +13,40 @@ import (
 	"github.com/server-probe/server/internal/model"
 	"github.com/server-probe/server/internal/pkg"
 	"github.com/server-probe/server/internal/repository"
+	"github.com/server-probe/server/internal/service"
 	"golang.org/x/crypto/bcrypt"
 )
 
 // AuthHandler 认证处理器
 type AuthHandler struct {
-	adminRepo   *repository.AdminRepository
-	jwtManager  *pkg.JWTManager
+	adminRepo  *repository.AdminRepository
+	jwtManager *pkg.JWTManager
+	auditSvc   *service.AuditService
 }
 
 // NewAuthHandler 创建认证处理器
-func NewAuthHandler(adminRepo *repository.AdminRepository, jwtManager *pkg.JWTManager) *AuthHandler {
+func NewAuthHandler(adminRepo *repository.AdminRepository, jwtManager *pkg.JWTManager, auditSvc *service.AuditService) *AuthHandler {
 	return &AuthHandler{
 		adminRepo:  adminRepo,
 		jwtManager: jwtManager,
+		auditSvc:   auditSvc,
 	}
+}
+
+// auditLogin 记录登录事件审计日志（含失败尝试，供暴力破解事后溯源）
+func (h *AuthHandler) auditLogin(c *gin.Context, adminID int64, username string, success bool) {
+	if h.auditSvc == nil {
+		return
+	}
+	h.auditSvc.Record(model.AuditLog{
+		AdminID:   adminID,
+		Username:  username,
+		Action:    "auth.login",
+		Target:    username,
+		Success:   success,
+		IP:        c.ClientIP(),
+		UserAgent: c.Request.UserAgent(),
+	})
 }
 
 // SetupRequest 首次设置请求
@@ -122,6 +141,7 @@ func (h *AuthHandler) HandleLogin(c *gin.Context) {
 	if err != nil {
 		// 执行 dummy bcrypt 比较以消除时序侧信道，使“用户名不存在”与“密码错误”的响应时间一致
 		_ = bcrypt.CompareHashAndPassword(dummyPasswordHash, []byte("dummy"))
+		h.auditLogin(c, 0, req.Username, false)
 		c.JSON(http.StatusUnauthorized, LoginResponse{
 			Success: false,
 			Message: "用户名或密码错误",
@@ -130,6 +150,7 @@ func (h *AuthHandler) HandleLogin(c *gin.Context) {
 	}
 
 	if err := bcrypt.CompareHashAndPassword([]byte(admin.PasswordHash), []byte(req.Password)); err != nil {
+		h.auditLogin(c, admin.ID, req.Username, false)
 		c.JSON(http.StatusUnauthorized, LoginResponse{
 			Success: false,
 			Message: "用户名或密码错误",
@@ -149,6 +170,7 @@ func (h *AuthHandler) HandleLogin(c *gin.Context) {
 		}
 
 		if !consumeTOTPStep(admin.ID, admin.TOTPSecret, req.TOTPCode) {
+			h.auditLogin(c, admin.ID, req.Username, false)
 			c.JSON(http.StatusUnauthorized, LoginResponse{
 				Success: false,
 				Message: "两步验证码错误",
@@ -166,6 +188,7 @@ func (h *AuthHandler) HandleLogin(c *gin.Context) {
 
 	// 标记登录成功，供 LoginRateLimit 中间件移除限速计数
 	c.Set("login_success", true)
+	h.auditLogin(c, admin.ID, req.Username, true)
 
 	// 设置 Cookie（HttpOnly + SameSite=Strict）
 	// secure=false 以兼容 HTTP 开发环境和反向代理部署（浏览器到反代间使用 HTTPS 保护传输）
@@ -255,6 +278,19 @@ func (h *AuthHandler) HandleSetup(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "生成 Token 失败"})
 		return
+	}
+
+	// 审计首次设置事件（仅发生一次，是账户体系的起点）
+	if h.auditSvc != nil {
+		h.auditSvc.Record(model.AuditLog{
+			AdminID:   admin.ID,
+			Username:  admin.Username,
+			Action:    "auth.setup",
+			Target:    admin.Username,
+			Success:   true,
+			IP:        c.ClientIP(),
+			UserAgent: c.Request.UserAgent(),
+		})
 	}
 
 	// 设置 Cookie（HttpOnly + SameSite=Strict）
@@ -404,11 +440,14 @@ func (h *AuthHandler) HandleTOTPEnable(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": "两步验证已启用"})
 }
 
-// HandleTOTPDisable 停用两步验证（需密码确认，防止会话被劫持后直接关闭）
+// HandleTOTPDisable 停用两步验证（密码 + 动态码双重确认）
 // 路由: POST /api/v1/auth/totp/disable
+// 密码确认防止会话被劫持后直接关闭；已启用 TOTP 的账户还需当前动态码
+// （关闭 2FA 本身就是最敏感的降级操作，要求当前持有认证器）
 func (h *AuthHandler) HandleTOTPDisable(c *gin.Context) {
 	var req struct {
 		Password string `json:"password" binding:"required"`
+		TOTPCode string `json:"totp_code"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "请输入密码确认"})
@@ -424,6 +463,17 @@ func (h *AuthHandler) HandleTOTPDisable(c *gin.Context) {
 	if err := bcrypt.CompareHashAndPassword([]byte(admin.PasswordHash), []byte(req.Password)); err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "密码错误"})
 		return
+	}
+
+	// 已启用 TOTP 的账户必须同时提供有效动态码
+	if admin.TOTPEnabled {
+		if req.TOTPCode == "" || !consumeTOTPStep(admin.ID, admin.TOTPSecret, req.TOTPCode) {
+			c.JSON(http.StatusForbidden, gin.H{
+				"error": "停用两步验证需要当前动态码确认",
+				"code":  "totp_required",
+			})
+			return
+		}
 	}
 
 	admin.TOTPSecret = ""
