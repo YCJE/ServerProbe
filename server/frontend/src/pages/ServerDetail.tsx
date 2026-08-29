@@ -23,6 +23,8 @@ import {
   getLossColor,
   parsePingData,
 } from '@/lib/utils'
+import { cssColor } from '@/lib/theme'
+import { usePageTitle } from '@/hooks/usePageTitle'
 
 /** 时间范围选项（管理端含实时模式；≥7d 走小时聚合层） */
 const TIME_RANGES: { value: TimeRange; label: string }[] = [
@@ -85,6 +87,7 @@ export default function ServerDetail() {
   const [timeRange, setTimeRange] = useState<TimeRange>('1h')
   const [historyData, setHistoryData] = useState<HistoryData | null>(null)
   const [historyLoading, setHistoryLoading] = useState(false)
+  const [historyError, setHistoryError] = useState('')
 
   // 站点设置加载完成后同步默认历史范围（仅初始化时应用，用户手动切换后不再覆盖）
   const rangeAppliedRef = useRef(false)
@@ -102,6 +105,19 @@ export default function ServerDetail() {
     update()
     window.addEventListener('resize', update)
     return () => window.removeEventListener('resize', update)
+  }, [])
+
+  // 概览手风琴：lg 以下硬件/系统/磁盘折叠展示（监控图表优先）
+  const [isDesktop, setIsDesktop] = useState(() =>
+    typeof window !== 'undefined' ? window.matchMedia('(min-width: 1024px)').matches : true
+  )
+  const [overviewOpen, setOverviewOpen] = useState(false)
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 1024px)')
+    const update = () => setIsDesktop(mq.matches)
+    update()
+    mq.addEventListener('change', update)
+    return () => mq.removeEventListener('change', update)
   }, [])
 
   // 防止卸载后 setState
@@ -135,12 +151,14 @@ export default function ServerDetail() {
       if (mountedRef.current && historyRequestIdRef.current === requestId) {
         setHistoryData(null)
         setHistoryLoading(false)
+        setHistoryError('')
       }
       return
     }
 
     if (mountedRef.current && historyRequestIdRef.current === requestId) {
       setHistoryLoading(true)
+      setHistoryError('')
     }
     try {
       const data = await getServerHistory(serverId, range)
@@ -151,6 +169,7 @@ export default function ServerDetail() {
       console.error('加载历史数据失败:', err)
       if (mountedRef.current && historyRequestIdRef.current === requestId) {
         setHistoryData(null)
+        setHistoryError(err instanceof Error ? err.message : '网络或服务异常')
       }
     } finally {
       if (mountedRef.current && historyRequestIdRef.current === requestId) {
@@ -238,6 +257,9 @@ export default function ServerDetail() {
     }
     return currentServer
   }, [currentServer, liveData])
+
+  // 页面标题：服务器名（路由级 document.title）
+  usePageTitle(displayServer ? displayServer.display_name || displayServer.hostname : '服务器详情')
 
   // 统一提取 ping 数据源（实时/历史），网络质量图表与延迟统计表共用，避免重复 parsePingData
   // 拆分实时/历史分支依赖，避免历史模式下 realtimeHistory 变化触发无意义重计算
@@ -579,6 +601,24 @@ export default function ServerDetail() {
           )}
         </div>
 
+        {/* 硬件/系统/磁盘概览：桌面端三卡直接展示，移动端折叠为"概览"手风琴（图表优先） */}
+        <details
+          open={isDesktop || overviewOpen}
+          onToggle={(e) => setOverviewOpen(e.currentTarget.open)}
+          className="card-soft group lg:rounded-none lg:border-0 lg:bg-transparent"
+        >
+          <summary className="flex cursor-pointer list-none select-none items-center justify-between px-5 py-3.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground [&::-webkit-details-marker]:hidden lg:hidden">
+            概览（硬件 / 系统 / 磁盘）
+            <svg
+              className="h-4 w-4 text-muted-foreground transition-transform duration-200 group-open:rotate-180"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 9l6 6 6-6" />
+            </svg>
+          </summary>
+          <div className="space-y-4 px-5 pb-5 lg:p-0">
         {/* 硬件信息卡片 */}
         <div className="card-soft p-5">
           <h3 className="text-xs uppercase tracking-wide text-muted-foreground mb-3">
@@ -694,7 +734,12 @@ export default function ServerDetail() {
                         className="h-full rounded-full transition-all duration-500"
                         style={{
                           width: `${Math.min(usage, 100)}%`,
-                          backgroundColor: usage > 90 ? '#f56565' : usage > 70 ? '#f6ad55' : '#42b983',
+                          backgroundColor:
+                            usage > 90
+                              ? cssColor('--destructive')
+                              : usage > 70
+                                ? cssColor('--warning')
+                                : cssColor('--success'),
                         }}
                       />
                     </div>
@@ -707,6 +752,8 @@ export default function ServerDetail() {
             </div>
           </div>
         )}
+          </div>
+        </details>
       </aside>
 
       {/* ============ 右侧主内容区（NodeGet NodeDetail 结构） ============ */}
@@ -832,6 +879,22 @@ export default function ServerDetail() {
 
         {/* 延迟图表 + 延迟统计表（NodeGet Ping/TCP Ping：折线图 + 目标统计表格） */}
         <div className="card-soft p-5">
+          {historyError && (
+            <div className="mb-3 flex items-center justify-between gap-3 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2">
+              <div className="flex min-w-0 items-center gap-2 text-xs text-destructive">
+                <svg className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M12 9v4m0 4h.01M10.3 3.9L1.8 18a2 2 0 001.7 3h17a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z" />
+                </svg>
+                <span className="truncate">历史数据加载失败：{historyError}</span>
+              </div>
+              <button
+                onClick={() => loadHistory(timeRange)}
+                className="shrink-0 rounded-md border border-destructive/40 px-2.5 py-1 text-xs font-medium text-destructive transition-colors hover:bg-destructive/10"
+              >
+                重试
+              </button>
+            </div>
+          )}
           {historyLoading && networkChartData.timestamps.length === 0 ? (
             <div
               style={{ height: 360 }}
@@ -939,10 +1002,10 @@ export default function ServerDetail() {
                   </tr>
                 </thead>
                 <tbody>
-                  {displayServer.processes.map((proc, i) => (
+                  {displayServer.processes.map((proc) => (
                     <tr
                       key={proc.pid}
-                      className={`border-b border-border/50 ${i % 2 === 0 ? '' : 'bg-secondary/10'}`}
+                      className="border-b border-border/50 transition-colors hover:bg-muted/50"
                     >
                       <td className="px-5 py-2 tabular-nums text-muted-foreground">{proc.pid}</td>
                       <td className="max-w-[200px] truncate px-5 py-2 text-foreground">{proc.name}</td>
@@ -985,7 +1048,7 @@ function InfoRow({
   )
 }
 
-/** 趋势图卡片（Sparkline + 标签 + 当前值，rounded-md border bg-card/50） */
+/** 趋势图卡片（Sparkline + 标签 + 当前值，card-soft 描边卡） */
 function TrendCard({
   label,
   value,
@@ -1003,7 +1066,7 @@ function TrendCard({
   children?: ReactNode
 }) {
   return (
-    <div className="rounded-md border bg-card/50 p-3">
+    <div className="card-soft p-3">
       <div className="mb-1 flex items-center justify-between">
         <span className="text-[10px] font-semibold text-muted-foreground">{label}</span>
         <span className="flex items-center gap-1.5">

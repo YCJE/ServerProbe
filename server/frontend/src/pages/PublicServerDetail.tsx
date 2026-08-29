@@ -29,6 +29,7 @@ import {
   parsePingData,
   getFlagEmoji,
 } from '@/lib/utils'
+import { usePageTitle } from '@/hooks/usePageTitle'
 
 /** 扩展类型：访问可能由后端附加但尚未在 ServerData 中声明的字段 */
 type ServerDataExt = ServerData & {
@@ -307,6 +308,9 @@ export default function PublicServerDetail() {
     }
     return baseServer
   }, [baseServer, liveData])
+
+  // 页面标题：服务器名（路由级 document.title）
+  usePageTitle(displayServer ? displayServer.display_name || displayServer.hostname : '服务器详情')
 
   // 切换服务器时：清除历史数据 & 重置 currentServer
   useEffect(() => {

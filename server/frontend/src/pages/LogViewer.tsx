@@ -1,14 +1,15 @@
 ﻿import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import { getLogs } from '@/lib/api'
 import type { LogEntry } from '@/lib/api'
+import { usePageTitle } from '@/hooks/usePageTitle'
 
-/** 日志级别配置：颜色、标签、排序权重 */
+/** 日志级别配置：颜色、标签、排序权重（深浅主题各自适配） */
 const LEVEL_CONFIG: Record<string, { label: string; color: string; bg: string; dot: string; order: number }> = {
-  ALL:      { label: '全部',   color: 'text-foreground',          bg: 'bg-secondary',           dot: 'bg-muted-foreground', order: 0 },
-  INFO:     { label: 'INFO',   color: 'text-blue-400',            bg: 'bg-blue-500/10',         dot: 'bg-blue-500',         order: 1 },
-  WARNING:  { label: 'WARN',   color: 'text-amber-400',           bg: 'bg-amber-500/10',        dot: 'bg-amber-500',        order: 2 },
-  ERROR:    { label: 'ERROR',  color: 'text-red-400',             bg: 'bg-red-500/10',          dot: 'bg-red-500',          order: 3 },
-  DEBUG:    { label: 'DEBUG',  color: 'text-purple-400',          bg: 'bg-purple-500/10',       dot: 'bg-purple-500',       order: 4 },
+  ALL:      { label: '全部',   color: 'text-foreground',                       bg: 'bg-secondary',      dot: 'bg-muted-foreground', order: 0 },
+  INFO:     { label: 'INFO',   color: 'text-blue-600 dark:text-blue-400',      bg: 'bg-blue-500/10',    dot: 'bg-blue-500',         order: 1 },
+  WARNING:  { label: 'WARN',   color: 'text-amber-600 dark:text-amber-400',    bg: 'bg-amber-500/10',   dot: 'bg-amber-500',        order: 2 },
+  ERROR:    { label: 'ERROR',  color: 'text-red-600 dark:text-red-400',        bg: 'bg-red-500/10',     dot: 'bg-red-500',          order: 3 },
+  DEBUG:    { label: 'DEBUG',  color: 'text-purple-600 dark:text-purple-400',  bg: 'bg-purple-500/10',  dot: 'bg-purple-500',       order: 4 },
 }
 
 /** 格式化时间戳为 HH:MM:SS.mmm */
@@ -29,6 +30,7 @@ function formatDate(ts: string): string {
 
 /** 日志查看器页面 */
 export default function LogViewer() {
+  usePageTitle('系统日志')
   const [logs, setLogs] = useState<LogEntry[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(false)
@@ -182,8 +184,8 @@ export default function LogViewer() {
 
       {/* 统计卡片 + 过滤器 */}
       <div className="flex flex-wrap items-center gap-2">
-        {/* 级别过滤 */}
-        <div className="flex items-center gap-1 rounded-md border border-border bg-card p-1">
+        {/* 级别过滤（filter-pill 胶囊） */}
+        <div className="flex flex-wrap items-center gap-1.5">
           {Object.entries(LEVEL_CONFIG).map(([key, cfg]) => {
             const isActive = activeLevel === key
             const count = key === 'ALL' ? logs.length : stats[key as keyof typeof stats] || 0
@@ -191,22 +193,19 @@ export default function LogViewer() {
               <button
                 key={key}
                 onClick={() => setActiveLevel(key)}
-                className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold transition-all ${
-                  isActive
-                    ? 'bg-primary text-primary-foreground shadow-sm'
-                    : 'text-muted-foreground hover:bg-accent hover:text-foreground'
+                className={`filter-pill flex items-center gap-1.5 ${
+                  isActive ? 'filter-pill-active' : 'filter-pill-inactive'
                 }`}
               >
                 {key !== 'ALL' && (
                   <span
-                    className="inline-block h-1.5 w-1.5 rounded-full"
-                    style={{ backgroundColor: isActive ? 'currentColor' : cfg.dot }}
+                    className={`inline-block h-1.5 w-1.5 rounded-full ${isActive ? 'bg-primary-foreground' : cfg.dot}`}
                   />
                 )}
                 {cfg.label}
                 {count > 0 && (
                   <span className={`rounded-full px-1.5 text-[10px] tabular-nums ${
-                    isActive ? 'bg-primary-foreground/20' : 'bg-background'
+                    isActive ? 'bg-primary-foreground/20' : 'bg-muted text-muted-foreground'
                   }`}>
                     {count}
                   </span>
@@ -259,27 +258,27 @@ export default function LogViewer() {
         </div>
       )}
 
-      {/* 日志终端区域 */}
-      <div className="flex-1 min-h-0 flex flex-col overflow-hidden rounded-md border border-border bg-[#1a1b26] shadow-lg">
+      {/* 日志终端区域（底色随主题：深色终端 / 浅色纸带） */}
+      <div className="flex-1 min-h-0 flex flex-col overflow-hidden rounded-md border border-border bg-card-elevated shadow-lg">
         {/* 终端标题栏 */}
-        <div className="flex items-center justify-between border-b border-white/5 bg-white/[0.02] px-4 py-2">
+        <div className="flex items-center justify-between border-b border-border/60 bg-muted/30 px-4 py-2">
           <div className="flex items-center gap-2">
             <div className="flex items-center gap-1.5">
               <span className="h-3 w-3 rounded-full bg-[#FF5F57]" />
               <span className="h-3 w-3 rounded-full bg-[#FEBC2E]" />
               <span className="h-3 w-3 rounded-full bg-[#28C840]" />
             </div>
-            <span className="ml-2 text-xs font-medium text-white/40" style={{ fontFamily: 'var(--font-mono)' }}>
+            <span className="ml-2 text-xs font-medium text-muted-foreground" style={{ fontFamily: 'var(--font-mono)' }}>
               server-probe.log
             </span>
           </div>
-          <div className="flex items-center gap-2 text-[10px] text-white/30">
+          <div className="flex items-center gap-2 text-[10px] text-muted-foreground/60">
             {dateLabels.size > 1 && (
               <span>{Array.from(dateLabels).length} 天</span>
             )}
             {autoRefresh && (
               <span className="flex items-center gap-1">
-                <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-green-400" />
+                <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-success" />
                 LIVE
               </span>
             )}
@@ -294,10 +293,10 @@ export default function LogViewer() {
         >
           {loading && logs.length === 0 ? (
             <div className="flex items-center justify-center py-16">
-              <div className="h-6 w-6 animate-spin rounded-full border-2 border-white/20 border-t-white/60" />
+              <div className="h-6 w-6 animate-spin rounded-full border-2 border-muted-foreground/20 border-t-muted-foreground/60" />
             </div>
           ) : logs.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16 text-white/30">
+            <div className="flex flex-col items-center justify-center py-16 text-muted-foreground/60">
               <svg className="mb-3 h-10 w-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
               </svg>
@@ -313,13 +312,13 @@ export default function LogViewer() {
                 return (
                   <div key={i}>
                     {showDate && (
-                      <div className="sticky top-0 z-10 bg-[#1a1b26]/90 px-4 py-1 text-[10px] font-medium text-white/30 backdrop-blur-sm">
+                      <div className="sticky top-0 z-10 bg-card-elevated/90 px-4 py-1 text-[10px] font-medium text-muted-foreground/60 backdrop-blur-sm">
                         ── {formatDate(log.timestamp)} ──
                       </div>
                     )}
-                    <div className="group flex items-start gap-3 px-4 py-0.5 hover:bg-white/[0.03] transition-colors">
+                    <div className="group flex items-start gap-3 px-4 py-0.5 hover:bg-muted/40 transition-colors">
                       {/* 时间戳 */}
-                      <span className="shrink-0 text-[11px] text-white/30 tabular-nums">
+                      <span className="shrink-0 text-[11px] text-muted-foreground/60 tabular-nums">
                         {formatTime(log.timestamp)}
                       </span>
                       {/* 级别标签 */}
@@ -327,7 +326,7 @@ export default function LogViewer() {
                         {log.level}
                       </span>
                       {/* 日志消息 */}
-                      <span className="min-w-0 flex-1 break-all text-[12px] leading-5 text-white/70 group-hover:text-white/90">
+                      <span className="min-w-0 flex-1 break-all text-[12px] leading-5 text-foreground/70 group-hover:text-foreground">
                         {log.message}
                       </span>
                     </div>

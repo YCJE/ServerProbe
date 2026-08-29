@@ -28,6 +28,21 @@ interface SiteSettingsStoreState {
   refresh: () => Promise<void>
 }
 
+/** 当前路由页面标题（usePageTitle 维护，离开页面时清除） */
+let routePageTitle = ''
+
+/** 同步 document.title：有页面标题时拼接 `${页面标题} - ${站点标题}` */
+function syncDocumentTitle() {
+  const siteTitle = useSiteSettingsStore.getState().siteTitle
+  document.title = routePageTitle ? `${routePageTitle} - ${siteTitle}` : siteTitle
+}
+
+/** 设置/清除当前路由页面标题并立即同步 document.title */
+export function setRoutePageTitle(title: string) {
+  routePageTitle = title
+  syncDocumentTitle()
+}
+
 export const useSiteSettingsStore = create<SiteSettingsStoreState>((set, get) => ({
   siteTitle: DEFAULT_SITE_SETTINGS.site_title,
   siteDescription: DEFAULT_SITE_SETTINGS.site_description,
@@ -78,9 +93,9 @@ export function useSiteSettings() {
     }
   }, [loaded, fetchSettings])
 
-  // 站点标题同步到浏览器标签页
+  // 站点标题同步到浏览器标签页（与路由页面标题组合）
   useEffect(() => {
-    document.title = siteTitle
+    syncDocumentTitle()
   }, [siteTitle])
 
   return { siteTitle, siteDescription, announcement, customFooter, defaultHistoryRange }

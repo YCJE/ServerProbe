@@ -8,6 +8,9 @@ import {
   getSSLMonitorStatuses,
 } from '@/lib/api'
 import type { SSLCertMonitor, SSLCertStatusResult } from '@/types'
+import Skeleton from '@/components/Skeleton'
+import EmptyState from '@/components/EmptyState'
+import { usePageTitle } from '@/hooks/usePageTitle'
 
 /** 状态轮询间隔（毫秒） */
 const STATUS_POLL_INTERVAL = 60000
@@ -57,6 +60,7 @@ const EMPTY_FORM: FormData = {
 
 /** SSL 证书监控管理页 */
 export default function SSLMonitorManagement() {
+  usePageTitle('SSL 监控')
   const [monitors, setMonitors] = useState<SSLCertMonitor[]>([])
   const [statuses, setStatuses] = useState<SSLCertStatusResult[]>([])
   const [loading, setLoading] = useState(false)
@@ -263,20 +267,20 @@ export default function SSLMonitorManagement() {
         </div>
 
         {loading && monitors.length === 0 ? (
-          <div className="flex items-center justify-center py-12">
-            <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-          </div>
+          <Skeleton variant="table" />
         ) : monitors.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-12">
-            <svg className="mb-3 h-10 w-10 text-muted-foreground/50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-            </svg>
-            <p className="text-sm text-muted-foreground">暂无 SSL 证书监控</p>
-            <p className="mt-1 text-xs text-muted-foreground/70">点击"添加监控"创建第一个监控项</p>
-          </div>
+          <EmptyState
+            icon={
+              <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+              </svg>
+            }
+            title="暂无 SSL 证书监控"
+            description={'点击"添加监控"创建第一个监控项'}
+          />
         ) : (
-          <div className="overflow-x-auto scrollbar-thin">
-            <table className="w-full text-sm">
+          <div className="table-shell">
+            <table className="w-full min-w-[720px] text-sm">
               <thead>
                 <tr className="border-b border-border">
                   <th className="h-10 px-3 text-left font-medium text-muted-foreground">ID</th>

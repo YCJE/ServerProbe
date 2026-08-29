@@ -1,19 +1,25 @@
 import ReactECharts from 'echarts-for-react'
 import { useMemo } from 'react'
 import type { PingResult } from '@/types'
+import { cssColor, cssColorAlpha } from '@/lib/theme'
+import Skeleton from '@/components/Skeleton'
 
 interface PingChartProps {
   /** 时间戳数组（秒级） */
   timestamps: number[]
   /** 每个时间点的 Ping 数据数组 */
   pingData: PingResult[][]
-  /** 是否深色主题 */
+  /** 是否深色主题（仅作为重渲染触发器，轴线/文字色已走 CSS 变量） */
   isDark?: boolean
   /** 图表高度 */
   height?: number
+  /** 加载中：渲染骨架占位 */
+  loading?: boolean
+  /** 加载失败：渲染错误提示 */
+  error?: string
 }
 
-/** 三网颜色配置 */
+/** 三网语义色板（运营商固定配色，计划允许的枚举色） */
 const NETWORK_COLORS: Record<string, string> = {
   '电信': '#3b82f6',
   '联通': '#22c55e',
@@ -44,6 +50,8 @@ export default function PingChart({
   pingData,
   isDark = false,
   height = 400,
+  loading = false,
+  error,
 }: PingChartProps) {
   const option = useMemo(() => {
     // 提取所有唯一的网络名称（保持顺序）
@@ -132,17 +140,17 @@ export default function PingChart({
       }
     })
 
-    const axisLabelColor = isDark ? '#9ca3af' : '#6b7280'
-    const splitLineColor = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)'
-    const axisLineColor = isDark ? '#444' : '#e5e7eb'
+    const axisLabelColor = cssColor('--muted-foreground')
+    const splitLineColor = cssColorAlpha('--border', 0.5)
+    const axisLineColor = cssColor('--border')
 
     return {
       tooltip: {
         trigger: 'axis',
-        backgroundColor: isDark ? 'rgba(30,30,30,0.95)' : 'rgba(255,255,255,0.95)',
-        borderColor: isDark ? '#444' : '#e5e7eb',
+        backgroundColor: cssColorAlpha('--card', 0.95),
+        borderColor: cssColor('--border'),
         textStyle: {
-          color: isDark ? '#e5e7eb' : '#1f2937',
+          color: cssColor('--foreground'),
         },
         formatter: (params: any) => {
           if (!params || params.length === 0) return ''
@@ -166,7 +174,12 @@ export default function PingChart({
             html += '<div style="margin-top:4px;margin-bottom:4px">丢包率:</div>'
             for (const p of lossParams) {
               if (p.value !== null && p.value !== undefined) {
-                const lossColor = p.value > 20 ? '#ef4444' : p.value > 0 ? '#f59e0b' : '#22c55e'
+                const lossColor =
+                  p.value > 20
+                    ? cssColor('--destructive')
+                    : p.value > 0
+                      ? cssColor('--warning')
+                      : cssColor('--success')
                 html += `<div style="display:flex;align-items:center;gap:6px">${p.marker} ${escapeHtml(p.seriesName.replace(' 丢包率', ''))}: <strong style="color:${lossColor}">${p.value.toFixed(1)}%</strong></div>`
               }
             }
@@ -271,7 +284,23 @@ export default function PingChart({
       ],
       series: [...latencySeries, ...lossSeries],
     }
+    // isDark 仅作主题切换时的重算触发器（颜色实时读取 CSS 变量）
   }, [timestamps, pingData, isDark])
+
+  if (loading) {
+    return <Skeleton variant="chart" height={height} />
+  }
+
+  if (error) {
+    return (
+      <div
+        className="flex flex-col items-center justify-center gap-2 rounded-md border border-dashed border-destructive/50 text-sm text-destructive"
+        style={{ height: `${height}px` }}
+      >
+        <span>{error}</span>
+      </div>
+    )
+  }
 
   return (
     <ReactECharts

@@ -1,8 +1,11 @@
 ﻿import { useEffect, useState, useCallback, useRef } from 'react'
 import { getSystemStatus } from '@/lib/api'
-import { formatBytes, getUsageColor, getUsageTextColor } from '@/lib/utils'
+import { formatBytes, getUsageColor } from '@/lib/utils'
 import type { SystemStatus } from '@/types'
 import TOTPSettings from '@/components/TOTPSettings'
+import Skeleton from '@/components/Skeleton'
+import EmptyState from '@/components/EmptyState'
+import { usePageTitle } from '@/hooks/usePageTitle'
 
 /** 将秒数格式化为 x天x小时x分x秒 */
 function formatUptimeFull(seconds: number): string {
@@ -30,6 +33,13 @@ function ProgressBar({ value, color }: { value: number; color: string }) {
       />
     </div>
   )
+}
+
+/** 指标数值专色：正常态用指标专色，高使用率升级为警告/危险 */
+function getMetricValueColor(usage: number, metricClass: string): string {
+  if (usage >= 90) return 'text-destructive'
+  if (usage >= 80) return 'text-warning'
+  return metricClass
 }
 
 /** 指标卡片 */
@@ -64,6 +74,7 @@ function MetricCard({
 
 /** 系统状态页 */
 export default function SystemStatus() {
+  usePageTitle('系统状态')
   const [status, setStatus] = useState<SystemStatus | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -173,8 +184,10 @@ export default function SystemStatus() {
       )}
 
       {loading && !status ? (
-        <div className="flex items-center justify-center py-16">
-          <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+        <div className="space-y-6">
+          <Skeleton variant="card" />
+          <Skeleton variant="section" height={120} />
+          <Skeleton variant="section" height={120} />
         </div>
       ) : status ? (
         <>
@@ -216,19 +229,21 @@ export default function SystemStatus() {
               icon="💾"
               value={formatBytes(status.db_size)}
               subValue="SQLite 数据文件"
+              color="text-disk"
             />
             <MetricCard
               label="内存分配 (Alloc)"
               icon="📊"
               value={formatBytes(status.mem_alloc)}
               subValue={`占总系统内存 ${memPercent.toFixed(1)}%`}
-              color={getUsageTextColor(memPercent)}
+              color={getMetricValueColor(memPercent, 'text-mem')}
             />
             <MetricCard
               label="系统内存 (Sys)"
               icon="📈"
               value={formatBytes(status.mem_sys)}
               subValue="Go 运行时从系统获取的内存"
+              color="text-mem"
             />
           </div>
 
@@ -236,7 +251,7 @@ export default function SystemStatus() {
           <div className="card-soft p-4">
             <div className="mb-4 flex items-center justify-between">
               <h2 className="text-sm font-semibold text-foreground">磁盘空间使用</h2>
-              <span className={`text-sm font-bold tabular-nums ${getUsageTextColor(diskUsagePercent)}`}>
+              <span className={`text-sm font-bold tabular-nums ${getMetricValueColor(diskUsagePercent, 'text-disk')}`}>
                 {diskUsagePercent.toFixed(1)}%
               </span>
             </div>
@@ -260,7 +275,7 @@ export default function SystemStatus() {
           <div className="card-soft p-4">
             <div className="mb-4 flex items-center justify-between">
               <h2 className="text-sm font-semibold text-foreground">Go 运行时内存使用</h2>
-              <span className={`text-sm font-bold tabular-nums ${getUsageTextColor(memPercent)}`}>
+              <span className={`text-sm font-bold tabular-nums ${getMetricValueColor(memPercent, 'text-mem')}`}>
                 {memPercent.toFixed(1)}%
               </span>
             </div>
@@ -294,9 +309,7 @@ export default function SystemStatus() {
           </div>
         </>
       ) : !error ? (
-        <div className="flex flex-col items-center justify-center py-16">
-          <p className="text-sm text-muted-foreground">暂无系统状态数据</p>
-        </div>
+        <EmptyState title="暂无系统状态数据" />
       ) : null}
 
       {/* 账户安全：TOTP 两步验证（独立于系统状态数据加载） */}

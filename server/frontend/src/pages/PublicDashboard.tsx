@@ -190,7 +190,7 @@ export default function PublicDashboard() {
             placeholder="搜索服务器..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="input-base h-9 w-full pl-8"
+            className="input-base h-10 w-full pl-8"
           />
         </div>
       </div>

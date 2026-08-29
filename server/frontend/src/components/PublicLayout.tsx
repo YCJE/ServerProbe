@@ -39,6 +39,13 @@ export default function PublicLayout() {
             <span className="text-sm font-semibold tracking-tight text-foreground sm:text-base">
               {siteTitle}
             </span>
+
+            {/* 移动端紧凑在线计数（标题右侧，仅 n/m） */}
+            <div className="flex items-center gap-1 rounded-md border border-border px-1.5 py-0.5 text-[11px] leading-none text-muted-foreground sm:hidden">
+              <span className="font-mono font-medium text-success">{onlineCount}</span>
+              <span>/</span>
+              <span className="font-mono">{servers.length}</span>
+            </div>
           </div>
 
           {/* 右侧: 在线计数 + WS 状态 + 主题切换 + 后台入口 */}
@@ -78,7 +85,9 @@ export default function PublicLayout() {
             <svg className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5.9h.01M4.5 3h15a1.5 1.5 0 011.5 1.5v12A1.5 1.5 0 0119.5 18h-15A1.5 1.5 0 013 16.5v-12A1.5 1.5 0 014.5 3zM11 9v5" />
             </svg>
-            <p className="whitespace-pre-wrap leading-relaxed">{announcement}</p>
+            <p className="max-h-[40vh] overflow-y-auto whitespace-pre-wrap break-words leading-relaxed scrollbar-thin">
+              {announcement}
+            </p>
           </div>
         </div>
       )}

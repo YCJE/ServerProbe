@@ -8,6 +8,9 @@ import {
   setPingInterval,
 } from '@/lib/api'
 import type { PingTarget } from '@/lib/api'
+import Skeleton from '@/components/Skeleton'
+import EmptyState from '@/components/EmptyState'
+import { usePageTitle } from '@/hooks/usePageTitle'
 
 /** 探测方式选项 */
 const METHOD_OPTIONS = [
@@ -58,6 +61,7 @@ const EMPTY_FORM: FormData = {
 
 /** 探测目标管理页 */
 export default function PingTargets() {
+  usePageTitle('探测目标')
   const [targets, setTargets] = useState<PingTarget[]>([])
   const [loading, setLoading] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
@@ -324,20 +328,20 @@ export default function PingTargets() {
         </div>
 
         {loading && targets.length === 0 ? (
-          <div className="flex items-center justify-center py-12">
-            <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-          </div>
+          <Skeleton variant="table" />
         ) : targets.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-12">
-            <svg className="mb-3 h-10 w-10 text-muted-foreground/50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-            </svg>
-            <p className="text-sm text-muted-foreground">暂无探测目标</p>
-            <p className="mt-1 text-xs text-muted-foreground/70">点击"添加目标"创建第一个探测目标</p>
-          </div>
+          <EmptyState
+            icon={
+              <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+              </svg>
+            }
+            title="暂无探测目标"
+            description={'点击"添加目标"创建第一个探测目标'}
+          />
         ) : (
-          <div className="overflow-x-auto scrollbar-thin">
-            <table className="w-full text-sm">
+          <div className="table-shell">
+            <table className="w-full min-w-[780px] text-sm">
               <thead>
                 <tr className="border-b border-border">
                   <th className="h-10 px-3 text-left font-medium text-muted-foreground">ID</th>

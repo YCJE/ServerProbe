@@ -179,8 +179,16 @@ function ServerCard({ server, basePath = '/admin' }: ServerCardProps) {
       {/* 2. 状态行：在线状态 · 运行时间 · 位置 · 供应商 */}
       <div className="mt-1.5 flex items-center gap-1.5 text-[11px] text-muted-foreground">
         <StatusDot online={server.online} size="sm" />
-        <span className="shrink-0 font-medium">
-          {server.online ? formatUptime(server.uptime) : '离线'}
+        <span
+          className={`shrink-0 font-medium ${
+            server.online ? '' : 'text-destructive'
+          }`}
+        >
+          {server.online
+            ? formatUptime(server.uptime)
+            : server.last_seen > 0
+              ? `离线 · 最后在线 ${formatRelativeTime(server.last_seen)}`
+              : '离线'}
         </span>
         {(server.region || server.isp) && (
           <>
@@ -284,7 +292,9 @@ function ServerCard({ server, basePath = '/admin' }: ServerCardProps) {
           </div>
         )}
         <div className="flex items-center justify-between gap-1">
-          <span className="shrink-0">{server.online ? '在线' : '---'}</span>
+          <span className={`shrink-0 font-medium ${server.online ? '' : 'text-destructive'}`}>
+            {server.online ? '在线' : '已离线'}
+          </span>
           <span className="shrink-0 whitespace-nowrap">
             {formatRelativeTime(server.last_seen)}
           </span>

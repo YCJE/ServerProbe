@@ -1,15 +1,21 @@
 import ReactECharts from 'echarts-for-react'
 import { useMemo } from 'react'
+import { cssColor, cssColorAlpha } from '@/lib/theme'
+import Skeleton from '@/components/Skeleton'
 
 interface CpuChartProps {
   /** 时间戳数组（秒级） */
   timestamps: number[]
   /** CPU 使用率数组（0-100） */
   cpuData: number[]
-  /** 是否深色主题 */
+  /** 是否深色主题（仅作为重渲染触发器，颜色已全部走 CSS 变量） */
   isDark?: boolean
   /** 图表高度 */
   height?: number
+  /** 加载中：渲染骨架占位 */
+  loading?: boolean
+  /** 加载失败：渲染错误提示 */
+  error?: string
 }
 
 /** CPU 使用率实时折线图 */
@@ -18,15 +24,17 @@ export default function CpuChart({
   cpuData,
   isDark = false,
   height = 300,
+  loading = false,
+  error,
 }: CpuChartProps) {
   const option = useMemo(() => {
     return {
       tooltip: {
         trigger: 'axis',
-        backgroundColor: isDark ? 'rgba(30,30,30,0.95)' : 'rgba(255,255,255,0.95)',
-        borderColor: isDark ? '#444' : '#e5e7eb',
+        backgroundColor: cssColorAlpha('--card', 0.95),
+        borderColor: cssColor('--border'),
         textStyle: {
-          color: isDark ? '#e5e7eb' : '#1f2937',
+          color: cssColor('--foreground'),
         },
         formatter: (params: unknown) => {
           const points = params as Array<{ value?: number | null; axisValue?: number }> | undefined
@@ -46,10 +54,10 @@ export default function CpuChart({
         type: 'category',
         data: timestamps,
         axisLine: {
-          lineStyle: { color: isDark ? '#444' : '#e5e7eb' },
+          lineStyle: { color: cssColor('--border') },
         },
         axisLabel: {
-          color: isDark ? '#9ca3af' : '#6b7280',
+          color: cssColor('--muted-foreground'),
           fontSize: 11,
           formatter: (value: number) => {
             return new Date(value * 1000).toLocaleTimeString('zh-CN', {
@@ -67,13 +75,13 @@ export default function CpuChart({
         axisLine: { show: false },
         axisTick: { show: false },
         axisLabel: {
-          color: isDark ? '#9ca3af' : '#6b7280',
+          color: cssColor('--muted-foreground'),
           fontSize: 11,
           formatter: '{value}%',
         },
         splitLine: {
           lineStyle: {
-            color: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)',
+            color: cssColorAlpha('--border', 0.5),
           },
         },
       },
@@ -86,7 +94,7 @@ export default function CpuChart({
           symbol: 'none',
           lineStyle: {
             width: 2,
-            color: '#3b82f6',
+            color: cssColor('--metric-cpu'),
           },
           areaStyle: {
             color: {
@@ -96,8 +104,8 @@ export default function CpuChart({
               x2: 0,
               y2: 1,
               colorStops: [
-                { offset: 0, color: 'rgba(59,130,246,0.3)' },
-                { offset: 1, color: 'rgba(59,130,246,0.02)' },
+                { offset: 0, color: cssColorAlpha('--metric-cpu', 0.3) },
+                { offset: 1, color: cssColorAlpha('--metric-cpu', 0.02) },
               ],
             },
           },
@@ -107,12 +115,12 @@ export default function CpuChart({
             data: [
               {
                 yAxis: 80,
-                lineStyle: { color: '#f59e0b', type: 'dashed', width: 1 },
+                lineStyle: { color: cssColor('--warning'), type: 'dashed', width: 1 },
                 label: { show: false },
               },
               {
                 yAxis: 90,
-                lineStyle: { color: '#ef4444', type: 'dashed', width: 1 },
+                lineStyle: { color: cssColor('--destructive'), type: 'dashed', width: 1 },
                 label: { show: false },
               },
             ],
@@ -120,7 +128,23 @@ export default function CpuChart({
         },
       ],
     }
+    // isDark 仅作主题切换时的重算触发器（颜色实时读取 CSS 变量）
   }, [timestamps, cpuData, isDark])
+
+  if (loading) {
+    return <Skeleton variant="chart" height={height} />
+  }
+
+  if (error) {
+    return (
+      <div
+        className="flex flex-col items-center justify-center gap-2 rounded-md border border-dashed border-destructive/50 text-sm text-destructive"
+        style={{ height: `${height}px` }}
+      >
+        <span>{error}</span>
+      </div>
+    )
+  }
 
   return (
     <ReactECharts

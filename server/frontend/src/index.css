@@ -278,12 +278,41 @@
     color: hsl(var(--foreground));
   }
 
-  /* ── 表格容器（NodeGet: border rounded-md bg-card） ── */
+  /* ── 表格容器（置于 card-soft overflow-hidden 内层：横向滚动 + 表头节奏） ── */
   .table-shell {
-    border-radius: var(--radius);
-    border: 1px solid hsl(var(--border));
-    background: hsl(var(--card));
-    overflow: hidden;
+    overflow-x: auto;
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--muted-foreground) / 0.35) transparent;
+  }
+
+  .table-shell::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  .table-shell::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .table-shell::-webkit-scrollbar-thumb {
+    background-color: hsl(var(--muted-foreground) / 0.3);
+    border: 2px solid transparent;
+    border-radius: 999px;
+    background-clip: padding-box;
+  }
+
+  .table-shell::-webkit-scrollbar-thumb:hover {
+    background-color: hsl(var(--muted-foreground) / 0.5);
+  }
+
+  /* 表头基线：h-10 px-3 text-left font-medium text-muted-foreground */
+  .table-shell th {
+    height: 2.5rem;
+    padding-left: 0.75rem;
+    padding-right: 0.75rem;
+    text-align: left;
+    font-weight: 500;
+    color: hsl(var(--muted-foreground));
   }
 
   .table-row-hover {

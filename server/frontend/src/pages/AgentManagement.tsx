@@ -13,6 +13,9 @@ import { useServerStore } from '@/store/useServerStore'
 import type { RegisterCode, AgentInfo } from '@/types'
 import { getFlagEmoji } from '@/lib/utils'
 import { useTotpConfirm, TotpCancelledError } from '@/hooks/useTotpConfirm'
+import Skeleton from '@/components/Skeleton'
+import EmptyState from '@/components/EmptyState'
+import { usePageTitle } from '@/hooks/usePageTitle'
 
 /** 币种选项 */
 const CURRENCY_OPTIONS = ['CNY', 'USD', 'EUR', 'JPY', 'GBP', 'HKD', 'TWD', 'KRW', 'SGD']
@@ -27,6 +30,7 @@ const CYCLE_OPTIONS = [
 
 /** Agent 管理页 */
 export default function AgentManagement() {
+  usePageTitle('Agent 管理')
   const [codes, setCodes] = useState<RegisterCode[]>([])
   const [agents, setAgents] = useState<AgentInfo[]>([])
   const [loading, setLoading] = useState(false)
@@ -497,17 +501,17 @@ export default function AgentManagement() {
         </div>
 
         {loading && codes.length === 0 ? (
-          <div className="flex items-center justify-center py-12">
-            <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-          </div>
+          <Skeleton variant="table" count={3} />
         ) : codes.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-12">
-            <svg className="mb-3 h-10 w-10 text-muted-foreground/50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
-            </svg>
-            <p className="text-sm text-muted-foreground">暂无注册码</p>
-            <p className="mt-1 text-xs text-muted-foreground/70">在上方填写服务器信息后生成注册码</p>
-          </div>
+          <EmptyState
+            icon={
+              <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+              </svg>
+            }
+            title="暂无注册码"
+            description="在上方填写服务器信息后生成注册码"
+          />
         ) : (
           <div className="divide-y divide-dashed divide-border">
             {codes.map((code) => {
@@ -608,20 +612,20 @@ export default function AgentManagement() {
         </div>
 
         {loading && agents.length === 0 ? (
-          <div className="flex items-center justify-center py-12">
-            <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-          </div>
+          <Skeleton variant="table" />
         ) : agents.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-12">
-            <svg className="mb-3 h-10 w-10 text-muted-foreground/50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01" />
-            </svg>
-            <p className="text-sm text-muted-foreground">暂无已安装的 Agent</p>
-            <p className="mt-1 text-xs text-muted-foreground/70">在目标服务器上执行安装命令后，Agent 会自动出现在这里</p>
-          </div>
+          <EmptyState
+            icon={
+              <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01" />
+              </svg>
+            }
+            title="暂无已安装的 Agent"
+            description="在目标服务器上执行安装命令后，Agent 会自动出现在这里"
+          />
         ) : (
-          <div className="overflow-x-auto scrollbar-thin">
-            <table className="w-full text-sm">
+          <div className="table-shell">
+            <table className="w-full min-w-[880px] text-sm">
               <thead>
                 <tr className="border-b border-border">
                   <th className="h-10 px-3 text-left font-medium text-muted-foreground">ID</th>

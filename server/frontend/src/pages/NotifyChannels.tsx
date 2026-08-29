@@ -7,6 +7,9 @@ import {
   testNotifyChannel,
 } from '@/lib/api'
 import type { NotifyChannel } from '@/types'
+import Skeleton from '@/components/Skeleton'
+import EmptyState from '@/components/EmptyState'
+import { usePageTitle } from '@/hooks/usePageTitle'
 
 /** 渠道类型选项 */
 const TYPE_OPTIONS = [
@@ -98,6 +101,7 @@ function buildConfig(type: string, form: FormData): string {
 
 /** 通知渠道管理页 */
 export default function NotifyChannels() {
+  usePageTitle('通知渠道')
   const [channels, setChannels] = useState<NotifyChannel[]>([])
   const [loading, setLoading] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
@@ -323,20 +327,20 @@ export default function NotifyChannels() {
         </div>
 
         {loading && channels.length === 0 ? (
-          <div className="flex items-center justify-center py-12">
-            <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-          </div>
+          <Skeleton variant="table" />
         ) : channels.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-12">
-            <svg className="mb-3 h-10 w-10 text-muted-foreground/50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-            </svg>
-            <p className="text-sm text-muted-foreground">暂无通知渠道</p>
-            <p className="mt-1 text-xs text-muted-foreground/70">点击"添加渠道"创建第一个通知渠道</p>
-          </div>
+          <EmptyState
+            icon={
+              <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+              </svg>
+            }
+            title="暂无通知渠道"
+            description={'点击"添加渠道"创建第一个通知渠道'}
+          />
         ) : (
-          <div className="overflow-x-auto scrollbar-thin">
-            <table className="w-full text-sm">
+          <div className="table-shell">
+            <table className="w-full min-w-[560px] text-sm">
               <thead>
                 <tr className="border-b border-border">
                   <th className="h-10 px-3 text-left font-medium text-muted-foreground">ID</th>

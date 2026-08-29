@@ -1,5 +1,6 @@
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent, MouseEvent } from 'react'
+import Skeleton from '@/components/Skeleton'
 
 export interface ChartSeries {
   name: string
@@ -20,6 +21,10 @@ interface NetworkQualityChartProps {
   showGrid?: boolean
   showLegend?: boolean
   timeRange?: string
+  /** 加载中：渲染骨架占位 */
+  loading?: boolean
+  /** 加载失败：渲染错误提示 */
+  error?: string
 }
 
 /** Catmull-Rom 转 Bezier 平滑路径（monotone 风格，同 NodeGet/Recharts 曲线） */
@@ -66,7 +71,7 @@ const fmtDateTime = (ts: number) =>
  * 单区平滑折线 + 悬浮十字线 Tooltip + 图例切换；丢包率在 Tooltip 与统计表中展示
  * 所有颜色使用 CSS 变量，自动跟随深色/浅色主题
  */
-export default function NetworkQualityChart({ timestamps, series, height = 280, showGrid = true, showLegend = true, timeRange }: NetworkQualityChartProps) {
+export default function NetworkQualityChart({ timestamps, series, height = 280, showGrid = true, showLegend = true, timeRange, loading = false, error }: NetworkQualityChartProps) {
   const uid = useId()
   const wrapRef = useRef<HTMLDivElement>(null)
   const svgRef = useRef<SVGSVGElement>(null)
@@ -161,6 +166,22 @@ export default function NetworkQualityChart({ timestamps, series, height = 280, 
   const scrollLeft = wrapRef.current?.scrollLeft || 0
   const tipLeft = Math.min(Math.max(hoverX, scrollLeft + 70), Math.max(scrollLeft + 70, scrollLeft + containerW - 70))
   const visibleSeries = series.filter((s) => !hiddenSeries.has(s.name))
+
+  // 加载/错误态（置于全部 hooks 之后）
+  if (loading) {
+    return <Skeleton variant="chart" height={height} />
+  }
+
+  if (error) {
+    return (
+      <div
+        className="flex w-full flex-col items-center justify-center gap-2 rounded-md border border-dashed border-destructive/50 text-sm text-destructive"
+        style={{ height }}
+      >
+        <span>{error}</span>
+      </div>
+    )
+  }
 
   // 空数据占位
   if (n === 0) {

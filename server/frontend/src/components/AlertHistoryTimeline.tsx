@@ -10,11 +10,13 @@ export default function AlertHistoryTimeline({ rules }: { rules: AlertRule[] }) 
   const [stateFilter, setStateFilter] = useState<'' | 'firing' | 'resolved'>('')
   const [ruleFilter, setRuleFilter] = useState<number | ''>('')
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
 
   const pageSize = 20
 
   const loadHistory = useCallback(async () => {
     setLoading(true)
+    setError('')
     try {
       const res = await getAlertHistory({
         state: stateFilter || undefined,
@@ -28,6 +30,7 @@ export default function AlertHistoryTimeline({ rules }: { rules: AlertRule[] }) 
       console.error('加载告警历史失败:', err)
       setHistories([])
       setTotal(0)
+      setError(err instanceof Error ? err.message : '网络或服务异常')
     } finally {
       setLoading(false)
     }
@@ -133,6 +136,21 @@ export default function AlertHistoryTimeline({ rules }: { rules: AlertRule[] }) 
       {loading && histories.length === 0 ? (
         <div className="flex items-center justify-center py-12">
           <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+        </div>
+      ) : error ? (
+        <div className="flex items-center justify-between gap-3 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2.5">
+          <div className="flex min-w-0 items-center gap-2 text-xs text-destructive">
+            <svg className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M12 9v4m0 4h.01M10.3 3.9L1.8 18a2 2 0 001.7 3h17a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z" />
+            </svg>
+            <span className="truncate">告警历史加载失败：{error}</span>
+          </div>
+          <button
+            onClick={() => loadHistory()}
+            className="shrink-0 rounded-md border border-destructive/40 px-2.5 py-1 text-xs font-medium text-destructive transition-colors hover:bg-destructive/10"
+          >
+            重试
+          </button>
         </div>
       ) : histories.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-12">

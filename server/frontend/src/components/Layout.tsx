@@ -18,6 +18,7 @@ const Icon = {
   traffic: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M3 3v18h18M7 15l4-4 3 3 5-6" />,
   share: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M10 13a5 5 0 007.5.5l3-3a5 5 0 00-7-7l-1.8 1.7M14 11a5 5 0 00-7.5-.5l-3 3a5 5 0 007 7L12.3 19" />,
   settings: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M12 15a3 3 0 100-6 3 3 0 000 6zM19.4 15a1.7 1.7 0 00.3 1.9l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.9-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1-1.6 1.7 1.7 0 00-1.9.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.9 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.6-1 1.7 1.7 0 00-.3-1.9l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.9.3h.1a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.6 1.7 1.7 0 001.9-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.9v.1a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z" />,
+  system: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M12 14l4-4M3.34 19a10 10 0 1117.32 0" />,
   audit: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M9 11l3 3L22 4M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11" />,
   logs: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M8 13h8M8 17h5" />,
   back: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M19 12H5M12 19l-7-7 7-7" />,
@@ -55,7 +56,7 @@ const NAV_GROUPS = [
     title: '系统',
     items: [
       { to: '/admin/settings', label: '站点设置', icon: Icon.settings, end: false },
-      { to: '/admin/system', label: '系统状态', icon: Icon.settings, end: false },
+      { to: '/admin/system', label: '系统状态', icon: Icon.system, end: false },
       { to: '/admin/logs', label: '系统日志', icon: Icon.logs, end: false },
       { to: '/admin/audit-logs', label: '审计日志', icon: Icon.audit, end: false },
     ],
@@ -235,6 +236,13 @@ export default function Layout() {
             <h1 className="text-base font-semibold tracking-tight text-foreground sm:text-lg">
               {siteTitle}
             </h1>
+
+            {/* 移动端紧凑在线计数（标题右侧，仅 n/m） */}
+            <div className="flex items-center gap-1 rounded-md border border-border px-1.5 py-0.5 text-[11px] leading-none text-muted-foreground sm:hidden">
+              <span className="font-mono font-medium text-success">{onlineCount}</span>
+              <span>/</span>
+              <span className="font-mono">{totalCount}</span>
+            </div>
           </div>
 
           {/* 右侧：WS 状态 + 在线计数 + ThemeToggle + 退出 */}
@@ -272,7 +280,9 @@ export default function Layout() {
               <svg className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5.9h.01M4.5 3h15a1.5 1.5 0 011.5 1.5v12A1.5 1.5 0 0119.5 18h-15A1.5 1.5 0 013 16.5v-12A1.5 1.5 0 014.5 3zM11 9v5" />
               </svg>
-              <p className="whitespace-pre-wrap leading-relaxed">{announcement}</p>
+              <p className="max-h-[40vh] overflow-y-auto whitespace-pre-wrap break-words leading-relaxed scrollbar-thin">
+                {announcement}
+              </p>
             </div>
           </div>
         )}

@@ -1,6 +1,9 @@
 ﻿import { useEffect, useState } from 'react'
 import { useTagStore } from '@/store/useTagStore'
 import type { Tag } from '@/types'
+import Skeleton from '@/components/Skeleton'
+import EmptyState from '@/components/EmptyState'
+import { usePageTitle } from '@/hooks/usePageTitle'
 
 /** 预设颜色（NodeGet 风格标签色板） */
 const PRESET_COLORS = [
@@ -19,6 +22,7 @@ const EMPTY_FORM: FormData = { name: '', color: PRESET_COLORS[0] }
 
 /** 标签管理页（CRUD + 颜色） */
 export default function TagManagement() {
+  usePageTitle('标签管理')
   const tags = useTagStore((s) => s.tags)
   const loading = useTagStore((s) => s.loading)
   const loaded = useTagStore((s) => s.loaded)
@@ -131,20 +135,20 @@ export default function TagManagement() {
         </div>
 
         {loading && !loaded ? (
-          <div className="flex items-center justify-center py-12">
-            <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-          </div>
+          <Skeleton variant="table" />
         ) : tags.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-12">
-            <svg className="mb-3 h-10 w-10 text-muted-foreground/50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A2 2 0 013 12V7a4 4 0 014-4z" />
-            </svg>
-            <p className="text-sm text-muted-foreground">暂无标签</p>
-            <p className="mt-1 text-xs text-muted-foreground/70">点击"添加标签"创建第一个标签</p>
-          </div>
+          <EmptyState
+            icon={
+              <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A2 2 0 013 12V7a4 4 0 014-4z" />
+              </svg>
+            }
+            title="暂无标签"
+            description={'点击"添加标签"创建第一个标签'}
+          />
         ) : (
-          <div className="overflow-x-auto scrollbar-thin">
-            <table className="w-full text-sm">
+          <div className="table-shell">
+            <table className="w-full min-w-[640px] text-sm">
               <thead>
                 <tr className="border-b border-border">
                   <th className="h-10 px-3 text-left font-medium text-muted-foreground">ID</th>

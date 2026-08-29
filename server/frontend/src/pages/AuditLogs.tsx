@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { getAuditLogs, type AuditLogEntry } from '@/lib/api'
+import Skeleton from '@/components/Skeleton'
+import EmptyState from '@/components/EmptyState'
+import { usePageTitle } from '@/hooks/usePageTitle'
 
 const PAGE_SIZE = 50
 
@@ -14,6 +17,7 @@ const METHOD_STYLES: Record<string, string> = {
 
 /** 审计日志页（P1：管理端变更操作全量落库，可按管理员/操作/结果检索） */
 export default function AuditLogs() {
+  usePageTitle('审计日志')
   const [logs, setLogs] = useState<AuditLogEntry[]>([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
@@ -174,22 +178,15 @@ export default function AuditLogs() {
       {/* 日志表格 */}
       <div className="card-soft overflow-hidden">
         {loading && logs.length === 0 ? (
-          <div className="flex items-center justify-center py-12">
-            <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-          </div>
+          <Skeleton variant="table" />
         ) : logs.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-12">
-            <svg className="mb-3 h-10 w-10 text-muted-foreground/50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M8 13h8M8 17h5" />
-            </svg>
-            <p className="text-sm text-muted-foreground">暂无审计日志</p>
-            <p className="mt-1 text-xs text-muted-foreground/70">
-              管理端的登录与增删改操作会自动记录到这里
-            </p>
-          </div>
+          <EmptyState
+            title="暂无审计日志"
+            description="管理端的登录与增删改操作会自动记录到这里"
+          />
         ) : (
-          <div className="overflow-x-auto scrollbar-thin">
-            <table className="w-full text-sm">
+          <div className="table-shell">
+            <table className="w-full min-w-[760px] text-sm">
               <thead>
                 <tr className="border-b border-border">
                   <th className="h-10 px-3 text-left font-medium text-muted-foreground whitespace-nowrap">时间</th>

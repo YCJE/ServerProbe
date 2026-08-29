@@ -6,6 +6,9 @@ import {
   deleteSharePage,
 } from '@/lib/api'
 import type { SharePage } from '@/types'
+import Skeleton from '@/components/Skeleton'
+import EmptyState from '@/components/EmptyState'
+import { usePageTitle } from '@/hooks/usePageTitle'
 
 /** 表单数据 */
 interface FormData {
@@ -27,6 +30,7 @@ const EMPTY_FORM: FormData = {
 
 /** 分享页管理页 */
 export default function SharePageManagement() {
+  usePageTitle('分享页')
   const [pages, setPages] = useState<SharePage[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -210,20 +214,20 @@ export default function SharePageManagement() {
         </div>
 
         {loading && pages.length === 0 ? (
-          <div className="flex items-center justify-center py-12">
-            <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-          </div>
+          <Skeleton variant="table" />
         ) : pages.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-12">
-            <svg className="mb-3 h-10 w-10 text-muted-foreground/50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
-            </svg>
-            <p className="text-sm text-muted-foreground">暂无分享页</p>
-            <p className="mt-1 text-xs text-muted-foreground/70">点击"添加分享页"创建第一个分享页</p>
-          </div>
+          <EmptyState
+            icon={
+              <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+              </svg>
+            }
+            title="暂无分享页"
+            description={'点击"添加分享页"创建第一个分享页'}
+          />
         ) : (
-          <div className="overflow-x-auto scrollbar-thin">
-            <table className="w-full text-sm">
+          <div className="table-shell">
+            <table className="w-full min-w-[820px] text-sm">
               <thead>
                 <tr className="border-b border-border">
                   <th className="h-10 px-3 text-left font-medium text-muted-foreground">ID</th>

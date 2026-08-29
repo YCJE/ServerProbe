@@ -16,13 +16,13 @@ interface ResourceRingProps {
   detail?: boolean
 }
 
-/** NodeGet 色彩 + glow 配置 */
+/** 色彩 + glow 配置（全部走主题令牌） */
 interface MetricStyle {
   color: string
   glow: string
 }
 
-/** 根据使用率返回 NodeGet 色彩和 glow（< 70% 绿，70-90% 橙，>= 90% 红，null 灰） */
+/** 根据使用率返回色彩和 glow（< 70% 绿，70-90% 橙，>= 90% 红，null 灰） */
 function getMetricStyle(value: number | null): MetricStyle {
   if (value === null || value === undefined) {
     return {
@@ -31,19 +31,19 @@ function getMetricStyle(value: number | null): MetricStyle {
     }
   }
   if (value > 90) {
-    return { color: '#f56565', glow: 'rgba(245, 101, 101, 0.20)' }
+    return { color: 'hsl(var(--destructive))', glow: 'hsl(var(--destructive) / 0.20)' }
   }
   if (value >= 70) {
-    return { color: '#f6ad55', glow: 'rgba(246, 173, 85, 0.18)' }
+    return { color: 'hsl(var(--warning))', glow: 'hsl(var(--warning) / 0.18)' }
   }
-  return { color: '#42b983', glow: 'rgba(66, 185, 131, 0.18)' }
+  return { color: 'hsl(var(--success))', glow: 'hsl(var(--success) / 0.18)' }
 }
 
 /**
  * 资源环形图组件
  *
  * SVG 圆环组件，用于展示 CPU/内存/磁盘等使用率：
- * - 颜色分级（NodeGet 色系）：<70% 绿(#42b983)、70-90% 橙(#f6ad55)、>90% 红(#f56565)、null 灰
+ * - 颜色分级（主题令牌）：<70% 绿、70-90% 橙、>90% 红、null 灰
  * - 中心显示百分比数值
  * - 进度变化使用 CSS transition 动画（stroke-dashoffset，0.5s ease）
  * - 外圈 glow 效果（boxShadow: 0 0 18px var(--metric-glow)）

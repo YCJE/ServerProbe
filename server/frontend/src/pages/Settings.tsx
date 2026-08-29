@@ -10,6 +10,8 @@ import {
 import { useSiteSettingsStore } from '@/store/useSiteSettingsStore'
 import type { SystemSettings, DBStats } from '@/types'
 import { useTotpConfirm, TotpCancelledError } from '@/hooks/useTotpConfirm'
+import Skeleton from '@/components/Skeleton'
+import { usePageTitle } from '@/hooks/usePageTitle'
 
 /** 历史范围选项（≥7d 长范围走小时聚合层数据） */
 const HISTORY_RANGE_OPTIONS = [
@@ -81,6 +83,7 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
 
 /** 站点设置页（Komari 风格：站点信息 + 数据加载 + 数据库管理） */
 export default function SettingsPage() {
+  usePageTitle('站点设置')
   const [settings, setSettings] = useState<SystemSettings>(DEFAULT_SETTINGS)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -182,9 +185,9 @@ export default function SettingsPage() {
   if (loading) {
     return (
       <div className="space-y-4">
-        <div className="card-soft h-40 animate-pulse" />
-        <div className="card-soft h-40 animate-pulse" />
-        <div className="card-soft h-56 animate-pulse" />
+        <Skeleton variant="section" height={160} />
+        <Skeleton variant="section" height={160} />
+        <Skeleton variant="section" height={224} />
       </div>
     )
   }
@@ -331,7 +334,7 @@ export default function SettingsPage() {
             { label: '流量记录', value: dbLoading ? '…' : formatNumber(dbStats?.traffic_records || 0) },
             { label: '服务监控', value: dbLoading ? '…' : formatNumber(dbStats?.service_monitors || 0) },
           ].map((item) => (
-            <div key={item.label} className="rounded-md border border-border bg-muted/40 p-3">
+            <div key={item.label} className="card-soft p-3">
               <p className="text-[11px] text-muted-foreground">{item.label}</p>
               <p className="mt-0.5 font-mono text-sm font-medium text-foreground">{item.value}</p>
             </div>

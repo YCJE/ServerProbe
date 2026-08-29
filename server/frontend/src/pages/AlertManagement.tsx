@@ -9,6 +9,9 @@ import {
 } from '@/lib/api'
 import type { AlertRule, NotifyChannel } from '@/types'
 import AlertHistoryTimeline from '@/components/AlertHistoryTimeline'
+import Skeleton from '@/components/Skeleton'
+import EmptyState from '@/components/EmptyState'
+import { usePageTitle } from '@/hooks/usePageTitle'
 
 /** 指标选项 */
 const METRIC_OPTIONS = [
@@ -116,6 +119,7 @@ const EMPTY_FORM: FormData = {
 
 /** 告警规则管理页 */
 export default function AlertManagement() {
+  usePageTitle('告警管理')
   const [rules, setRules] = useState<AlertRule[]>([])
   const [channels, setChannels] = useState<NotifyChannel[]>([])
   const [loading, setLoading] = useState(false)
@@ -338,20 +342,20 @@ export default function AlertManagement() {
             </div>
 
             {loading && rules.length === 0 ? (
-              <div className="flex items-center justify-center py-12">
-                <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-              </div>
+              <Skeleton variant="table" />
             ) : rules.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-12">
-                <svg className="mb-3 h-10 w-10 text-muted-foreground/50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
-                </svg>
-                <p className="text-sm text-muted-foreground">暂无告警规则</p>
-                <p className="mt-1 text-xs text-muted-foreground/70">点击"添加规则"创建第一个告警规则</p>
-              </div>
+              <EmptyState
+                icon={
+                  <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                  </svg>
+                }
+                title="暂无告警规则"
+                description={'点击"添加规则"创建第一个告警规则'}
+              />
             ) : (
-              <div className="overflow-x-auto scrollbar-thin">
-                <table className="w-full text-sm">
+              <div className="table-shell">
+                <table className="w-full min-w-[860px] text-sm">
                   <thead>
                     <tr className="border-b border-border">
                       <th className="h-10 px-3 text-left font-medium text-muted-foreground">ID</th>

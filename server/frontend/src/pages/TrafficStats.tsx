@@ -2,6 +2,9 @@
 import { useServerStore } from '@/store/useServerStore'
 import { getTraffic } from '@/lib/api'
 import type { TrafficResponse, MonthlyTraffic, TrafficRecord } from '@/types'
+import Skeleton from '@/components/Skeleton'
+import EmptyState from '@/components/EmptyState'
+import { usePageTitle } from '@/hooks/usePageTitle'
 
 /** 格式化字节数（1024 进制，保留 2 位小数） */
 function formatBytes(bytes: number): string {
@@ -25,6 +28,7 @@ function formatDate(date: string): string {
 
 /** 流量统计页 */
 export default function TrafficStats() {
+  usePageTitle('流量统计')
   const servers = useServerStore((s) => s.servers)
 
   const [selectedAgentId, setSelectedAgentId] = useState<number | ''>('')
@@ -129,20 +133,20 @@ export default function TrafficStats() {
       )}
 
       {selectedAgentId === '' && servers.length === 0 && (
-        <div className="card-soft flex flex-col items-center justify-center py-12">
-          <svg className="mb-3 h-10 w-10 text-muted-foreground/50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-          </svg>
-          <p className="text-sm text-muted-foreground">暂无 Agent 数据</p>
-          <p className="mt-1 text-xs text-muted-foreground/70">请先添加 Agent 后再查看流量统计</p>
+        <div className="card-soft overflow-hidden">
+          <EmptyState
+            icon={
+              <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+            }
+            title="暂无 Agent 数据"
+            description="请先添加 Agent 后再查看流量统计"
+          />
         </div>
       )}
 
-      {loading && (
-        <div className="flex items-center justify-center py-12">
-          <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-        </div>
-      )}
+      {loading && <Skeleton variant="section" height={360} />}
 
       {!loading && selectedAgentId !== '' && (
         <>
@@ -196,11 +200,11 @@ export default function TrafficStats() {
                 <div className="border-b border-dashed border-border px-4 py-4">
                   <div className="mb-2 flex items-center gap-4 text-xs text-muted-foreground">
                     <span className="flex items-center gap-1.5">
-                      <span className="inline-block h-2.5 w-2.5 rounded-sm bg-emerald-500" />
+                      <span className="inline-block h-2.5 w-2.5 rounded-sm bg-success" />
                       接收 (RX)
                     </span>
                     <span className="flex items-center gap-1.5">
-                      <span className="inline-block h-2.5 w-2.5 rounded-sm bg-amber-500" />
+                      <span className="inline-block h-2.5 w-2.5 rounded-sm bg-warning" />
                       发送 (TX)
                     </span>
                   </div>
@@ -221,11 +225,11 @@ export default function TrafficStats() {
                             style={{ height: `${Math.max(heightPercent, 2)}%` }}
                           >
                             <div
-                              className="bg-amber-500 transition-opacity group-hover:opacity-80"
+                              className="bg-warning transition-opacity group-hover:opacity-80"
                               style={{ height: `${100 - rxPercent}%` }}
                             />
                             <div
-                              className="bg-emerald-500 transition-opacity group-hover:opacity-80"
+                              className="bg-success transition-opacity group-hover:opacity-80"
                               style={{ height: `${rxPercent}%` }}
                             />
                           </div>
@@ -253,10 +257,10 @@ export default function TrafficStats() {
                       {[...monthTraffic.records].reverse().map((record: TrafficRecord) => (
                         <tr key={record.id || record.date} className="text-foreground transition-colors hover:bg-muted/50">
                           <td className="px-3 py-2.5 tabular-nums">{record.date}</td>
-                          <td className="px-3 py-2.5 text-right tabular-nums text-emerald-500">
+                          <td className="px-3 py-2.5 text-right tabular-nums text-success">
                             {formatBytes(record.rx_bytes)}
                           </td>
-                          <td className="px-3 py-2.5 text-right tabular-nums text-amber-500">
+                          <td className="px-3 py-2.5 text-right tabular-nums text-warning">
                             {formatBytes(record.tx_bytes)}
                           </td>
                           <td className="px-3 py-2.5 text-right tabular-nums font-medium">
@@ -268,10 +272,10 @@ export default function TrafficStats() {
                     <tfoot className="sticky bottom-0 z-10">
                       <tr className="border-t-2 border-border bg-secondary/80 backdrop-blur font-semibold">
                         <td className="px-3 py-3 text-foreground">月汇总</td>
-                        <td className="px-3 py-3 text-right tabular-nums text-emerald-500">
+                        <td className="px-3 py-3 text-right tabular-nums text-success">
                           {formatBytes(monthTraffic.total.rx_bytes)}
                         </td>
-                        <td className="px-3 py-3 text-right tabular-nums text-amber-500">
+                        <td className="px-3 py-3 text-right tabular-nums text-warning">
                           {formatBytes(monthTraffic.total.tx_bytes)}
                         </td>
                         <td className="px-3 py-3 text-right tabular-nums text-primary">
@@ -283,12 +287,14 @@ export default function TrafficStats() {
                 </div>
               </>
             ) : (
-              <div className="flex flex-col items-center justify-center py-12">
-                <svg className="mb-3 h-10 w-10 text-muted-foreground/50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-                <p className="text-sm text-muted-foreground">暂无当月流量数据</p>
-              </div>
+              <EmptyState
+                icon={
+                  <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                }
+                title="暂无当月流量数据"
+              />
             )}
           </div>
         </>

@@ -6,6 +6,7 @@ import ServerCard from '@/components/ServerCard'
 import DistroIcon from '@/components/DistroIcon'
 import StatusDot from '@/components/StatusDot'
 import MapView from '@/components/MapView'
+import EmptyState from '@/components/EmptyState'
 import { getLatencyTextColor } from '@/components/LatencyGrid'
 import {
   formatSpeed,
@@ -17,6 +18,7 @@ import {
   getTagStyle,
 } from '@/lib/utils'
 import type { ServerData } from '@/types'
+import { usePageTitle } from '@/hooks/usePageTitle'
 
 /** 视图模式 */
 type ViewMode = 'card' | 'table' | 'map'
@@ -122,7 +124,7 @@ function FilterSelect({
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="input-base h-9 cursor-pointer appearance-none pr-8 font-medium"
+        className="input-base h-10 cursor-pointer appearance-none pr-8 font-medium"
         aria-label={ariaLabel}
       >
         {options.map((opt) => (
@@ -320,6 +322,7 @@ const ServerTableRow = memo(function ServerTableRow({
 
 /** 仪表盘页（服务器卡片网格 + 表格视图，NodeGet 风格） */
 export default function Dashboard() {
+  usePageTitle('仪表盘')
   const servers = useServerStore((s) => s.servers)
   const fetchServers = useServerStore((s) => s.fetchServers)
   const wsConnected = useServerStore((s) => s.wsConnected)
@@ -563,7 +566,7 @@ export default function Dashboard() {
         </div>
         <button
           onClick={() => fetchServers().catch(() => {})}
-          className="btn-outline h-9"
+          className="btn-outline h-10"
           title="重新拉取服务器列表"
         >
           <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -598,7 +601,7 @@ export default function Dashboard() {
             <span className="text-xs text-muted-foreground">平均 CPU</span>
           </div>
           <div className="mt-2 flex items-baseline gap-1">
-            <span className="text-2xl font-semibold tabular-nums text-foreground">
+            <span className="text-2xl font-semibold tabular-nums text-cpu">
               {stats.avgCpu.toFixed(1)}
             </span>
             <span className="text-sm text-muted-foreground">%</span>
@@ -611,7 +614,7 @@ export default function Dashboard() {
             <span className="text-xs text-muted-foreground">平均内存</span>
           </div>
           <div className="mt-2 flex items-baseline gap-1">
-            <span className="text-2xl font-semibold tabular-nums text-foreground">
+            <span className="text-2xl font-semibold tabular-nums text-mem">
               {stats.avgMem.toFixed(1)}
             </span>
             <span className="text-sm text-muted-foreground">%</span>
@@ -624,11 +627,11 @@ export default function Dashboard() {
             <span className="text-xs text-muted-foreground">总流量</span>
           </div>
           <div className="mt-2 flex items-baseline gap-1">
-            <span className="text-sm font-bold tabular-nums text-foreground">
+            <span className="text-sm font-bold tabular-nums text-net">
               ↓{formatSpeed(stats.totalRx)}
             </span>
             <span className="text-sm text-muted-foreground">/</span>
-            <span className="text-sm font-bold tabular-nums text-foreground">
+            <span className="text-sm font-bold tabular-nums text-net">
               ↑{formatSpeed(stats.totalTx)}
             </span>
           </div>
@@ -640,7 +643,7 @@ export default function Dashboard() {
             <span className="text-xs text-muted-foreground">本月总流量</span>
           </div>
           <div className="mt-2 flex items-baseline gap-1">
-            <span className="text-2xl font-semibold tabular-nums text-foreground">
+            <span className="text-2xl font-semibold tabular-nums text-net">
               {formatTraffic(stats.monthlyTraffic)}
             </span>
           </div>
@@ -689,7 +692,7 @@ export default function Dashboard() {
               value={searchInput}
               onChange={handleSearchChange}
               placeholder="搜索名称/标签/位置"
-              className="input-base h-9 w-44 pl-8 pr-8 sm:w-56"
+              className="input-base h-10 w-44 pl-8 pr-8 sm:w-56"
             />
             {searchInput && (
               <button
@@ -784,7 +787,7 @@ export default function Dashboard() {
         <div className="flex items-center rounded-md border border-border bg-card p-0.5">
           <button
             onClick={() => setViewMode('card')}
-            className={`flex h-8 items-center gap-1.5 rounded px-3 text-xs font-medium transition-colors ${
+            className={`flex h-8 items-center gap-1.5 rounded px-2.5 text-xs font-medium transition-colors ${
               viewMode === 'card'
                 ? 'bg-primary text-primary-foreground'
                 : 'text-muted-foreground hover:text-foreground'
@@ -797,7 +800,7 @@ export default function Dashboard() {
           </button>
           <button
             onClick={() => setViewMode('table')}
-            className={`flex h-8 items-center gap-1.5 rounded px-3 text-xs font-medium transition-colors ${
+            className={`flex h-8 items-center gap-1.5 rounded px-2.5 text-xs font-medium transition-colors ${
               viewMode === 'table'
                 ? 'bg-primary text-primary-foreground'
                 : 'text-muted-foreground hover:text-foreground'
@@ -810,7 +813,7 @@ export default function Dashboard() {
           </button>
           <button
             onClick={() => setViewMode('map')}
-            className={`flex h-8 items-center gap-1.5 rounded px-3 text-xs font-medium transition-colors ${
+            className={`flex h-8 items-center gap-1.5 rounded px-2.5 text-xs font-medium transition-colors ${
               viewMode === 'map'
                 ? 'bg-primary text-primary-foreground'
                 : 'text-muted-foreground hover:text-foreground'
@@ -826,26 +829,28 @@ export default function Dashboard() {
 
       {/* 服务器列表 */}
       {servers.length === 0 ? (
-        <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border py-16">
-          <svg className="mb-3 h-12 w-12 text-muted-foreground/50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01" />
-          </svg>
-          <p className="text-sm font-medium text-foreground">暂无服务器</p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            请在服务器上安装 Agent 并注册
-          </p>
-        </div>
+        <EmptyState
+          className="rounded-lg border border-dashed border-border py-16"
+          icon={
+            <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01" />
+            </svg>
+          }
+          title="暂无服务器"
+          description="请在服务器上安装 Agent 并注册"
+        />
       ) : processedServers.length === 0 ? (
         // 搜索无结果
-        <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border py-16">
-          <svg className="mb-3 h-10 w-10 text-muted-foreground/50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-          </svg>
-          <p className="text-sm font-medium text-foreground">未找到匹配的服务器</p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            尝试使用其他关键字搜索
-          </p>
-        </div>
+        <EmptyState
+          className="rounded-lg border border-dashed border-border py-16"
+          icon={
+            <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+          }
+          title="未找到匹配的服务器"
+          description="尝试使用其他关键字搜索"
+        />
       ) : viewMode === 'card' ? (
         // 卡片视图
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -859,7 +864,7 @@ export default function Dashboard() {
       ) : (
         // 表格视图（card-soft overflow-hidden）
         <div className="card-soft overflow-hidden">
-          <div className="overflow-x-auto scrollbar-thin">
+          <div className="table-shell">
             <table className="w-full min-w-[1160px]">
               <thead>
                 <tr className="border-b border-border">
