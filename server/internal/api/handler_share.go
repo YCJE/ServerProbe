@@ -1,9 +1,11 @@
 package api
 
 import (
+	"errors"
 	"log"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/server-probe/server/internal/model"
@@ -31,6 +33,25 @@ func (h *ShareHandler) HandleListSharePages(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"pages": pages})
 }
 
+// parseShareExpiry 解析分享页过期时间（RFC3339）
+// 空字符串返回 nil（永久有效）；无效格式或过去时间返回错误
+func parseShareExpiry(raw string) (*time.Time, error) {
+	if raw == "" {
+		return nil, nil
+	}
+	t, err := time.Parse(time.RFC3339, raw)
+	if err != nil {
+		return nil, err
+	}
+	if !t.After(time.Now()) {
+		return nil, errExpiredInPast
+	}
+	return &t, nil
+}
+
+// errExpiredInPast 过期时间早于当前时间（语义化错误，便于 handler 返回友好提示）
+var errExpiredInPast = errors.New("过期时间必须晚于当前时间")
+
 // HandleCreateSharePage 创建分享页
 // 路由: POST /api/v1/share-pages
 func (h *ShareHandler) HandleCreateSharePage(c *gin.Context) {
@@ -41,6 +62,7 @@ func (h *ShareHandler) HandleCreateSharePage(c *gin.Context) {
 		Enabled     bool   `json:"enabled"`
 		SortOrder   int    `json:"sort_order"`
 		ShareID     string `json:"share_id"`
+		ExpiresAt   string `json:"expires_at"` // RFC3339，空=永久
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -79,6 +101,17 @@ func (h *ShareHandler) HandleCreateSharePage(c *gin.Context) {
 		}
 	}
 
+	// 过期时间（P2 临时分享：空=永久有效）
+	expiresAt, err := parseShareExpiry(req.ExpiresAt)
+	if err != nil {
+		if errors.Is(err, errExpiredInPast) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "过期时间必须晚于当前时间"})
+			return
+		}
+		c.JSON(http.StatusBadRequest, gin.H{"error": "过期时间格式无效（需 RFC3339，如 2026-12-31T23:59:59+08:00）"})
+		return
+	}
+
 	page := &model.SharePage{
 		ShareID:     shareID,
 		Title:       req.Title,
@@ -86,6 +119,7 @@ func (h *ShareHandler) HandleCreateSharePage(c *gin.Context) {
 		AgentIDs:    req.AgentIDs,
 		Enabled:     req.Enabled,
 		SortOrder:   req.SortOrder,
+		ExpiresAt:   expiresAt,
 	}
 
 	if err := h.repo.Create(page); err != nil {
@@ -128,6 +162,12 @@ func (h *ShareHandler) HandlePublicSharePage(c *gin.Context) {
 		return
 	}
 
+	// 过期即不可见（P2 临时分享）：与"不存在"同响应，不泄露分享页曾经存在
+	if page.ExpiresAt != nil && time.Now().After(*page.ExpiresAt) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "分享页不存在"})
+		return
+	}
+
 	// 仅返回公开安全字段，不返回管理信息
 	c.JSON(http.StatusOK, gin.H{
 		"share_id":     page.ShareID,
@@ -159,6 +199,7 @@ func (h *ShareHandler) HandleUpdateSharePage(c *gin.Context) {
 		AgentIDs    *string `json:"agent_ids"`
 		Enabled     *bool   `json:"enabled"`
 		SortOrder   *int    `json:"sort_order"`
+		ExpiresAt   *string `json:"expires_at"` // nil=不变；""=清除（改永久）；RFC3339=设置
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -188,6 +229,19 @@ func (h *ShareHandler) HandleUpdateSharePage(c *gin.Context) {
 	}
 	if req.SortOrder != nil {
 		page.SortOrder = *req.SortOrder
+	}
+	// 过期时间（P2 临时分享）：nil=不变；空字符串=改回永久；RFC3339=设置新时间
+	if req.ExpiresAt != nil {
+		expiresAt, err := parseShareExpiry(*req.ExpiresAt)
+		if err != nil {
+			if errors.Is(err, errExpiredInPast) {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "过期时间必须晚于当前时间"})
+				return
+			}
+			c.JSON(http.StatusBadRequest, gin.H{"error": "过期时间格式无效（需 RFC3339，如 2026-12-31T23:59:59+08:00）"})
+			return
+		}
+		page.ExpiresAt = expiresAt
 	}
 
 	if err := h.repo.Update(page); err != nil {

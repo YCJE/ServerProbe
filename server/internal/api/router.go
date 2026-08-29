@@ -41,6 +41,7 @@ type Router struct {
 func NewRouter(
 	jwtManager *pkg.JWTManager,
 	adminRepo *repository.AdminRepository,
+	sessionRepo *repository.SessionRepository,
 	agentRepo *repository.AgentRepository,
 	recordRepo *repository.RecordRepository,
 	hourlyRepo *repository.HourlyRepository,
@@ -89,7 +90,7 @@ func NewRouter(
 		}
 	}
 
-	middleware := NewMiddleware(jwtManager)
+	middleware := NewMiddleware(jwtManager, sessionRepo)
 	r.Use(middleware.SecurityHeaders())
 	r.Use(middleware.CORS())
 	r.Use(gin.Recovery())
@@ -100,12 +101,12 @@ func NewRouter(
 	})
 
 	// 创建处理器
-	authHandler := NewAuthHandler(adminRepo, jwtManager, auditSvc)
+	authHandler := NewAuthHandler(adminRepo, sessionRepo, jwtManager, auditSvc)
 	serverHandler := NewServerHandler(agentRepo, monitor, recordRepo, hourlyRepo)
 	serverHandler.SetSettings(settingsSvc)
 	agentHandler := NewAgentHandler(registry, monitor, configSync, validator)
 	agentAPIHandler := NewAgentAPIHandler(registry, agentRepo, recordRepo, monitor, alertEngine)
-	dashboardWSHandler := NewDashboardWSHandler(monitor, jwtManager)
+	dashboardWSHandler := NewDashboardWSHandler(monitor, jwtManager, sessionRepo)
 	pingTargetHandler := NewPingTargetHandler(pingTargetRepo, configSync, monitor)
 	alertHandler := NewAlertHandler(alertRepo, notifyRepo, alertEngine)
 	notifyHandler := NewNotifyHandler(notifyRepo, notifySvc, alertRepo)
@@ -116,7 +117,7 @@ func NewRouter(
 	prometheusHandler := NewPrometheusHandler(monitor)
 	shareHandler := NewShareHandler(sharePageRepo)
 	tagHandler := NewTagHandler(tagRepo)
-	settingsHandler := NewSettingsHandler(settingsSvc, recordRepo, hourlyRepo, alertRepo, db, dataDir)
+	settingsHandler := NewSettingsHandler(settingsSvc, recordRepo, hourlyRepo, alertRepo, tagRepo, agentRepo, db, dataDir)
 	auditHandler := NewAuditHandler(auditRepo)
 
 	// 健康检查
@@ -238,6 +239,11 @@ func NewRouter(
 			protected.POST("/auth/totp/enable", authHandler.HandleTOTPEnable)
 			protected.POST("/auth/totp/disable", authHandler.HandleTOTPDisable)
 
+			// 会话管理（P2：会话列表 + 远程注销）
+			protected.GET("/auth/sessions", authHandler.HandleListSessions)
+			protected.DELETE("/auth/sessions/:sessionId", authHandler.HandleRevokeSession)
+			protected.POST("/auth/sessions/revoke-others", authHandler.HandleRevokeOtherSessions)
+
 			// 通知渠道管理
 			protected.GET("/notify/channels", notifyHandler.HandleListChannels)
 			protected.POST("/notify/channels", notifyHandler.HandleCreateChannel)
@@ -275,6 +281,9 @@ func NewRouter(
 			// 系统设置（站点信息 + 数据加载参数）
 			protected.GET("/settings", settingsHandler.HandleGetSettings)
 			protected.PUT("/settings", settingsHandler.HandleUpdateSettings)
+			// 设置导出/导入涉及站点全部配置迁移，属敏感操作（2FA 再验证 + 审计）
+			protected.GET("/settings/export", middleware.RequireSensitive2FA(adminRepo), settingsHandler.HandleExportSettings)
+			protected.POST("/settings/import", middleware.RequireSensitive2FA(adminRepo), settingsHandler.HandleImportSettings)
 
 			// 数据库管理（统计/备份/清理/压缩）
 			protected.GET("/db/stats", settingsHandler.HandleDBStats)

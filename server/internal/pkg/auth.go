@@ -37,10 +37,12 @@ type Claims struct {
 }
 
 // GenerateToken 生成 JWT Token
-func (m *JWTManager) GenerateToken(adminID int64) (string, error) {
+// sessionID 写入 jti claim，与会话表绑定：登出/撤销会话后 Token 立即失效
+func (m *JWTManager) GenerateToken(adminID int64, sessionID string) (string, error) {
 	claims := &Claims{
 		AdminID: adminID,
 		RegisteredClaims: jwt.RegisteredClaims{
+			ID:        sessionID,
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(m.expiry)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 		},

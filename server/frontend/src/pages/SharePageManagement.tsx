@@ -17,6 +17,7 @@ interface FormData {
   agent_ids: string
   enabled: boolean
   sort_order: number
+  expires_at: string
 }
 
 /** 空表单 */
@@ -26,6 +27,35 @@ const EMPTY_FORM: FormData = {
   agent_ids: '',
   enabled: true,
   sort_order: 0,
+  expires_at: '',
+}
+
+/** RFC3339 → datetime-local 输入值（空/无效返回 ''） */
+const toDatetimeLocal = (iso: string | null): string => {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (isNaN(d.getTime())) return ''
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+/** datetime-local 输入值 → RFC3339（空串返回 ''，表示永久/清除） */
+const toRFC3339 = (local: string): string => {
+  if (!local) return ''
+  const d = new Date(local)
+  if (isNaN(d.getTime())) return ''
+  return d.toISOString()
+}
+
+/** 过期时间列显示（含剩余天数） */
+const formatExpiry = (iso: string | null): { text: string; expired: boolean; daysLeft: number | null } => {
+  if (!iso) return { text: '永久', expired: false, daysLeft: null }
+  const d = new Date(iso)
+  if (isNaN(d.getTime())) return { text: '-', expired: false, daysLeft: null }
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const text = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+  const daysLeft = Math.ceil((d.getTime() - Date.now()) / 86400000)
+  return { text, expired: daysLeft < 0, daysLeft }
 }
 
 /** 分享页管理页 */
@@ -78,6 +108,7 @@ export default function SharePageManagement() {
       agent_ids: page.agent_ids,
       enabled: page.enabled,
       sort_order: page.sort_order,
+      expires_at: toDatetimeLocal(page.expires_at),
     })
     setFormError('')
     setModalOpen(true)
@@ -102,12 +133,20 @@ export default function SharePageManagement() {
 
     setSubmitting(true)
     try {
+      const expiresAt = toRFC3339(form.expires_at)
+      if (expiresAt && new Date(expiresAt).getTime() <= Date.now()) {
+        setFormError('过期时间必须晚于当前时间')
+        setSubmitting(false)
+        return
+      }
+
       const payload = {
         title: form.title.trim(),
         description: form.description.trim(),
         agent_ids: form.agent_ids.trim(),
         enabled: form.enabled,
         sort_order: Number(form.sort_order),
+        expires_at: expiresAt,
       }
 
       if (editingId !== null) {
@@ -227,7 +266,7 @@ export default function SharePageManagement() {
           />
         ) : (
           <div className="table-shell">
-            <table className="w-full min-w-[820px] text-sm">
+            <table className="w-full min-w-[920px] text-sm">
               <thead>
                 <tr className="border-b border-border">
                   <th className="h-10 px-3 text-left font-medium text-muted-foreground">ID</th>
@@ -236,6 +275,7 @@ export default function SharePageManagement() {
                   <th className="h-10 px-3 text-left font-medium text-muted-foreground">分享 ID</th>
                   <th className="h-10 px-3 text-left font-medium text-muted-foreground">Agent ID</th>
                   <th className="h-10 px-3 text-left font-medium text-muted-foreground">排序</th>
+                  <th className="h-10 px-3 text-left font-medium text-muted-foreground">过期时间</th>
                   <th className="h-10 px-3 text-left font-medium text-muted-foreground">启用</th>
                   <th className="h-10 px-3 text-left font-medium text-muted-foreground">操作</th>
                 </tr>
@@ -243,6 +283,7 @@ export default function SharePageManagement() {
               <tbody className="divide-y divide-dashed divide-border">
                 {pages.map((page) => {
                   const agentIds = parseAgentIds(page.agent_ids)
+                  const expiry = formatExpiry(page.expires_at)
                   return (
                     <tr key={page.id} className="text-foreground transition-colors hover:bg-muted/50">
                       <td className="px-3 py-3 tabular-nums text-muted-foreground">{page.id}</td>
@@ -270,6 +311,19 @@ export default function SharePageManagement() {
                       </td>
                       <td className="px-3 py-3 tabular-nums text-muted-foreground">
                         {page.sort_order}
+                      </td>
+                      <td className="px-3 py-3 tabular-nums">
+                        {expiry.daysLeft === null ? (
+                          <span className="text-muted-foreground">永久</span>
+                        ) : expiry.expired ? (
+                          <span className="text-destructive">
+                            {expiry.text}（已过期 {Math.abs(expiry.daysLeft)} 天）
+                          </span>
+                        ) : (
+                          <span className="text-warning">
+                            {expiry.text}（剩 {expiry.daysLeft} 天）
+                          </span>
+                        )}
                       </td>
                       <td className="px-3 py-3">
                         <button
@@ -396,6 +450,25 @@ export default function SharePageManagement() {
                 />
                 <p className="mt-1 text-xs text-muted-foreground/70">
                   数值越小排序越靠前
+                </p>
+              </div>
+
+              {/* 过期时间（P2 临时分享） */}
+              <div>
+                <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                  过期时间
+                </label>
+                <input
+                  type="datetime-local"
+                  value={form.expires_at}
+                  onChange={(e) => setForm({ ...form, expires_at: e.target.value })}
+                  min={new Date(Date.now() - new Date().getTimezoneOffset() * 60000)
+                    .toISOString()
+                    .slice(0, 16)}
+                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm shadow-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                />
+                <p className="mt-1 text-xs text-muted-foreground/70">
+                  留空表示永久有效；到期后分享页对访问者不可见
                 </p>
               </div>
 

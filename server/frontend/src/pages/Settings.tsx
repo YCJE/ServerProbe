@@ -6,9 +6,10 @@ import {
   downloadDBBackup,
   cleanupDBData,
   compactDB,
+  getNotifyChannels,
 } from '@/lib/api'
 import { useSiteSettingsStore } from '@/store/useSiteSettingsStore'
-import type { SystemSettings, DBStats } from '@/types'
+import type { SystemSettings, DBStats, NotifyChannel } from '@/types'
 import { useTotpConfirm, TotpCancelledError } from '@/hooks/useTotpConfirm'
 import Skeleton from '@/components/Skeleton'
 import { usePageTitle } from '@/hooks/usePageTitle'
@@ -37,6 +38,9 @@ const DEFAULT_SETTINGS: SystemSettings = {
   retention_days: 30,
   retention_days_hourly: 730,
   max_chart_points: 800,
+  expire_notify_enabled: false,
+  expire_notify_lead_days: 7,
+  expire_notify_channel_id: 0,
 }
 
 /** 字节格式化 */
@@ -97,6 +101,9 @@ export default function SettingsPage() {
   const [dbError, setDbError] = useState('')
   const [cleanupDays, setCleanupDays] = useState(30)
 
+  // 通知渠道列表（到期提醒发送渠道下拉选项）
+  const [channels, setChannels] = useState<NotifyChannel[]>([])
+
   // 数据清理属敏感操作，需两步验证再确认
   const totp = useTotpConfirm()
 
@@ -123,10 +130,20 @@ export default function SettingsPage() {
     }
   }, [])
 
+  const loadChannels = useCallback(async () => {
+    try {
+      const data = await getNotifyChannels()
+      setChannels(data.channels || [])
+    } catch {
+      // 渠道列表加载失败不阻塞设置页，下拉仅显示默认项
+    }
+  }, [])
+
   useEffect(() => {
     loadSettings()
     loadDBStats()
-  }, [loadSettings, loadDBStats])
+    loadChannels()
+  }, [loadSettings, loadDBStats, loadChannels])
 
   const handleSave = async () => {
     setSaving(true)
@@ -199,7 +216,7 @@ export default function SettingsPage() {
         <div>
           <h1 className="text-xl font-bold tracking-tight text-foreground">站点设置</h1>
           <p className="mt-0.5 text-sm text-muted-foreground">
-            站点信息、数据加载参数与数据库管理
+            站点信息、数据加载参数、到期通知与数据库管理
           </p>
         </div>
         <button onClick={handleSave} disabled={saving} className="btn-primary">
@@ -313,6 +330,48 @@ export default function SettingsPage() {
               value={settings.max_chart_points}
               onChange={(e) => setSettings({ ...settings, max_chart_points: Number(e.target.value) || 800 })}
             />
+          </Field>
+        </div>
+      </Section>
+
+      {/* 到期提前通知（P2） */}
+      <Section
+        title="到期提前通知"
+        description="每日检查 Agent 到期时间，N 天内到期的机器汇总为一条通知发送到指定渠道"
+      >
+        <div className="grid gap-4 sm:grid-cols-3">
+          <Field label="启用到期通知" hint="开启后每日汇总一次，同一天不重复发送">
+            <label className="flex h-9 cursor-pointer items-center gap-2 text-sm text-foreground">
+              <input
+                type="checkbox"
+                checked={settings.expire_notify_enabled}
+                onChange={(e) => setSettings({ ...settings, expire_notify_enabled: e.target.checked })}
+                className="h-4 w-4 rounded border-border"
+              />
+              每日检查并发送
+            </label>
+          </Field>
+          <Field label="提前天数" hint="到期前 N 天开始提醒（1-90 天，含已过期机器）">
+            <input
+              type="number"
+              className="input-base font-mono"
+              min={1}
+              max={90}
+              value={settings.expire_notify_lead_days}
+              onChange={(e) => setSettings({ ...settings, expire_notify_lead_days: Number(e.target.value) || 7 })}
+            />
+          </Field>
+          <Field label="通知渠道" hint="选择接收到期摘要的渠道；未选择则不发送">
+            <select
+              className="input-base"
+              value={settings.expire_notify_channel_id}
+              onChange={(e) => setSettings({ ...settings, expire_notify_channel_id: Number(e.target.value) || 0 })}
+            >
+              <option value={0}>未选择（不发送）</option>
+              {channels.map((ch) => (
+                <option key={ch.id} value={ch.id}>{ch.name}（{ch.type}）</option>
+              ))}
+            </select>
           </Field>
         </div>
       </Section>

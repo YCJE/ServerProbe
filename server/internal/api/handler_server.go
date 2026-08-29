@@ -267,6 +267,7 @@ func (h *ServerHandler) HandleListServers(c *gin.Context) {
 		PriceCurrency     string     `json:"price_currency"`
 		PriceCycle        string     `json:"price_cycle"`
 		TrafficQuotaBytes int64      `json:"traffic_quota_bytes"`
+		TrafficQuotaType  string     `json:"traffic_quota_type"`
 		MonthlyRx         uint64     `json:"monthly_rx"`
 		MonthlyTx         uint64     `json:"monthly_tx"`
 		IPv4              string     `json:"ipv4"`
@@ -297,6 +298,7 @@ func (h *ServerHandler) HandleListServers(c *gin.Context) {
 			PriceCurrency:     agent.PriceCurrency,
 			PriceCycle:        agent.PriceCycle,
 			TrafficQuotaBytes: agent.TrafficQuotaBytes,
+			TrafficQuotaType:  agent.TrafficQuotaType,
 			IPv4:              agent.IPv4,
 			IPv6:              agent.IPv6,
 		}
@@ -413,6 +415,7 @@ func (h *ServerHandler) HandleGetServer(c *gin.Context) {
 		"price_currency":     agent.PriceCurrency,
 		"price_cycle":        agent.PriceCycle,
 		"traffic_quota_bytes": agent.TrafficQuotaBytes,
+		"traffic_quota_type": agent.TrafficQuotaType,
 		"ipv4":               agent.IPv4,
 		"ipv6":               agent.IPv6,
 	}
@@ -741,6 +744,7 @@ func (h *ServerHandler) HandlePublicServers(c *gin.Context) {
 		PriceCurrency     string     `json:"price_currency"`
 		PriceCycle        string     `json:"price_cycle"`
 		TrafficQuotaBytes int64      `json:"traffic_quota_bytes"`
+		TrafficQuotaType  string     `json:"traffic_quota_type"`
 		MonthlyRx         uint64     `json:"monthly_rx"`
 		MonthlyTx         uint64     `json:"monthly_tx"`
 	}
@@ -819,6 +823,7 @@ func (h *ServerHandler) HandlePublicServers(c *gin.Context) {
 			PriceCurrency:     agent.PriceCurrency,
 			PriceCycle:        agent.PriceCycle,
 			TrafficQuotaBytes: agent.TrafficQuotaBytes,
+			TrafficQuotaType:  agent.TrafficQuotaType,
 		}
 		if monthlyTraffic != nil {
 			if agg, ok := monthlyTraffic[agent.ID]; ok {
@@ -941,6 +946,7 @@ func (h *ServerHandler) HandlePublicDashboard(c *gin.Context) {
 		PriceCurrency     string     `json:"price_currency"`
 		PriceCycle        string     `json:"price_cycle"`
 		TrafficQuotaBytes int64      `json:"traffic_quota_bytes"`
+		TrafficQuotaType  string     `json:"traffic_quota_type"`
 		MonthlyRx         uint64     `json:"monthly_rx"`
 		MonthlyTx         uint64     `json:"monthly_tx"`
 	}
@@ -1012,6 +1018,7 @@ func (h *ServerHandler) HandlePublicDashboard(c *gin.Context) {
 			PriceCurrency:     item.PriceCurrency,
 			PriceCycle:        item.PriceCycle,
 			TrafficQuotaBytes: item.TrafficQuotaBytes,
+			TrafficQuotaType:  item.TrafficQuotaType,
 			MonthlyRx:         item.MonthlyRx,
 			MonthlyTx:         item.MonthlyTx,
 		})

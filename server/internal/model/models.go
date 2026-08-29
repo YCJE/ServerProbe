@@ -4,6 +4,20 @@ import (
 	"time"
 )
 
+// 流量配额口径类型（P2：流量配额类型）
+const (
+	QuotaTypeSum = "sum" // 合计计费 rx+tx（默认，与旧行为一致）
+	QuotaTypeUp  = "up"  // 仅上行 tx
+	QuotaTypeDown = "down" // 仅下行 rx
+	QuotaTypeMax = "max" // 上下行取大
+	QuotaTypeMin = "min" // 上下行取小
+)
+
+// ValidQuotaTypes 合法的配额口径白名单
+var ValidQuotaTypes = map[string]bool{
+	QuotaTypeSum: true, QuotaTypeUp: true, QuotaTypeDown: true, QuotaTypeMax: true, QuotaTypeMin: true,
+}
+
 // Agent 表示已注册的 Agent 元数据（GORM 模型）
 type Agent struct {
 	ID              int64     `gorm:"primaryKey;autoIncrement" json:"id"`
@@ -27,6 +41,7 @@ type Agent struct {
 	PriceCurrency     string     `json:"price_currency"`       // 币种: CNY/USD/EUR/JPY
 	PriceCycle        string     `json:"price_cycle"`          // 周期: monthly/yearly
 	TrafficQuotaBytes int64      `json:"traffic_quota_bytes"`  // 月流量配额字节数（0=不限）
+	TrafficQuotaType  string     `gorm:"default:sum" json:"traffic_quota_type"` // 配额口径: sum/up/down/max/min（见 model.QuotaType*，默认 sum=rx+tx 合计）
 	IPv4              string     `json:"ipv4"`                 // 出口 IPv4（从 WS 连接 RemoteAddr 获取）
 	IPv6              string     `json:"ipv6"`                 // 出口 IPv6
 	LastSeen          time.Time  `json:"last_seen"`
@@ -278,6 +293,23 @@ type Admin struct {
 // TableName 指定表名
 func (Admin) TableName() string { return "admin" }
 
+// Session 管理员登录会话（P2：会话管理）
+// JWT 通过 jti claim 与 SessionID 绑定，登出/撤销后即使 Token 未过期也立即失效
+type Session struct {
+	ID         int64      `gorm:"primaryKey;autoIncrement" json:"id"`
+	SessionID  string     `gorm:"uniqueIndex;not null" json:"session_id"` // 32 字节随机 hex，与 JWT jti 一致
+	AdminID    int64      `gorm:"index;not null" json:"admin_id"`
+	IP         string     `json:"ip"`
+	UserAgent  string     `json:"user_agent"`
+	CreatedAt  time.Time  `gorm:"autoCreateTime" json:"created_at"`
+	LastSeenAt time.Time  `json:"last_seen_at"`
+	ExpiresAt  time.Time  `gorm:"not null" json:"expires_at"`
+	RevokedAt  *time.Time `json:"revoked_at"` // nil=未撤销
+}
+
+// TableName 指定表名
+func (Session) TableName() string { return "sessions" }
+
 // AuditLog 管理员操作审计日志（P1：安全闭环）
 // 记录登录事件与管理端的全部变更操作（POST/PUT/DELETE），
 // 不记录请求体（可能含密码/TOTP 密钥等敏感字段），仅记录路由与目标标识
@@ -305,6 +337,7 @@ type SharePage struct {
 	AgentIDs   string    `json:"agent_ids"`  // 逗号分隔的 Agent ID（空=全部）
 	Enabled     bool      `gorm:"default:true" json:"enabled"`
 	SortOrder   int       `gorm:"default:0" json:"sort_order"`
+	ExpiresAt   *time.Time `json:"expires_at"` // 过期时间（nil=永久有效，P2 临时分享）
 	CreatedAt   time.Time `gorm:"autoCreateTime" json:"created_at"`
 }
 

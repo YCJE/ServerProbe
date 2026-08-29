@@ -499,6 +499,7 @@ export const useServerStore = create<ServerStoreState>((set, get) => ({
           price_currency: item.price_currency,
           price_cycle: item.price_cycle,
           traffic_quota_bytes: item.traffic_quota_bytes,
+          traffic_quota_type: item.traffic_quota_type,
           monthly_rx: item.monthly_rx,
           monthly_tx: item.monthly_tx,
           ipv4: item.ipv4,
@@ -564,6 +565,7 @@ export const useServerStore = create<ServerStoreState>((set, get) => ({
           server.price_currency === (live.price_currency ?? server.price_currency) &&
           server.price_cycle === (live.price_cycle ?? server.price_cycle) &&
           server.traffic_quota_bytes === (live.traffic_quota_bytes ?? server.traffic_quota_bytes) &&
+          server.traffic_quota_type === (live.traffic_quota_type ?? server.traffic_quota_type) &&
           server.monthly_rx === (live.monthly_rx ?? server.monthly_rx) &&
           server.monthly_tx === (live.monthly_tx ?? server.monthly_tx) &&
           server.ipv4 === (live.ipv4 ?? server.ipv4) &&
@@ -621,6 +623,7 @@ export const useServerStore = create<ServerStoreState>((set, get) => ({
           price_currency: live.price_currency ?? server.price_currency,
           price_cycle: live.price_cycle ?? server.price_cycle,
           traffic_quota_bytes: live.traffic_quota_bytes ?? server.traffic_quota_bytes,
+          traffic_quota_type: live.traffic_quota_type ?? server.traffic_quota_type,
           monthly_rx: live.monthly_rx ?? server.monthly_rx,
           monthly_tx: live.monthly_tx ?? server.monthly_tx,
           ipv4: live.ipv4 ?? server.ipv4,

@@ -16,6 +16,7 @@ import {
   getFlagEmoji,
   parseTags,
   getTagStyle,
+  calcQuotaUsedBytes,
 } from '@/lib/utils'
 import type { ServerData } from '@/types'
 import { usePageTitle } from '@/hooks/usePageTitle'
@@ -88,7 +89,7 @@ function getTotalNetSpeed(server: ServerData): number {
   return (server.net_rx || 0) + (server.net_tx || 0)
 }
 
-/** 获取月流量使用量（当月累计上下行） */
+/** 获取月流量使用量（当月累计上下行合计，用于站点级汇总统计） */
 function getMonthlyTraffic(server: ServerData): number {
   return (server.monthly_rx || 0) + (server.monthly_tx || 0)
 }
@@ -179,7 +180,8 @@ const ServerTableRow = memo(function ServerTableRow({
   const showVirt = server.virtualization && server.virtualization !== 'None' && server.virtualization !== 'none'
   const cc = getCountryCode(server)
   const flag = cc ? getFlagEmoji(cc) : ''
-  const monthlyTraffic = getMonthlyTraffic(server)
+  // P2：表格行月流量按配额口径展示（与卡片百分比口径一致）
+  const monthlyTraffic = calcQuotaUsedBytes(server.traffic_quota_type, server.monthly_rx, server.monthly_tx)
   const avgLatency = getAvgLatency(server)
   const expireDays = server.expires_in_days
   const expireColor =
@@ -315,6 +317,7 @@ const ServerTableRow = memo(function ServerTableRow({
     s.monthly_rx === n.monthly_rx &&
     s.monthly_tx === n.monthly_tx &&
     s.traffic_quota_bytes === n.traffic_quota_bytes &&
+    s.traffic_quota_type === n.traffic_quota_type &&
     s.expires_in_days === n.expires_in_days &&
     s.ping_data === n.ping_data
   )

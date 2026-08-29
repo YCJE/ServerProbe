@@ -74,7 +74,7 @@ func setupSensitiveTest(t *testing.T, totpEnabled bool, adminID int64) (*Middlew
 	auditSvc.Start()
 	t.Cleanup(auditSvc.Stop)
 
-	return NewMiddleware(nil), adminRepo, auditSvc, auditRepo, secret
+	return NewMiddleware(nil, nil), adminRepo, auditSvc, auditRepo, secret
 }
 
 // newTestContext 构造带 admin_id 的测试上下文

@@ -74,6 +74,7 @@ func NewSQLiteDB(dataDir string) (*SQLiteDB, error) {
 		&model.MetricRecord{},
 		&model.MetricRecordHourly{},
 		&model.Admin{},
+		&model.Session{},
 		&model.AuditLog{},
 		&model.SharePage{},
 		&model.SystemSetting{},

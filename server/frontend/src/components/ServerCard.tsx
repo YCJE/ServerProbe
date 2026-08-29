@@ -13,6 +13,7 @@ import {
   formatPrice,
   formatExpireDate,
   getMonthlyTrafficPercent,
+  calcQuotaUsedBytes,
   getTrafficColor,
   getExpireColor,
 } from '@/lib/utils'
@@ -116,7 +117,8 @@ function ServerCard({ server, basePath = '/admin' }: ServerCardProps) {
   const displayName = server.display_name || server.hostname
 
   // 月流量使用量与配额进度（NodeGet 风格）
-  const monthlyUsed = (server.monthly_rx || 0) + (server.monthly_tx || 0)
+  // P2：按配额口径计算月流量用量（sum/up/down/max/min，默认 sum）
+  const monthlyUsed = calcQuotaUsedBytes(server.traffic_quota_type, server.monthly_rx, server.monthly_tx)
   const monthlyQuota = server.traffic_quota_bytes || 0
   const monthlyPercent = getMonthlyTrafficPercent(monthlyUsed, monthlyQuota)
 
@@ -339,6 +341,7 @@ export default memo(ServerCard, (prev, next) => {
     a.price_currency === b.price_currency &&
     a.price_cycle === b.price_cycle &&
     a.traffic_quota_bytes === b.traffic_quota_bytes &&
+    a.traffic_quota_type === b.traffic_quota_type &&
     a.monthly_rx === b.monthly_rx &&
     a.monthly_tx === b.monthly_tx
   )

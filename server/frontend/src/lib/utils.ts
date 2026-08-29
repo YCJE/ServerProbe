@@ -212,6 +212,28 @@ export function getMonthlyTrafficPercent(usedBytes: number, quotaBytes: number):
   return (usedBytes / quotaBytes) * 100
 }
 
+/** 按配额口径计算已用流量字节（P2：与后端 model.CalcQuotaUsedBytes 一致，空/未知口径兜底为 sum） */
+export function calcQuotaUsedBytes(
+  quotaType: string | undefined,
+  rx: number | undefined,
+  tx: number | undefined,
+): number {
+  const r = rx || 0
+  const t = tx || 0
+  switch (quotaType) {
+    case 'up':
+      return t
+    case 'down':
+      return r
+    case 'max':
+      return Math.max(r, t)
+    case 'min':
+      return Math.min(r, t)
+    default:
+      return r + t
+  }
+}
+
 /** 月流量使用率对应颜色（NodeGet 色阶：<80 绿、80-100 橙、>=100 红） */
 export function getTrafficColor(percent: number): string {
   if (percent >= 100) return '#f56565'

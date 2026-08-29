@@ -263,7 +263,8 @@ func getMetaMetricValue(metric string, agent *model.Agent, monthly repository.Mo
 		if agent.TrafficQuotaBytes <= 0 {
 			return 0 // 未设置配额 = 不限流量，使用率恒为 0%
 		}
-		used := monthly.Rx + monthly.Tx
+		// 按管理员配置的配额口径计算已用流量（sum/up/down/max/min），与前端进度条同一口径
+		used := model.CalcQuotaUsedBytes(agent.TrafficQuotaType, monthly.Rx, monthly.Tx)
 		return float64(used) / float64(agent.TrafficQuotaBytes) * 100
 
 	case model.MetricExpireDays:

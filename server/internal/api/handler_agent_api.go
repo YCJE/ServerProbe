@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/server-probe/server/internal/model"
 	"github.com/server-probe/server/internal/repository"
 	"github.com/server-probe/server/internal/service"
 )
@@ -301,6 +302,7 @@ func (h *AgentAPIHandler) HandleUpdateAgentMeta(c *gin.Context) {
 		PriceCurrency     string  `json:"price_currency"`
 		PriceCycle        string  `json:"price_cycle"`
 		TrafficQuotaBytes int64   `json:"traffic_quota_bytes"`
+		TrafficQuotaType  string  `json:"traffic_quota_type"` // sum/up/down/max/min，空=默认 sum
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -342,6 +344,14 @@ func (h *AgentAPIHandler) HandleUpdateAgentMeta(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "流量配额无效"})
 		return
 	}
+	// 配额口径白名单校验（空=默认 sum，与存量数据行为一致）
+	req.TrafficQuotaType = strings.TrimSpace(req.TrafficQuotaType)
+	if req.TrafficQuotaType == "" {
+		req.TrafficQuotaType = model.QuotaTypeSum
+	} else if !model.ValidQuotaTypes[req.TrafficQuotaType] {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "流量配额口径须为 sum/up/down/max/min"})
+		return
+	}
 
 	// 解析到期时间：空 = 永不过期（ExpiresAt 为 NULL）
 	var expiresAt *time.Time
@@ -363,6 +373,7 @@ func (h *AgentAPIHandler) HandleUpdateAgentMeta(c *gin.Context) {
 		PriceCurrency:     req.PriceCurrency,
 		PriceCycle:        req.PriceCycle,
 		TrafficQuotaBytes: req.TrafficQuotaBytes,
+		TrafficQuotaType:  req.TrafficQuotaType,
 	}
 
 	if err := h.agentRepo.UpdateMeta(agentID, meta); err != nil {

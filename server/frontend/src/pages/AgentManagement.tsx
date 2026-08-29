@@ -28,6 +28,15 @@ const CYCLE_OPTIONS = [
   { value: 'weekly', label: '每周' },
 ]
 
+/** 流量配额口径选项（P2：与后端 model.QuotaType* 对应） */
+const QUOTA_TYPE_OPTIONS = [
+  { value: 'sum', label: '合计（上传+下载）' },
+  { value: 'up', label: '仅上传' },
+  { value: 'down', label: '仅下载' },
+  { value: 'max', label: '上传/下载取大' },
+  { value: 'min', label: '上传/下载取小' },
+]
+
 /** Agent 管理页 */
 export default function AgentManagement() {
   usePageTitle('Agent 管理')
@@ -61,6 +70,7 @@ export default function AgentManagement() {
   const [metaPriceCurrency, setMetaPriceCurrency] = useState('CNY')
   const [metaPriceCycle, setMetaPriceCycle] = useState('monthly')
   const [metaTrafficQuotaGB, setMetaTrafficQuotaGB] = useState('')
+  const [metaTrafficQuotaType, setMetaTrafficQuotaType] = useState('sum')
 
   // 添加服务器（Komari 风格两步式）状态
   const [creating, setCreating] = useState(false)
@@ -249,6 +259,7 @@ export default function AgentManagement() {
     setMetaTrafficQuotaGB(
       agent.traffic_quota_bytes ? String(Math.round(agent.traffic_quota_bytes / 1024 ** 3)) : '',
     )
+    setMetaTrafficQuotaType(agent.traffic_quota_type || 'sum')
     setEditError('')
   }
 
@@ -263,6 +274,7 @@ export default function AgentManagement() {
     setMetaExpiresAt('')
     setMetaPriceAmount('')
     setMetaTrafficQuotaGB('')
+    setMetaTrafficQuotaType('sum')
     setEditError('')
     setRegeneratedCode(null)
   }
@@ -329,6 +341,7 @@ export default function AgentManagement() {
         price_currency: metaPriceCurrency,
         price_cycle: metaPriceCycle,
         traffic_quota_bytes: Math.round(quotaGB * 1024 ** 3),
+        traffic_quota_type: metaTrafficQuotaType,
       })
       handleCloseEdit()
       await loadData()
@@ -945,8 +958,8 @@ export default function AgentManagement() {
                       </select>
                     </div>
                   </div>
-                  {/* 月流量配额 */}
-                  <div className="col-span-2">
+                  {/* 月流量配额 + 口径（P2：五口径） */}
+                  <div className="col-span-1">
                     <label className="mb-1 block text-xs text-muted-foreground">
                       月流量配额 (GB) <span className="text-muted-foreground/60">(0 或留空 = 不限)</span>
                     </label>
@@ -959,6 +972,23 @@ export default function AgentManagement() {
                       placeholder="如：1000"
                       className="h-9 w-full rounded-md border border-input bg-background px-2.5 text-sm tabular-nums text-foreground placeholder:text-muted-foreground/60 focus:border-primary focus:outline-none"
                     />
+                  </div>
+                  <div className="col-span-1">
+                    <label className="mb-1 block text-xs text-muted-foreground">
+                      配额口径
+                    </label>
+                    <select
+                      value={metaTrafficQuotaType}
+                      onChange={(e) => setMetaTrafficQuotaType(e.target.value)}
+                      className="h-9 w-full rounded-md border border-input bg-background px-2.5 text-sm text-foreground focus:border-primary focus:outline-none"
+                    >
+                      {QUOTA_TYPE_OPTIONS.map((o) => (
+                        <option key={o.value} value={o.value}>{o.label}</option>
+                      ))}
+                    </select>
+                    <p className="mt-1 text-xs text-muted-foreground/70">
+                      决定月流量用量与配额百分比的统计方式
+                    </p>
                   </div>
                 </div>
               </div>

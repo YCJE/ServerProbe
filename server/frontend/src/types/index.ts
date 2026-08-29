@@ -140,6 +140,8 @@ export interface ServerData {
   price_cycle?: string
   /** 月流量配额字节数（0=不限） */
   traffic_quota_bytes?: number
+  /** 配额口径 sum/up/down/max/min（P2，空=默认 sum） */
+  traffic_quota_type?: string
   /** 当月累计下行字节 */
   monthly_rx?: number
   /** 当月累计上行字节 */
@@ -213,6 +215,8 @@ export interface DashboardItem {
   price_cycle?: string
   /** 月流量配额字节数（0=不限） */
   traffic_quota_bytes?: number
+  /** 配额口径 sum/up/down/max/min（P2，空=默认 sum） */
+  traffic_quota_type?: string
   /** 当月累计下行字节 */
   monthly_rx?: number
   /** 当月累计上行字节 */
@@ -357,6 +361,7 @@ export interface AgentInfo {
   price_currency?: string
   price_cycle?: string
   traffic_quota_bytes?: number
+  traffic_quota_type?: string
   ipv4?: string
   ipv6?: string
 }
@@ -455,6 +460,12 @@ export interface SystemSettings {
   /** 小时聚合层（≥7d 长范围查询）数据保留天数 */
   retention_days_hourly: number
   max_chart_points: number
+  /** 到期提前通知开关（P2） */
+  expire_notify_enabled: boolean
+  /** 到期提前通知天数（1-90） */
+  expire_notify_lead_days: number
+  /** 到期通知发送渠道 ID（0=默认第一个渠道） */
+  expire_notify_channel_id: number
 }
 
 /** 公开站点设置（非敏感字段） */
@@ -585,5 +596,7 @@ export interface SharePage {
   agent_ids: string
   enabled: boolean
   sort_order: number
+  /** 过期时间 RFC3339，null=永久有效（P2 临时分享） */
+  expires_at: string | null
   created_at: string
 }

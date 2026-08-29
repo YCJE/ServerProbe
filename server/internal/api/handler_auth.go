@@ -19,18 +19,57 @@ import (
 
 // AuthHandler 认证处理器
 type AuthHandler struct {
-	adminRepo  *repository.AdminRepository
-	jwtManager *pkg.JWTManager
-	auditSvc   *service.AuditService
+	adminRepo   *repository.AdminRepository
+	sessionRepo *repository.SessionRepository
+	jwtManager  *pkg.JWTManager
+	auditSvc    *service.AuditService
 }
 
 // NewAuthHandler 创建认证处理器
-func NewAuthHandler(adminRepo *repository.AdminRepository, jwtManager *pkg.JWTManager, auditSvc *service.AuditService) *AuthHandler {
+func NewAuthHandler(adminRepo *repository.AdminRepository, sessionRepo *repository.SessionRepository, jwtManager *pkg.JWTManager, auditSvc *service.AuditService) *AuthHandler {
 	return &AuthHandler{
-		adminRepo:  adminRepo,
-		jwtManager: jwtManager,
-		auditSvc:   auditSvc,
+		adminRepo:   adminRepo,
+		sessionRepo: sessionRepo,
+		jwtManager:  jwtManager,
+		auditSvc:    auditSvc,
 	}
+}
+
+// issueSession 创建会话记录并签发绑定会话的 JWT，写入 Cookie
+// 返回 error 时已写响应；成功时由调用方返回自己的成功响应
+func (h *AuthHandler) issueSession(c *gin.Context, adminID int64) error {
+	sessionID, err := repository.GenerateSessionID()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "生成会话失败"})
+		return err
+	}
+
+	expiresAt := time.Now().Add(h.jwtManager.Expiry())
+	session := &model.Session{
+		SessionID:  sessionID,
+		AdminID:    adminID,
+		IP:         c.ClientIP(),
+		UserAgent:  c.Request.UserAgent(),
+		LastSeenAt: time.Now(),
+		ExpiresAt:  expiresAt,
+	}
+	if h.sessionRepo != nil {
+		if err := h.sessionRepo.Create(session); err != nil {
+			log.Printf("创建会话记录失败: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "创建会话失败"})
+			return err
+		}
+	}
+
+	token, err := h.jwtManager.GenerateToken(adminID, sessionID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "生成 Token 失败"})
+		return err
+	}
+
+	c.SetSameSite(http.SameSiteStrictMode)
+	c.SetCookie("token", token, int(h.jwtManager.Expiry()/time.Second), "/", "", cookieSecure(), true)
+	return nil
 }
 
 // auditLogin 记录登录事件审计日志（含失败尝试，供暴力破解事后溯源）
@@ -179,22 +218,14 @@ func (h *AuthHandler) HandleLogin(c *gin.Context) {
 		}
 	}
 
-	// 生成 JWT
-	token, err := h.jwtManager.GenerateToken(admin.ID)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "生成 Token 失败"})
-		return
-	}
-
+	// 创建会话并签发绑定会话的 JWT（P2：会话管理）
 	// 标记登录成功，供 LoginRateLimit 中间件移除限速计数
 	c.Set("login_success", true)
 	h.auditLogin(c, admin.ID, req.Username, true)
 
-	// 设置 Cookie（HttpOnly + SameSite=Strict）
-	// secure=false 以兼容 HTTP 开发环境和反向代理部署（浏览器到反代间使用 HTTPS 保护传输）
-	// maxAge 从 JWTManager.Expiry() 派生，避免与 JWT 过期时间失配
-	c.SetSameSite(http.SameSiteStrictMode)
-	c.SetCookie("token", token, int(h.jwtManager.Expiry()/time.Second), "/", "", cookieSecure(), true)
+	if err := h.issueSession(c, admin.ID); err != nil {
+		return
+	}
 
 	c.JSON(http.StatusOK, LoginResponse{
 		Success: true,
@@ -205,12 +236,21 @@ func (h *AuthHandler) HandleLogin(c *gin.Context) {
 // HandleLogout 处理登出
 // 路由: POST /api/v1/auth/logout
 // 防止 Logout CSRF：仅当请求携带了有效 Token Cookie 时才清除 Cookie
+// P2：同时撤销会话记录，使该 Token 在其他持有者手中也立即失效
 func (h *AuthHandler) HandleLogout(c *gin.Context) {
 	tokenString, err := c.Cookie("token")
 	if err != nil || tokenString == "" {
 		// 无 Cookie（可能是跨站攻击），返回成功但不清除 Cookie
 		c.JSON(http.StatusOK, gin.H{"success": true, "message": "已登出"})
 		return
+	}
+	// 撤销会话记录（Token 即使未到期也立即失效）
+	if h.sessionRepo != nil {
+		if claims, err := h.jwtManager.ValidateToken(tokenString); err == nil && claims.ID != "" {
+			if err := h.sessionRepo.Revoke(claims.ID); err != nil {
+				log.Printf("撤销会话失败: %v", err)
+			}
+		}
 	}
 	// 有 Cookie，验证并清除
 	c.SetSameSite(http.SameSiteStrictMode)
@@ -273,13 +313,6 @@ func (h *AuthHandler) HandleSetup(c *gin.Context) {
 		return
 	}
 
-	// 生成 JWT,自动登录
-	token, err := h.jwtManager.GenerateToken(admin.ID)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "生成 Token 失败"})
-		return
-	}
-
 	// 审计首次设置事件（仅发生一次，是账户体系的起点）
 	if h.auditSvc != nil {
 		h.auditSvc.Record(model.AuditLog{
@@ -293,9 +326,10 @@ func (h *AuthHandler) HandleSetup(c *gin.Context) {
 		})
 	}
 
-	// 设置 Cookie（HttpOnly + SameSite=Strict）
-	c.SetSameSite(http.SameSiteStrictMode)
-	c.SetCookie("token", token, int(h.jwtManager.Expiry()/time.Second), "/", "", cookieSecure(), true)
+	// 创建会话并签发绑定会话的 JWT（P2）
+	if err := h.issueSession(c, admin.ID); err != nil {
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
@@ -306,6 +340,7 @@ func (h *AuthHandler) HandleSetup(c *gin.Context) {
 // HandleCheckAuth 检查当前登录状态
 // 路由: GET /api/v1/auth/me
 // 供前端在页面加载时检查 Cookie 中的 Token 是否仍然有效
+// P2：除 JWT 签名外还校验会话记录（登出/远程撤销后立即返回未认证）
 func (h *AuthHandler) HandleCheckAuth(c *gin.Context) {
 	tokenString, err := c.Cookie("token")
 	if err != nil || tokenString == "" {
@@ -313,12 +348,30 @@ func (h *AuthHandler) HandleCheckAuth(c *gin.Context) {
 		return
 	}
 
-	if _, err := h.jwtManager.ValidateToken(tokenString); err != nil {
+	claims, err := h.jwtManager.ValidateToken(tokenString)
+	if err != nil {
 		// Token 过期或无效，清除 Cookie
 		c.SetSameSite(http.SameSiteStrictMode)
 		c.SetCookie("token", "", -1, "/", "", cookieSecure(), true)
 		c.JSON(http.StatusOK, gin.H{"authenticated": false})
 		return
+	}
+
+	// 会话记录校验（会话不存在/已撤销/已过期 → 视为未登录）
+	if h.sessionRepo != nil {
+		if claims.ID == "" {
+			c.SetSameSite(http.SameSiteStrictMode)
+			c.SetCookie("token", "", -1, "/", "", cookieSecure(), true)
+			c.JSON(http.StatusOK, gin.H{"authenticated": false})
+			return
+		}
+		s, err := h.sessionRepo.GetBySessionID(claims.ID)
+		if err != nil || s.RevokedAt != nil || time.Now().After(s.ExpiresAt) {
+			c.SetSameSite(http.SameSiteStrictMode)
+			c.SetCookie("token", "", -1, "/", "", cookieSecure(), true)
+			c.JSON(http.StatusOK, gin.H{"authenticated": false})
+			return
+		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -436,8 +489,11 @@ func (h *AuthHandler) HandleTOTPEnable(c *gin.Context) {
 		return
 	}
 
+	// 认证配置变更后，其他设备上的旧会话不应存活（P2）
+	h.revokeOtherSessions(c, admin.ID)
+
 	log.Printf("管理员 %s 启用了 TOTP 两步验证", admin.Username)
-	c.JSON(http.StatusOK, gin.H{"success": true, "message": "两步验证已启用"})
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": "两步验证已启用，其他设备的登录状态已注销"})
 }
 
 // HandleTOTPDisable 停用两步验证（密码 + 动态码双重确认）
@@ -484,6 +540,103 @@ func (h *AuthHandler) HandleTOTPDisable(c *gin.Context) {
 		return
 	}
 
+	// 认证配置变更后，其他设备上的旧会话不应存活（P2）
+	h.revokeOtherSessions(c, admin.ID)
+
 	log.Printf("管理员 %s 停用了 TOTP 两步验证", admin.Username)
-	c.JSON(http.StatusOK, gin.H{"success": true, "message": "两步验证已停用"})
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": "两步验证已停用，其他设备的登录状态已注销"})
+}
+
+// revokeOtherSessions 撤销当前会话之外的全部会话（认证配置变更联动）
+func (h *AuthHandler) revokeOtherSessions(c *gin.Context, adminID int64) {
+	if h.sessionRepo == nil {
+		return
+	}
+	currentSessionID, _ := c.Get("session_id")
+	keep, _ := currentSessionID.(string)
+	if n, err := h.sessionRepo.RevokeAllOther(adminID, keep); err != nil {
+		log.Printf("撤销其他会话失败: %v", err)
+	} else if n > 0 {
+		log.Printf("已撤销管理员 %d 的 %d 个其他会话", adminID, n)
+	}
+}
+
+// HandleListSessions 查询当前管理员的全部会话
+// 路由: GET /api/v1/auth/sessions
+func (h *AuthHandler) HandleListSessions(c *gin.Context) {
+	if h.sessionRepo == nil {
+		c.JSON(http.StatusOK, gin.H{"sessions": []any{}})
+		return
+	}
+	sessions, err := h.sessionRepo.ListByAdmin(c.GetInt64("admin_id"))
+	if err != nil {
+		log.Printf("查询会话列表失败: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询会话列表失败"})
+		return
+	}
+	currentSessionID, _ := c.Get("session_id")
+	current, _ := currentSessionID.(string)
+
+	type sessionItem struct {
+		model.Session
+		Current bool `json:"current"`
+		Revoked bool `json:"revoked"`
+	}
+	items := make([]sessionItem, 0, len(sessions))
+	now := time.Now()
+	for _, s := range sessions {
+		items = append(items, sessionItem{
+			Session: s,
+			Current: s.SessionID == current,
+			Revoked: s.RevokedAt != nil || now.After(s.ExpiresAt),
+		})
+	}
+	c.JSON(http.StatusOK, gin.H{"sessions": items})
+}
+
+// HandleRevokeSession 撤销指定会话（盗号踢出）
+// 路由: DELETE /api/v1/auth/sessions/:sessionId
+func (h *AuthHandler) HandleRevokeSession(c *gin.Context) {
+	if h.sessionRepo == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "会话管理未启用"})
+		return
+	}
+	sessionID := c.Param("sessionId")
+	if sessionID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少会话 ID"})
+		return
+	}
+
+	// 仅允许撤销自己的会话（校验归属，防止越权撤销他人会话）
+	target, err := h.sessionRepo.GetBySessionID(sessionID)
+	if err != nil || target.AdminID != c.GetInt64("admin_id") {
+		c.JSON(http.StatusNotFound, gin.H{"error": "会话不存在"})
+		return
+	}
+
+	if err := h.sessionRepo.Revoke(sessionID); err != nil {
+		log.Printf("撤销会话失败: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "撤销会话失败"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": "会话已注销"})
+}
+
+// HandleRevokeOtherSessions 撤销除当前会话外的全部会话（"我被盗号了想踢掉所有会话"）
+// 路由: POST /api/v1/auth/sessions/revoke-others
+func (h *AuthHandler) HandleRevokeOtherSessions(c *gin.Context) {
+	if h.sessionRepo == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "会话管理未启用"})
+		return
+	}
+	currentSessionID, _ := c.Get("session_id")
+	current, _ := currentSessionID.(string)
+
+	n, err := h.sessionRepo.RevokeAllOther(c.GetInt64("admin_id"), current)
+	if err != nil {
+		log.Printf("撤销其他会话失败: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "撤销其他会话失败"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": fmt.Sprintf("已注销其他 %d 个会话", n), "revoked": n})
 }

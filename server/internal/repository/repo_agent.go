@@ -142,6 +142,7 @@ type AgentMeta struct {
 	PriceCurrency     string
 	PriceCycle        string
 	TrafficQuotaBytes int64
+	TrafficQuotaType  string
 }
 
 // UpdateMeta 原子更新 NodeGet 风格元数据（单条 SQL，避免部分更新）
@@ -157,6 +158,7 @@ func (r *AgentRepository) UpdateMeta(id int64, meta AgentMeta) error {
 			"price_currency":      meta.PriceCurrency,
 			"price_cycle":         meta.PriceCycle,
 			"traffic_quota_bytes": meta.TrafficQuotaBytes,
+			"traffic_quota_type":  meta.TrafficQuotaType,
 		}).Error
 }
 

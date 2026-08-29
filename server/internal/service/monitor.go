@@ -843,6 +843,7 @@ func (m *MonitorService) GetDashboardData() []DashboardItem {
 			item.PriceCurrency = agent.PriceCurrency
 			item.PriceCycle = agent.PriceCycle
 			item.TrafficQuotaBytes = agent.TrafficQuotaBytes
+			item.TrafficQuotaType = agent.TrafficQuotaType
 			item.IPv4 = agent.IPv4
 			item.IPv6 = agent.IPv6
 			if monthlyTraffic != nil {
@@ -941,6 +942,7 @@ type DashboardItem struct {
 	PriceCurrency     string     `json:"price_currency"`       // 币种: CNY/USD/EUR/JPY
 	PriceCycle        string     `json:"price_cycle"`          // 周期: monthly/yearly
 	TrafficQuotaBytes int64      `json:"traffic_quota_bytes"`  // 月流量配额（0=不限）
+	TrafficQuotaType  string     `json:"traffic_quota_type"`   // 配额口径: sum/up/down/max/min
 	MonthlyRx         uint64     `json:"monthly_rx"`           // 当月累计下行
 	MonthlyTx         uint64     `json:"monthly_tx"`           // 当月累计上行
 	IPv4              string     `json:"ipv4"`                 // 出口 IPv4
@@ -991,6 +993,7 @@ type DashboardSummary struct {
 	PriceCurrency     string     `json:"price_currency"`
 	PriceCycle        string     `json:"price_cycle"`
 	TrafficQuotaBytes int64      `json:"traffic_quota_bytes"`
+	TrafficQuotaType  string     `json:"traffic_quota_type"`
 	MonthlyRx         uint64     `json:"monthly_rx"`
 	MonthlyTx         uint64     `json:"monthly_tx"`
 	IPv4              string     `json:"ipv4"`
@@ -1040,6 +1043,7 @@ func (item DashboardItem) toSummary() DashboardSummary {
 		PriceCurrency:     item.PriceCurrency,
 		PriceCycle:        item.PriceCycle,
 		TrafficQuotaBytes: item.TrafficQuotaBytes,
+		TrafficQuotaType:  item.TrafficQuotaType,
 		MonthlyRx:         item.MonthlyRx,
 		MonthlyTx:         item.MonthlyTx,
 		IPv4:              item.IPv4,
@@ -1148,6 +1152,7 @@ func (m *MonitorService) GetPublicDashboardJSON() []byte {
 		PriceCurrency     string     `json:"price_currency"`
 		PriceCycle        string     `json:"price_cycle"`
 		TrafficQuotaBytes int64      `json:"traffic_quota_bytes"`
+		TrafficQuotaType  string     `json:"traffic_quota_type"`
 		MonthlyRx         uint64     `json:"monthly_rx"`
 		MonthlyTx         uint64     `json:"monthly_tx"`
 	}
@@ -1209,6 +1214,7 @@ func (m *MonitorService) GetPublicDashboardJSON() []byte {
 			PriceCurrency:     item.PriceCurrency,
 			PriceCycle:        item.PriceCycle,
 			TrafficQuotaBytes: item.TrafficQuotaBytes,
+			TrafficQuotaType:  item.TrafficQuotaType,
 			MonthlyRx:         item.MonthlyRx,
 			MonthlyTx:         item.MonthlyTx,
 		})

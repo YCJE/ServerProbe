@@ -162,6 +162,40 @@ export async function logout(): Promise<void> {
   await request('/auth/logout', { method: 'POST' })
 }
 
+// ==================== 会话管理 API (P2) ====================
+
+/** 管理员登录会话 */
+export interface AdminSession {
+  id: number
+  session_id: string
+  admin_id: number
+  ip: string
+  user_agent: string
+  created_at: string
+  last_seen_at: string
+  expires_at: string
+  revoked_at: string | null
+  /** 是否为当前浏览器正在使用的会话 */
+  current: boolean
+  /** 是否已失效（已撤销或已过期） */
+  revoked: boolean
+}
+
+/** 获取当前管理员的全部会话 */
+export async function getSessions(): Promise<{ sessions: AdminSession[] }> {
+  return request('/auth/sessions')
+}
+
+/** 撤销指定会话（盗号踢出；撤销当前会话等同于登出） */
+export async function revokeSession(sessionId: string): Promise<{ success: boolean; message: string }> {
+  return request(`/auth/sessions/${sessionId}`, { method: 'DELETE' })
+}
+
+/** 撤销除当前会话外的全部会话 */
+export async function revokeOtherSessions(): Promise<{ success: boolean; message: string; revoked: number }> {
+  return request('/auth/sessions/revoke-others', { method: 'POST' })
+}
+
 // ==================== TOTP 两步验证 API ====================
 
 /** 查询 TOTP 绑定状态 */
@@ -324,6 +358,8 @@ export interface AgentMetaInput {
   price_cycle: string
   /** 月流量配额字节数（0=不限） */
   traffic_quota_bytes: number
+  /** 配额口径 sum/up/down/max/min（P2，空=默认 sum） */
+  traffic_quota_type: string
 }
 
 /** 更新 Agent NodeGet 风格元数据 */

@@ -20,6 +20,7 @@ const Icon = {
   settings: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M12 15a3 3 0 100-6 3 3 0 000 6zM19.4 15a1.7 1.7 0 00.3 1.9l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.9-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1-1.6 1.7 1.7 0 00-1.9.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.9 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.6-1 1.7 1.7 0 00-.3-1.9l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.9.3h.1a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.6 1.7 1.7 0 001.9-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.9v.1a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z" />,
   system: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M12 14l4-4M3.34 19a10 10 0 1117.32 0" />,
   audit: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M9 11l3 3L22 4M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11" />,
+  sessions: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M2 4h20v12H2zM8 20h8M12 16v4" />,
   logs: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M8 13h8M8 17h5" />,
   back: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M19 12H5M12 19l-7-7 7-7" />,
   logout: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9" />,
@@ -56,6 +57,7 @@ const NAV_GROUPS = [
     title: '系统',
     items: [
       { to: '/admin/settings', label: '站点设置', icon: Icon.settings, end: false },
+      { to: '/admin/sessions', label: '会话管理', icon: Icon.sessions, end: false },
       { to: '/admin/system', label: '系统状态', icon: Icon.system, end: false },
       { to: '/admin/logs', label: '系统日志', icon: Icon.logs, end: false },
       { to: '/admin/audit-logs', label: '审计日志', icon: Icon.audit, end: false },

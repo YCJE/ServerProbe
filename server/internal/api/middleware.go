@@ -16,11 +16,31 @@ import (
 // Middleware 中间件管理
 type Middleware struct {
 	jwtManager *pkg.JWTManager
+	sessionRepo *repository.SessionRepository
 }
 
 // NewMiddleware 创建中间件
-func NewMiddleware(jwtManager *pkg.JWTManager) *Middleware {
-	return &Middleware{jwtManager: jwtManager}
+func NewMiddleware(jwtManager *pkg.JWTManager, sessionRepo *repository.SessionRepository) *Middleware {
+	return &Middleware{jwtManager: jwtManager, sessionRepo: sessionRepo}
+}
+
+// validateSession 校验 JWT 对应的会话是否有效（存在、未撤销、未过期）
+// 返回 nil 表示有效；sessionRepo 为 nil 时（测试环境）跳过会话校验
+func (m *Middleware) validateSession(claims *pkg.Claims) *model.Session {
+	if m.sessionRepo == nil {
+		return nil
+	}
+	if claims.ID == "" {
+		return nil
+	}
+	s, err := m.sessionRepo.GetBySessionID(claims.ID)
+	if err != nil {
+		return nil
+	}
+	if s.RevokedAt != nil || time.Now().After(s.ExpiresAt) {
+		return nil
+	}
+	return s
 }
 
 // AuthRequired JWT 认证中间件
@@ -50,6 +70,24 @@ func (m *Middleware) AuthRequired() gin.HandlerFunc {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Token 无效或已过期"})
 			c.Abort()
 			return
+		}
+
+		// 会话校验（P2）：登出/远程撤销后即使 Token 未过期也立即失效
+		session := m.validateSession(claims)
+		if session == nil {
+			if m.sessionRepo != nil {
+				c.SetSameSite(http.SameSiteStrictMode)
+				c.SetCookie("token", "", -1, "/", "", cookieSecure(), true)
+				c.JSON(http.StatusUnauthorized, gin.H{"error": "会话已失效"})
+				c.Abort()
+				return
+			}
+		} else {
+			// 节流更新最后活跃时间（距上次超过 60s 才写库，避免高频请求全量写）
+			if time.Since(session.LastSeenAt) > time.Minute {
+				_ = m.sessionRepo.Touch(session)
+			}
+			c.Set("session_id", session.SessionID)
 		}
 
 		c.Set("admin_id", claims.AdminID)

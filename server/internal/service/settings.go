@@ -19,6 +19,10 @@ const (
 	SettingRetentionDays        = "retention_days"         // 历史数据保留天数（5 分钟层）
 	SettingRetentionDaysHourly  = "retention_days_hourly"  // 历史数据保留天数（小时聚合层）
 	SettingMaxChartPoints       = "max_chart_points"       // 图表单次加载最大数据点数
+	// 到期提前通知（P2：每日汇总一条通知，防重发日期记录见 backup.go SettingExpireLastSent）
+	SettingExpireNotifyEnabled   = "expire_notify_enabled"   // 是否启用到期提醒
+	SettingExpireNotifyLeadDays  = "expire_notify_lead_days"  // 提前天数（剩余天数 ≤ 此值时提醒）
+	SettingExpireNotifyChannelID = "expire_notify_channel_id" // 通知渠道 ID（0=未配置，不发送）
 )
 
 // 默认值常量
@@ -30,6 +34,13 @@ const (
 	DefaultRetentionDays       = 30
     DefaultRetentionDaysHourly = 730
 	DefaultMaxChartPoints      = 800
+
+	DefaultExpireNotifyEnabled   = false
+	DefaultExpireNotifyLeadDays  = 7
+	DefaultExpireNotifyChannelID = 0
+
+	minExpireNotifyLeadDays = 1
+	maxExpireNotifyLeadDays = 90
 
 	minOfflineGraceSeconds = 30
 	maxOfflineGraceSeconds = 86400
@@ -126,6 +137,17 @@ func (s *SettingsService) GetInt(key string, def, min, max int) int {
 	return v
 }
 
+// GetBool 读取布尔设置（"true"/"1" 视为 true，其余 false；不存在返回默认值）
+func (s *SettingsService) GetBool(key string, def bool) bool {
+	s.mu.RLock()
+	raw, ok := s.cache[key]
+	s.mu.RUnlock()
+	if !ok || raw == "" {
+		return def
+	}
+	return raw == "true" || raw == "1"
+}
+
 // SiteTitle 站点标题
 func (s *SettingsService) SiteTitle() string { return s.GetString(SettingSiteTitle, DefaultSiteTitle) }
 
@@ -165,6 +187,21 @@ func (s *SettingsService) RetentionDaysHourly() int {
 // MaxChartPoints 图表单次加载最大数据点数
 func (s *SettingsService) MaxChartPoints() int {
 	return s.GetInt(SettingMaxChartPoints, DefaultMaxChartPoints, minMaxChartPoints, maxMaxChartPoints)
+}
+
+// ExpireNotifyEnabled 到期提醒是否启用
+func (s *SettingsService) ExpireNotifyEnabled() bool {
+	return s.GetBool(SettingExpireNotifyEnabled, DefaultExpireNotifyEnabled)
+}
+
+// ExpireNotifyLeadDays 到期提醒提前天数
+func (s *SettingsService) ExpireNotifyLeadDays() int {
+	return s.GetInt(SettingExpireNotifyLeadDays, DefaultExpireNotifyLeadDays, minExpireNotifyLeadDays, maxExpireNotifyLeadDays)
+}
+
+// ExpireNotifyChannelID 到期提醒通知渠道 ID（0=未配置）
+func (s *SettingsService) ExpireNotifyChannelID() int64 {
+	return int64(s.GetInt(SettingExpireNotifyChannelID, DefaultExpireNotifyChannelID, 0, 1<<30))
 }
 
 // AllSettings 导出全部设置（管理端展示）

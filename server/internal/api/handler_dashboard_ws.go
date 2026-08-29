@@ -9,6 +9,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 	"github.com/server-probe/server/internal/pkg"
+	"github.com/server-probe/server/internal/repository"
 	"github.com/server-probe/server/internal/service"
 )
 
@@ -20,16 +21,18 @@ const (
 
 // DashboardWSHandler 仪表盘 WebSocket 处理器
 type DashboardWSHandler struct {
-	monitor    *service.MonitorService
-	jwtManager *pkg.JWTManager
-	upgrader   websocket.Upgrader
+	monitor     *service.MonitorService
+	jwtManager  *pkg.JWTManager
+	sessionRepo *repository.SessionRepository
+	upgrader    websocket.Upgrader
 }
 
 // NewDashboardWSHandler 创建仪表盘 WebSocket 处理器
-func NewDashboardWSHandler(monitor *service.MonitorService, jwtManager *pkg.JWTManager) *DashboardWSHandler {
+func NewDashboardWSHandler(monitor *service.MonitorService, jwtManager *pkg.JWTManager, sessionRepo *repository.SessionRepository) *DashboardWSHandler {
 	return &DashboardWSHandler{
-		monitor:    monitor,
-		jwtManager: jwtManager,
+		monitor:     monitor,
+		jwtManager:  jwtManager,
+		sessionRepo: sessionRepo,
 		upgrader: websocket.Upgrader{
 			CheckOrigin: func(r *http.Request) bool {
 				// 仅允许同源请求，防止跨站 WebSocket 劫持
@@ -78,6 +81,22 @@ func (h *DashboardWSHandler) HandleDashboardWS(c *gin.Context) {
 		return
 	}
 	_ = claims
+
+	// 会话校验（P2）：登出/远程撤销后拒绝建立新 WS 连接
+	if h.sessionRepo != nil {
+		valid := false
+		if claims.ID != "" {
+			if s, err := h.sessionRepo.GetBySessionID(claims.ID); err == nil {
+				valid = s.RevokedAt == nil && time.Now().Before(s.ExpiresAt)
+			}
+		}
+		if !valid {
+			c.SetSameSite(http.SameSiteStrictMode)
+			c.SetCookie("token", "", -1, "/", "", cookieSecure(), true)
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "会话已失效"})
+			return
+		}
+	}
 
 	// 连接数限制：管理员独立配额（先递增再检查，消除 TOCTOU 竞态）
 	newCount := h.monitor.IncDashboardWS()

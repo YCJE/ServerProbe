@@ -22,6 +22,10 @@ import (
 	web "github.com/server-probe/server"
 )
 
+// appVersion 程序版本（可用 -ldflags "-X main.appVersion=..." 覆盖）
+// 变更时触发启动自动备份（见 service.RunAutoBackupIfNeeded）
+var appVersion = "1.2.0"
+
 // ServerConfig Server 配置文件结构
 type ServerConfig struct {
 	Listen   string `yaml:"listen"`
@@ -81,6 +85,7 @@ func main() {
 	tagRepo := repository.NewTagRepository(db.DB())
 	settingRepo := repository.NewSettingRepository(db.DB())
 	auditRepo := repository.NewAuditLogRepository(db.DB())
+	sessionRepo := repository.NewSessionRepository(db.DB())
 
 	// 生成或加载 JWT 密钥
 	jwtSecretFile := filepath.Join(*dataDir, "jwt_secret")
@@ -123,12 +128,25 @@ func main() {
 	auditSvc := service.NewAuditService(auditRepo)
 	auditSvc.Start()
 
+	// 会话维护服务（启动清理一次 + 每日清理过期/已撤销会话）
+	sessionSvc := service.NewSessionService(sessionRepo)
+	sessionSvc.CleanupOnce()
+	sessionSvc.Start()
+
 	// 加载系统设置（站点信息 + 数据加载参数），失败不阻断启动（使用默认值）
 	settingsSvc, err := service.NewSettingsService(settingRepo)
 	if err != nil {
 		log.Printf("警告: 系统设置加载失败，使用默认值: %v", err)
 		settingsSvc, _ = service.NewSettingsService(nil)
 	}
+
+	// 版本变更自动备份（W3.1）：升级重启时在服务启动前生成数据库快照，
+	// 保证升级失败可直接回退旧版本数据文件（自动备份保留最近 5 份）
+	service.RunAutoBackupIfNeeded(db.DB(), settingsSvc, *dataDir, appVersion)
+
+	// 到期提前通知服务（每日 09:00 汇总一条通知，需在设置中启用并配置渠道）
+	expireNotifySvc := service.NewExpireNotifyService(agentRepo, settingsSvc, notifySvc)
+	expireNotifySvc.Start()
 
 	// 启动心跳检查（宽限期从设置服务动态读取，支持后台修改）
 	monitor.SetHeartbeatTimeout(time.Duration(settingsSvc.OfflineGraceSeconds()) * time.Second)
@@ -159,6 +177,7 @@ func main() {
 	router := api.NewRouter(
 		jwtManager,
 		adminRepo,
+		sessionRepo,
 		agentRepo,
 		recordRepo,
 		hourlyRepo,
@@ -261,6 +280,8 @@ func main() {
 	sslMonitorEngine.Stop()
 	validator.Stop()
 	auditSvc.Stop()
+	sessionSvc.Stop()
+	expireNotifySvc.Stop()
 
 	log.Println("正在关闭数据库连接...")
 	if err := db.Close(); err != nil {
